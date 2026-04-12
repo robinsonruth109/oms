@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                String        @id @default(uuid())
+  name              String
+  username          String        @unique
+  password          String
+  role              Role
+  status            Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  calledOrders      Order[]       @relation("CalledOrders")
+  invoiceBatches    InvoiceBatch[]
+  csvBatches        CsvBatch[]
+}
+
+model Page {
+  id                String        @id @default(uuid())
+  name              String        @unique
+  prefixCode        String        @unique
+  lastInvoiceSerial Int           @default(0)
+  status            Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  orders            Order[]
+}
+
+model OrderSource {
+  id                String          @id @default(uuid())
+  name              String          @unique
+  type              OrderSourceType
+  status            Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  integrations      Integration[]
+  orders            Order[]
+}
+
+model Integration {
+  id                String               @id @default(uuid())
+  name              String
+  slug              String               @unique
+  platform          IntegrationPlatform
+  sourceId          String
+  source            OrderSource          @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  apiKey            String               @unique
+  webhookSecret     String?
+  status            Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  orders            Order[]
+
+  @@index([platform])
+  @@index([sourceId])
+}
+
+model ProductParent {
+  id                String        @id @default(uuid())
+  sku               String        @unique
+  name              String
+  status            Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  products          Product[]
+}
+
+model Courier {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  status      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Product {
+  id                String        @id @default(uuid())
+  parentId          String
+  parent            ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  sku               String        @unique
+  name              String
+  purchasePrice     Decimal       @db.Decimal(10, 2)
+  sellingPrice      Decimal       @db.Decimal(10, 2)
+  status            Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  orderItems        OrderItem[]
+}
+
+model Order {
+  id                String         @id @default(uuid())
+  orderId           String?        @unique
+  invoiceId         String?        @unique
+
+  integrationId     String?
+  integration       Integration?   @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  externalOrderId   String?
+
+  sourceId          String
+  source            OrderSource    @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  pageId            String?
+  page              Page?          @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  customerName      String
+  address           String
+  phone             String
+
+  subtotal          Decimal        @db.Decimal(10, 2)
+  discount          Decimal        @default(0) @db.Decimal(10, 2)
+  advance           Decimal        @default(0) @db.Decimal(10, 2)
+  deliveryCharge    Decimal        @default(0) @db.Decimal(10, 2)
+  totalAmount       Decimal        @db.Decimal(10, 2)
+
+  orderStatus       OrderStatus    @default(READY_TO_SHIP)
+  courier           String?
+
+  note              String?
+  calledByUserId    String?
+  calledByUser      User?          @relation("CalledOrders", fields: [calledByUserId], references: [id], onDelete: SetNull)
+  calledAt          DateTime?
+
+  invoiceDownloaded Boolean        @default(false)
+  csvDownloaded     Boolean        @default(false)
+
+  readyToShipAt     DateTime       @default(now())
+
+  invoiceBatchItems InvoiceBatchItem[]
+  csvBatchItems     CsvBatchItem[]
+  items             OrderItem[]
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([integrationId, externalOrderId])
+  @@index([integrationId])
+  @@index([externalOrderId])
+}
+
+model OrderItem {
+  id                String         @id @default(uuid())
+  orderId           String
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId         String?
+  product           Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  productSku        String
+  productName       String
+  quantity          Int
+  unitPrice         Decimal        @db.Decimal(10, 2)
+  lineTotal         Decimal        @db.Decimal(10, 2)
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+model InvoiceBatch {
+  id                String            @id @default(uuid())
+  batchNo           String            @unique
+  courier           String
+  totalOrders       Int
+  createdByUserId   String
+  createdByUser     User              @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt         DateTime          @default(now())
+
+  items             InvoiceBatchItem[]
+}
+
+model InvoiceBatchItem {
+  id                String         @id @default(uuid())
+  batchId           String
+  batch             InvoiceBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  orderId           String
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, orderId])
+}
+
+model CsvBatch {
+  id                String         @id @default(uuid())
+  batchNo           String         @unique
+  courier           String
+  totalOrders       Int
+  createdByUserId   String
+  createdByUser     User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt         DateTime       @default(now())
+
+  items             CsvBatchItem[]
+}
+
+model CsvBatchItem {
+  id                String         @id @default(uuid())
+  batchId           String
+  batch             CsvBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  orderId           String
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, orderId])
+}
+
+enum Role {
+  ADMIN
+  AGENT
+}
+
+enum OrderSourceType {
+  SHOPIFY
+  LARAVEL
+  MANUAL
+}
+
+enum IntegrationPlatform {
+  SHOPIFY
+  LARAVEL
+}
+
+enum OrderStatus {
+  PENDING_CONFIRMATION
+  READY_TO_SHIP
+  NO_ANSWER
+  PHONE_OFF
+  CANCELLED
+  DOUBLE_ORDER
+  STOCK_OUT
+  RETURNED
+}
+
+enum CourierOption {
+  CHINA_PATHAO
+  MACRO_PATHAO
+  TRENDY_SHOP_PATHAO
+  ALAMDANGA_PATHAO
+  GLOWSS_PATHAO
+  PATHAO_COSMO_CRAAZE_BD
+  PATHAO_UNIQUE_MART
+  PATHAO_WOMANS_GLAMOUR
+}
+
+
+

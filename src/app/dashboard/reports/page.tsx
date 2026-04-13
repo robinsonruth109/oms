@@ -8,6 +8,11 @@ type ReportsPageProps = {
   }>;
 };
 
+function getLocalDateInputValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 function startOfDay(value: string) {
   return new Date(`${value}T00:00:00`);
 }
@@ -21,12 +26,72 @@ function percent(part: number, total: number) {
   return `${((part / total) * 100).toFixed(1)}%`;
 }
 
+function formatDay(date: Date) {
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+type Bucket = {
+  totalCalled: number;
+  readyToShip: number;
+  noAnswer: number;
+  phoneOff: number;
+  stockOut: number;
+  cancelled: number;
+  pendingConfirmation: number;
+  other: number;
+};
+
+function createBucket(): Bucket {
+  return {
+    totalCalled: 0,
+    readyToShip: 0,
+    noAnswer: 0,
+    phoneOff: 0,
+    stockOut: 0,
+    cancelled: 0,
+    pendingConfirmation: 0,
+    other: 0,
+  };
+}
+
+function applyStatus(bucket: Bucket, status: string) {
+  bucket.totalCalled += 1;
+
+  switch (status) {
+    case "READY_TO_SHIP":
+      bucket.readyToShip += 1;
+      break;
+    case "NO_ANSWER":
+      bucket.noAnswer += 1;
+      break;
+    case "PHONE_OFF":
+      bucket.phoneOff += 1;
+      break;
+    case "STOCK_OUT":
+      bucket.stockOut += 1;
+      break;
+    case "CANCELLED":
+      bucket.cancelled += 1;
+      break;
+    case "PENDING_CONFIRMATION":
+      bucket.pendingConfirmation += 1;
+      break;
+    default:
+      bucket.other += 1;
+      break;
+  }
+}
+
 export default async function ReportsPage({
   searchParams,
 }: ReportsPageProps) {
   const params = (await searchParams) || {};
-  const today = new Date().toISOString().slice(0, 10);
 
+  const today = getLocalDateInputValue();
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
   const agentId = (params.agentId || "").trim();
@@ -70,6 +135,14 @@ export default async function ReportsPage({
         orderStatus: true,
         calledAt: true,
         calledByUserId: true,
+        courier: true,
+        source: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
         calledByUser: {
           select: {
             id: true,
@@ -85,106 +158,114 @@ export default async function ReportsPage({
     }),
   ]);
 
-  const grouped = new Map<
+  const agentGrouped = new Map<
     string,
     {
       agentId: string;
       agentName: string;
       username: string;
       role: string;
-      totalCalled: number;
-      readyToShip: number;
-      noAnswer: number;
-      phoneOff: number;
-      stockOut: number;
-      cancelled: number;
-      pendingConfirmation: number;
-      other: number;
-    }
+    } & Bucket
+  >();
+
+  const sourceGrouped = new Map<
+    string,
+    {
+      sourceId: string;
+      sourceName: string;
+      sourceType: string;
+    } & Bucket
+  >();
+
+  const courierGrouped = new Map<
+    string,
+    {
+      courier: string;
+    } & Bucket
+  >();
+
+  const dayGrouped = new Map<
+    string,
+    {
+      label: string;
+      dateKey: string;
+    } & Bucket
   >();
 
   for (const order of orders) {
-    if (!order.calledByUserId || !order.calledByUser) continue;
-
-    if (!grouped.has(order.calledByUserId)) {
-      grouped.set(order.calledByUserId, {
-        agentId: order.calledByUser.id,
-        agentName: order.calledByUser.name,
-        username: order.calledByUser.username,
-        role: order.calledByUser.role,
-        totalCalled: 0,
-        readyToShip: 0,
-        noAnswer: 0,
-        phoneOff: 0,
-        stockOut: 0,
-        cancelled: 0,
-        pendingConfirmation: 0,
-        other: 0,
-      });
+    if (order.calledByUserId && order.calledByUser) {
+      if (!agentGrouped.has(order.calledByUserId)) {
+        agentGrouped.set(order.calledByUserId, {
+          agentId: order.calledByUser.id,
+          agentName: order.calledByUser.name,
+          username: order.calledByUser.username,
+          role: order.calledByUser.role,
+          ...createBucket(),
+        });
+      }
+      applyStatus(agentGrouped.get(order.calledByUserId)!, order.orderStatus);
     }
 
-    const row = grouped.get(order.calledByUserId)!;
-    row.totalCalled += 1;
+    const sourceKey = order.source.id;
+    if (!sourceGrouped.has(sourceKey)) {
+      sourceGrouped.set(sourceKey, {
+        sourceId: order.source.id,
+        sourceName: order.source.name,
+        sourceType: order.source.type,
+        ...createBucket(),
+      });
+    }
+    applyStatus(sourceGrouped.get(sourceKey)!, order.orderStatus);
 
-    switch (order.orderStatus) {
-      case "READY_TO_SHIP":
-        row.readyToShip += 1;
-        break;
-      case "NO_ANSWER":
-        row.noAnswer += 1;
-        break;
-      case "PHONE_OFF":
-        row.phoneOff += 1;
-        break;
-      case "STOCK_OUT":
-        row.stockOut += 1;
-        break;
-      case "CANCELLED":
-        row.cancelled += 1;
-        break;
-      case "PENDING_CONFIRMATION":
-        row.pendingConfirmation += 1;
-        break;
-      default:
-        row.other += 1;
-        break;
+    const courierKey = order.courier || "No Courier";
+    if (!courierGrouped.has(courierKey)) {
+      courierGrouped.set(courierKey, {
+        courier: courierKey,
+        ...createBucket(),
+      });
+    }
+    applyStatus(courierGrouped.get(courierKey)!, order.orderStatus);
+
+    if (order.calledAt) {
+      const dateKey = getLocalDateInputValue(order.calledAt);
+      if (!dayGrouped.has(dateKey)) {
+        dayGrouped.set(dateKey, {
+          dateKey,
+          label: formatDay(order.calledAt),
+          ...createBucket(),
+        });
+      }
+      applyStatus(dayGrouped.get(dateKey)!, order.orderStatus);
     }
   }
 
-  const rows = Array.from(grouped.values()).sort(
+  const agentRows = Array.from(agentGrouped.values()).sort(
     (a, b) => b.totalCalled - a.totalCalled
   );
 
-  const totals = rows.reduce(
-    (acc, row) => {
-      acc.totalCalled += row.totalCalled;
-      acc.readyToShip += row.readyToShip;
-      acc.noAnswer += row.noAnswer;
-      acc.phoneOff += row.phoneOff;
-      acc.stockOut += row.stockOut;
-      acc.cancelled += row.cancelled;
-      acc.pendingConfirmation += row.pendingConfirmation;
-      acc.other += row.other;
-      return acc;
-    },
-    {
-      totalCalled: 0,
-      readyToShip: 0,
-      noAnswer: 0,
-      phoneOff: 0,
-      stockOut: 0,
-      cancelled: 0,
-      pendingConfirmation: 0,
-      other: 0,
-    }
+  const sourceRows = Array.from(sourceGrouped.values()).sort(
+    (a, b) => b.totalCalled - a.totalCalled
   );
+
+  const courierRows = Array.from(courierGrouped.values()).sort(
+    (a, b) => b.totalCalled - a.totalCalled
+  );
+
+  const dailyRows = Array.from(dayGrouped.values()).sort((a, b) =>
+    a.dateKey < b.dateKey ? 1 : -1
+  );
+
+  const totals = orders.reduce((acc, order) => {
+    applyStatus(acc, order.orderStatus);
+    return acc;
+  }, createBucket());
 
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Agent-wise and date-wise calling performance report.
+          Agent-wise, source-wise, courier-wise and date-wise calling report.
         </p>
       </section>
 
@@ -306,8 +387,94 @@ export default async function ReportsPage({
           </p>
         </div>
 
+        <div className="hidden overflow-x-auto lg:block">
+          <table className="min-w-full">
+            <thead className="bg-slate-50">
+              <tr className="border-b">
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Agent
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Total Called
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Ready
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  No Answer
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Phone Off
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Stock Out
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Cancelled
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Pending
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Conversion
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {agentRows.map((row) => (
+                <tr key={row.agentId} className="border-b last:border-b-0">
+                  <td className="px-6 py-4 text-sm text-slate-700">
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        {row.agentName}
+                      </p>
+                      <p className="text-slate-500">@{row.username}</p>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-medium text-slate-900">
+                    {row.totalCalled}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-medium text-emerald-600">
+                    {row.readyToShip}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm text-slate-700">
+                    {row.noAnswer}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm text-slate-700">
+                    {row.phoneOff}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-medium text-purple-600">
+                    {row.stockOut}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-medium text-red-600">
+                    {row.cancelled}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-medium text-amber-600">
+                    {row.pendingConfirmation}
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-semibold text-slate-900">
+                    {percent(row.readyToShip, row.totalCalled)}
+                  </td>
+                </tr>
+              ))}
+
+              {!agentRows.length && (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-6 py-8 text-center text-sm text-slate-500"
+                  >
+                    No report data found for the selected filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
         <div className="space-y-4 p-4 lg:hidden">
-          {rows.map((row) => (
+          {agentRows.map((row) => (
             <div key={row.agentId} className="rounded-2xl border bg-slate-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -366,19 +533,162 @@ export default async function ReportsPage({
             </div>
           ))}
 
-          {!rows.length && (
+          {!agentRows.length && (
             <div className="rounded-2xl border bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
               No report data found for the selected filter.
             </div>
           )}
         </div>
+      </section>
 
-        <div className="hidden overflow-x-auto lg:block">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="rounded-3xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-4 sm:px-6">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Source Wise Report
+            </h2>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-slate-50">
+                <tr className="border-b">
+                  <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Source
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Called
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Ready
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Cancelled
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Conversion
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourceRows.map((row) => (
+                  <tr key={row.sourceId} className="border-b last:border-b-0">
+                    <td className="px-5 py-4 text-sm">
+                      <div>
+                        <p className="font-medium text-slate-900">
+                          {row.sourceName}
+                        </p>
+                        <p className="text-slate-500">{row.sourceType}</p>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm">
+                      {row.totalCalled}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-medium text-emerald-600">
+                      {row.readyToShip}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-medium text-red-600">
+                      {row.cancelled}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-semibold text-slate-900">
+                      {percent(row.readyToShip, row.totalCalled)}
+                    </td>
+                  </tr>
+                ))}
+
+                {!sourceRows.length && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-5 py-8 text-center text-sm text-slate-500"
+                    >
+                      No source report data found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-4 sm:px-6">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Courier Wise Report
+            </h2>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-slate-50">
+                <tr className="border-b">
+                  <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Courier
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Called
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Ready
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Cancelled
+                  </th>
+                  <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Conversion
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {courierRows.map((row) => (
+                  <tr key={row.courier} className="border-b last:border-b-0">
+                    <td className="px-5 py-4 text-sm font-medium text-slate-900">
+                      {row.courier}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm">
+                      {row.totalCalled}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-medium text-emerald-600">
+                      {row.readyToShip}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-medium text-red-600">
+                      {row.cancelled}
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-semibold text-slate-900">
+                      {percent(row.readyToShip, row.totalCalled)}
+                    </td>
+                  </tr>
+                ))}
+
+                {!courierRows.length && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-5 py-8 text-center text-sm text-slate-500"
+                    >
+                      No courier report data found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border bg-white shadow-sm">
+        <div className="border-b px-5 py-4 sm:px-6">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Daily Breakdown
+          </h2>
+        </div>
+
+        <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-slate-50">
               <tr className="border-b">
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Agent
+                  Date
                 </th>
                 <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Total Called
@@ -399,35 +709,26 @@ export default async function ReportsPage({
                   Cancelled
                 </th>
                 <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Pending
-                </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Conversion
                 </th>
               </tr>
             </thead>
-
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.agentId} className="border-b last:border-b-0">
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p className="font-medium text-slate-900">
-                        {row.agentName}
-                      </p>
-                      <p className="text-slate-500">@{row.username}</p>
-                    </div>
+              {dailyRows.map((row) => (
+                <tr key={row.dateKey} className="border-b last:border-b-0">
+                  <td className="px-6 py-4 text-sm font-medium text-slate-900">
+                    {row.label}
                   </td>
-                  <td className="px-6 py-4 text-center text-sm font-medium text-slate-900">
+                  <td className="px-6 py-4 text-center text-sm">
                     {row.totalCalled}
                   </td>
                   <td className="px-6 py-4 text-center text-sm font-medium text-emerald-600">
                     {row.readyToShip}
                   </td>
-                  <td className="px-6 py-4 text-center text-sm text-slate-700">
+                  <td className="px-6 py-4 text-center text-sm">
                     {row.noAnswer}
                   </td>
-                  <td className="px-6 py-4 text-center text-sm text-slate-700">
+                  <td className="px-6 py-4 text-center text-sm">
                     {row.phoneOff}
                   </td>
                   <td className="px-6 py-4 text-center text-sm font-medium text-purple-600">
@@ -436,22 +737,19 @@ export default async function ReportsPage({
                   <td className="px-6 py-4 text-center text-sm font-medium text-red-600">
                     {row.cancelled}
                   </td>
-                  <td className="px-6 py-4 text-center text-sm font-medium text-amber-600">
-                    {row.pendingConfirmation}
-                  </td>
                   <td className="px-6 py-4 text-center text-sm font-semibold text-slate-900">
                     {percent(row.readyToShip, row.totalCalled)}
                   </td>
                 </tr>
               ))}
 
-              {!rows.length && (
+              {!dailyRows.length && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={8}
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >
-                    No report data found for the selected filter.
+                    No daily report data found.
                   </td>
                 </tr>
               )}

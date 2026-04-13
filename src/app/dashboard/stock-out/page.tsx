@@ -1,6 +1,25 @@
 import { prisma } from "@/lib/prisma";
 import RestoreButton from "./restore-button";
 
+type StockOutRow = {
+  orderId: string;
+  orderItemId: string;
+  invoiceId: string | null;
+  customerName: string;
+  phone: string;
+  pageName: string;
+  sourceName: string;
+  productSku: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+};
+
+function formatMoney(value: number) {
+  return `৳ ${value.toFixed(2)}`;
+}
+
 export default async function StockOutPage() {
   const orders = await prisma.order.findMany({
     where: {
@@ -16,12 +35,30 @@ export default async function StockOutPage() {
     },
   });
 
+  const rows: StockOutRow[] = orders.flatMap((order) =>
+    order.items.map((item) => ({
+      orderId: order.id,
+      orderItemId: item.id,
+      invoiceId: order.invoiceId,
+      customerName: order.customerName,
+      phone: order.phone,
+      pageName: order.page?.name || "N/A",
+      sourceName: order.source.name,
+      productSku: item.productSku,
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      lineTotal: Number(item.lineTotal),
+    }))
+  );
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Stock Out Orders</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Stock Out Items</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Orders marked as stock out. Restore any order back to ready-to-ship when stock returns.
+          Orders marked as stock out shown item-wise. Restore any order back to
+          ready-to-ship when stock returns.
         </p>
       </section>
 
@@ -31,13 +68,22 @@ export default async function StockOutPage() {
             <thead className="bg-slate-50">
               <tr className="border-b">
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Item
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Invoice
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Customer
+                  QTY
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Items
+                  Unit Price
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Total Value
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Customer
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Page / Source
@@ -49,42 +95,62 @@ export default async function StockOutPage() {
             </thead>
 
             <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-b last:border-b-0">
+              {rows.map((row) => (
+                <tr key={row.orderItemId} className="border-b last:border-b-0">
+                  <td className="px-6 py-4 text-sm text-slate-700">
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        {row.productName}
+                      </p>
+                      <p className="text-slate-500">{row.productSku}</p>
+                    </div>
+                  </td>
+
                   <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                    {order.invoiceId}
+                    {row.invoiceId || "N/A"}
                   </td>
+
+                  <td className="px-6 py-4 text-sm text-slate-700">
+                    {row.quantity}
+                  </td>
+
+                  <td className="px-6 py-4 text-sm text-slate-700">
+                    {formatMoney(row.unitPrice)}
+                  </td>
+
+                  <td className="px-6 py-4 text-sm font-medium text-slate-900">
+                    {formatMoney(row.lineTotal)}
+                  </td>
+
                   <td className="px-6 py-4 text-sm text-slate-700">
                     <div>
-                      <p className="font-medium text-slate-900">{order.customerName}</p>
-                      <p className="text-slate-500">{order.phone}</p>
+                      <p className="font-medium text-slate-900">
+                        {row.customerName}
+                      </p>
+                      <p className="text-slate-500">{row.phone}</p>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div className="space-y-1">
-                      {order.items.map((item) => (
-                        <p key={item.id}>
-                          {item.productSku} × {item.quantity}
-                        </p>
-                      ))}
-                    </div>
-                  </td>
+
                   <td className="px-6 py-4 text-sm text-slate-700">
                     <div>
-                      <p>{order.page?.name || "N/A"}</p>
-                      <p className="text-slate-500">{order.source.name}</p>
+                      <p>{row.pageName}</p>
+                      <p className="text-slate-500">{row.sourceName}</p>
                     </div>
                   </td>
+
                   <td className="px-6 py-4">
-                    <RestoreButton orderId={order.id} />
+                    <RestoreButton orderId={row.orderId} />
                   </td>
                 </tr>
               ))}
 
-              {!orders.length && (
+              {!rows.length && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-sm text-slate-500">
-                    No stock out orders found.
+                  <td
+                    colSpan={8}
+                    className="px-6 py-8 text-center text-sm text-slate-500"
+                  >
+                    No stock out items found.
                   </td>
                 </tr>
               )}

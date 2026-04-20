@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient } from "../src/generated/prisma";
+import { PrismaClient } from "@prisma/client";
 
 const adapter = new PrismaMariaDb(process.env.DATABASE_URL!);
 
@@ -31,10 +31,6 @@ async function main() {
         status: true,
       },
     });
-
-    console.log("Default admin created.");
-  } else {
-    console.log("Default admin already exists.");
   }
 }
 

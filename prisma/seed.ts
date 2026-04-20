@@ -31,6 +31,7 @@ async function main() {
         status: true,
       },
     });
+
     console.log("Default admin created.");
   } else {
     console.log("Default admin already exists.");

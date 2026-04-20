@@ -1,49 +1,45 @@
 import bcrypt from "bcryptjs";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaClient } from "@prisma/client";
 
-const adapter = new PrismaMariaDb({
-  host: "localhost",
-  user: "root",
-  password: "Sabbir44477&&",
-  database: "oms_db",
-  connectionLimit: 5,
-});
+const adapter = new PrismaMariaDb(process.env.DATABASE_URL!);
 
 const prisma = new PrismaClient({
   adapter,
 });
 
 async function main() {
-  const existingAdmin = await prisma.user.findUnique({
+  const adminName = process.env.DEFAULT_ADMIN_NAME || "Default Admin";
+  const adminUsername = process.env.DEFAULT_ADMIN_USERNAME || "admin";
+  const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || "StrongAdmin@123";
+
+  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+
+  const existingAdmin = await prisma.user.findFirst({
     where: {
-      username: "admin",
+      username: adminUsername,
     },
   });
 
-  if (existingAdmin) {
-    console.log("⚠️ Admin already exists");
-    return;
+  if (!existingAdmin) {
+    await prisma.user.create({
+      data: {
+        name: adminName,
+        username: adminUsername,
+        password: hashedPassword,
+        role: "ADMIN",
+        status: true,
+      },
+    });
+    console.log("Default admin created.");
+  } else {
+    console.log("Default admin already exists.");
   }
-
-  const hashedPassword = await bcrypt.hash("admin123", 10);
-
-  await prisma.user.create({
-    data: {
-      name: "Default Admin",
-      username: "admin",
-      password: hashedPassword,
-      role: "ADMIN",
-      status: true,
-    },
-  });
-
-  console.log("✅ Admin user created");
 }
 
 main()
   .catch((error) => {
-    console.error("❌ Seed failed:", error);
+    console.error(error);
     process.exit(1);
   })
   .finally(async () => {

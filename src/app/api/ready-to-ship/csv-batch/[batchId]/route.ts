@@ -40,7 +40,7 @@ export async function GET(
     "Ready To Ship Date",
   ];
 
-  const rows = batch.items.map((item) => {
+  const rows = batch.items.map((item: (typeof batch.items)[number]) => {
     const order = item.order;
 
     return [

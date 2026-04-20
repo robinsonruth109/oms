@@ -270,6 +270,7 @@ export default async function ReadyToShipPage({
           totalOrders: batch.totalOrders,
           createdAt: formatDateTime(batch.createdAt),
           createdByName: batch.createdByUser.name,
+          downloadUrl: `/api/ready-to-ship/invoice-batch/${batch.id}`,
         }))}
         csvBatches={csvBatches.map((batch) => ({
           id: batch.id,
@@ -278,6 +279,7 @@ export default async function ReadyToShipPage({
           totalOrders: batch.totalOrders,
           createdAt: formatDateTime(batch.createdAt),
           createdByName: batch.createdByUser.name,
+          downloadUrl: `/api/ready-to-ship/csv-batch/${batch.id}`,
         }))}
       />
     </div>

@@ -73,6 +73,11 @@ type ProductOption = {
   parentSku: string;
 };
 
+type PageOption = {
+  id: string;
+  name: string;
+};
+
 type EditableRowState = {
   customerName: string;
   phone: string;

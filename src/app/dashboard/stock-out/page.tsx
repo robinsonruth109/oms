@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import RestoreButton from "./restore-button";
+import StockOutClient from "./stock-out-client";
 
-type StockOutRow = {
+type StockOutItemRow = {
   orderId: string;
   orderItemId: string;
   invoiceId: string | null;
@@ -14,11 +14,29 @@ type StockOutRow = {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  deliveryCharge: number;
 };
 
-function formatMoney(value: number) {
-  return `৳ ${value.toFixed(2)}`;
-}
+type GroupedStockOutRow = {
+  productSku: string;
+  productName: string;
+  totalInvoiceQty: number;
+  totalProductQty: number;
+  totalProductPrice: number;
+  pageSources: string[];
+  orderIds: string[];
+  invoices: {
+    orderId: string;
+    invoiceId: string | null;
+    customerName: string;
+    phone: string;
+    quantity: number;
+    lineTotal: number;
+    deliveryCharge: number;
+    pageName: string;
+    sourceName: string;
+  }[];
+};
 
 export default async function StockOutPage() {
   const orders = await prisma.order.findMany({
@@ -35,7 +53,7 @@ export default async function StockOutPage() {
     },
   });
 
-  const rows: StockOutRow[] = orders.flatMap((order) =>
+  const rows: StockOutItemRow[] = orders.flatMap((order) =>
     order.items.map((item) => ({
       orderId: order.id,
       orderItemId: item.id,
@@ -49,115 +67,63 @@ export default async function StockOutPage() {
       quantity: item.quantity,
       unitPrice: Number(item.unitPrice),
       lineTotal: Number(item.lineTotal),
+      deliveryCharge: Number(order.deliveryCharge),
     }))
   );
 
+  const groupedMap = new Map<string, GroupedStockOutRow>();
+
+  for (const row of rows) {
+    const key = row.productSku;
+
+    if (!groupedMap.has(key)) {
+      groupedMap.set(key, {
+        productSku: row.productSku,
+        productName: row.productName,
+        totalInvoiceQty: 0,
+        totalProductQty: 0,
+        totalProductPrice: 0,
+        pageSources: [],
+        orderIds: [],
+        invoices: [],
+      });
+    }
+
+    const group = groupedMap.get(key)!;
+
+    group.totalInvoiceQty += 1;
+    group.totalProductQty += row.quantity;
+    group.totalProductPrice += row.lineTotal;
+
+    const pageSource = `${row.pageName} / ${row.sourceName}`;
+    if (!group.pageSources.includes(pageSource)) {
+      group.pageSources.push(pageSource);
+    }
+
+    if (!group.orderIds.includes(row.orderId)) {
+      group.orderIds.push(row.orderId);
+    }
+
+    group.invoices.push({
+      orderId: row.orderId,
+      invoiceId: row.invoiceId,
+      customerName: row.customerName,
+      phone: row.phone,
+      quantity: row.quantity,
+      lineTotal: row.lineTotal,
+      deliveryCharge: row.deliveryCharge,
+      pageName: row.pageName,
+      sourceName: row.sourceName,
+    });
+  }
+
+  const groupedRows = Array.from(groupedMap.values()).sort((a, b) =>
+    a.productSku.localeCompare(b.productSku)
+  );
+
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Stock Out Items</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Orders marked as stock out shown item-wise. Restore any order back to
-          ready-to-ship when stock returns.
-        </p>
-      </section>
-
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead className="bg-slate-50">
-              <tr className="border-b">
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Item
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Invoice
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  QTY
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Unit Price
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Total Value
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Customer
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Page / Source
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Action
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.orderItemId} className="border-b last:border-b-0">
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p className="font-medium text-slate-900">
-                        {row.productName}
-                      </p>
-                      <p className="text-slate-500">{row.productSku}</p>
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                    {row.invoiceId || "N/A"}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    {row.quantity}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    {formatMoney(row.unitPrice)}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                    {formatMoney(row.lineTotal)}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p className="font-medium text-slate-900">
-                        {row.customerName}
-                      </p>
-                      <p className="text-slate-500">{row.phone}</p>
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p>{row.pageName}</p>
-                      <p className="text-slate-500">{row.sourceName}</p>
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4">
-                    <RestoreButton orderId={row.orderId} />
-                  </td>
-                </tr>
-              ))}
-
-              {!rows.length && (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-6 py-8 text-center text-sm text-slate-500"
-                  >
-                    No stock out items found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+    <StockOutClient
+      rows={groupedRows}
+    />
   );
 }

@@ -75,8 +75,12 @@ export async function createInvoiceBatch(
     };
   }
 
-  const uniqueCouriers = [
-    ...new Set(orders.map((order) => order.courier).filter(Boolean)),
+  const uniqueCouriers: string[] = [
+    ...new Set(
+      orders
+        .map((order) => order.courier)
+        .filter((value): value is string => Boolean(value))
+    ),
   ];
 
   if (!uniqueCouriers.length) {
@@ -177,8 +181,12 @@ export async function createCsvBatch(
     };
   }
 
-  const uniqueCouriers = [
-    ...new Set(orders.map((order) => order.courier).filter(Boolean)),
+  const uniqueCouriers: string[] = [
+    ...new Set(
+      orders
+        .map((order) => order.courier)
+        .filter((value): value is string => Boolean(value))
+    ),
   ];
 
   if (!uniqueCouriers.length) {

@@ -1,51 +1,51 @@
-import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { PrismaClient, Role } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { PrismaClient } from "../src/generated/prisma/client";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+const adapter = new PrismaMariaDb({
+  host: "localhost",
+  user: "root",
+  password: "Sabbir44477&&",
+  database: "oms_db",
+  connectionLimit: 5,
 });
-
-const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient({
   adapter,
 });
 
 async function main() {
-  const existingAdmin = await prisma.user.findFirst({
-    where: { role: Role.ADMIN },
+  const existingAdmin = await prisma.user.findUnique({
+    where: {
+      username: "admin",
+    },
   });
 
   if (existingAdmin) {
-    console.log("Admin already exists. Skipping...");
+    console.log("⚠️ Admin already exists");
     return;
   }
 
-  const plainPassword = process.env.DEFAULT_ADMIN_PASSWORD || "admin123";
-  const hashedPassword = await bcrypt.hash(plainPassword, 10);
+  const hashedPassword = await bcrypt.hash("admin123", 10);
 
-  const admin = await prisma.user.create({
+  await prisma.user.create({
     data: {
-      name: process.env.DEFAULT_ADMIN_NAME || "Default Admin",
-      username: process.env.DEFAULT_ADMIN_USERNAME || "admin",
+      name: "Default Admin",
+      username: "admin",
       password: hashedPassword,
-      role: Role.ADMIN,
+      role: "ADMIN",
       status: true,
     },
   });
 
-  console.log("Default admin created:", admin.username);
+  console.log("✅ Admin user created");
 }
 
 main()
-  .catch((e) => {
-    console.error("Seed failed:", e);
+  .catch((error) => {
+    console.error("❌ Seed failed:", error);
     process.exit(1);
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end();
   });

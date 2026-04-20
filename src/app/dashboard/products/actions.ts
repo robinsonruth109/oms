@@ -1,7 +1,6 @@
 "use server";
 
 import { parse } from "csv-parse/sync";
-import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
@@ -37,7 +36,7 @@ async function ensureAdmin() {
 }
 
 async function findOrCreateParent(
-  tx: Prisma.TransactionClient,
+  tx: any,
   parentSku: string,
   parentName?: string
 ) {
@@ -109,8 +108,8 @@ export async function createProduct(
           parentId: parent.id,
           sku,
           name: name || sku,
-          purchasePrice: new Prisma.Decimal(purchasePrice),
-          sellingPrice: new Prisma.Decimal(sellingPrice),
+          purchasePrice,
+          sellingPrice,
           status: true,
         },
       });
@@ -197,8 +196,8 @@ export async function updateProduct(
           parentId: parent.id,
           sku,
           name: name || sku,
-          purchasePrice: new Prisma.Decimal(purchasePrice),
-          sellingPrice: new Prisma.Decimal(sellingPrice),
+          purchasePrice,
+          sellingPrice,
           status,
         },
       });
@@ -321,8 +320,8 @@ export async function importProductsCsv(
             data: {
               parentId: parent.id,
               name: existingProduct.name || sku,
-              purchasePrice: new Prisma.Decimal(purchasePrice),
-              sellingPrice: new Prisma.Decimal(sellingPrice),
+              purchasePrice,
+              sellingPrice,
               status: true,
             },
           });
@@ -334,8 +333,8 @@ export async function importProductsCsv(
               parentId: parent.id,
               sku,
               name: sku,
-              purchasePrice: new Prisma.Decimal(purchasePrice),
-              sellingPrice: new Prisma.Decimal(sellingPrice),
+              purchasePrice,
+              sellingPrice,
               status: true,
             },
           });

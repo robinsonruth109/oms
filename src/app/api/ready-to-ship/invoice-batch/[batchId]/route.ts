@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import fs from "fs";
+import path from "path";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -25,6 +28,9 @@ type OrderForPdf = {
   note: string;
 };
 
+const RETURN_NOTICE_EN =
+  "Note: If product is returned, it must be returned in intact condition. Packet must not be opened, as this is not a dress.";
+
 function formatDate(date: Date) {
   return date.toLocaleDateString("en-GB", {
     day: "numeric",
@@ -37,8 +43,8 @@ function safeAscii(text: string) {
   return String(text || "").replace(/[^\x20-\x7E]/g, " ");
 }
 
-function digitsOnly(text: string) {
-  return String(text || "").replace(/\D/g, "");
+function hasUnicode(text: string) {
+  return /[^\x00-\x7F]/.test(String(text || ""));
 }
 
 function drawText(
@@ -50,7 +56,7 @@ function drawText(
   font: any,
   color = rgb(0, 0, 0)
 ) {
-  page.drawText(text, {
+  page.drawText(String(text || ""), {
     x,
     y,
     size,
@@ -140,8 +146,15 @@ function barcodeBits(input: string) {
   return chunks.join("");
 }
 
-function drawBarcode(page: any, value: string, x: number, y: number, width: number, height: number) {
-  const printableValue = digitsOnly(value) || safeAscii(value);
+function drawBarcode(
+  page: any,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const printableValue = safeAscii(value).toUpperCase();
   const bits = barcodeBits(printableValue);
   if (!bits) return;
 
@@ -162,6 +175,22 @@ function drawBarcode(page: any, value: string, x: number, y: number, width: numb
 
 function fitSingleLine(text: string, maxWidth: number, font: any, size: number) {
   const clean = safeAscii(text);
+  if (font.widthOfTextAtSize(clean, size) <= maxWidth) {
+    return clean;
+  }
+
+  let result = clean;
+  while (result.length > 0 && font.widthOfTextAtSize(`${result}...`, size) > maxWidth) {
+    result = result.slice(0, -1);
+  }
+
+  return result ? `${result}...` : "";
+}
+
+function fitSingleLineUnicode(text: string, maxWidth: number, font: any, size: number) {
+  const clean = String(text || "").trim();
+  if (!clean) return "";
+
   if (font.widthOfTextAtSize(clean, size) <= maxWidth) {
     return clean;
   }
@@ -219,10 +248,13 @@ function drawInvoiceBox(
   topY: number,
   boxHeight: number,
   regularFont: any,
-  boldFont: any
+  boldFont: any,
+  banglaFont: any | null,
+  banglaNoteImage: any | null
 ) {
   const left = 30;
   const usableWidth = 535;
+  const isHalf = boxHeight <= 400;
 
   const title = safeAscii(order.pageName || "Invoice");
 
@@ -255,16 +287,14 @@ function drawInvoiceBox(
     2
   );
 
-  drawBarcode(page, order.phone, 410, topY - 90, 110, 18);
+  drawBarcode(page, order.invoiceId, 410, topY - 90, 110, 18);
 
   const tableTop = topY - 145;
   const tableLeft = left;
   const tableWidth = usableWidth;
-  const headerHeight = 24;
-  const footerReserve = 74;
-  const availableTableHeight = boxHeight - 235 - footerReserve;
-  const bodyRows = Math.max(Math.floor(availableTableHeight / 20), 6);
-  const rowHeight = availableTableHeight / bodyRows;
+  const headerHeight = 28;
+  const bodyRows = isHalf ? 5 : 12;
+  const rowHeight = isHalf ? 18 : 20;
   const tableHeight = headerHeight + rowHeight * bodyRows;
 
   const priceX = tableLeft + 372;
@@ -287,24 +317,28 @@ function drawInvoiceBox(
     );
   }
 
-  drawText(page, "Product Name", tableLeft + 150, tableTop - 16, 9, boldFont);
-  drawText(page, "Price", priceX + 18, tableTop - 16, 9, boldFont);
-  drawText(page, "QTY", qtyX + 10, tableTop - 16, 9, boldFont);
-  drawText(page, "Total", totalX + 12, tableTop - 16, 9, boldFont);
+  drawText(page, "Product Name", tableLeft + 150, tableTop - 18, 9, boldFont);
+  drawText(page, "Price", priceX + 18, tableTop - 18, 9, boldFont);
+  drawText(page, "QTY", qtyX + 10, tableTop - 18, 9, boldFont);
+  drawText(page, "Total", totalX + 12, tableTop - 18, 9, boldFont);
 
   order.items.slice(0, bodyRows).forEach((item, index) => {
     const rowTop = tableTop - headerHeight - rowHeight * index;
-    const textY = rowTop - rowHeight / 2 - 3;
+    const textY = rowTop - rowHeight + 5;
 
-    const productName = fitSingleLine(item.productName, 355, regularFont, 8);
+    const productFont = banglaFont && hasUnicode(item.productName) ? banglaFont : regularFont;
+    const productName =
+      productFont === banglaFont
+        ? fitSingleLineUnicode(item.productName, 355, productFont, 8)
+        : fitSingleLine(item.productName, 355, productFont, 8);
 
-    drawText(page, productName, tableLeft + 6, textY, 8, regularFont);
+    drawText(page, productName, tableLeft + 6, textY, 8, productFont);
     drawText(page, String(item.unitPrice.toFixed(0)), priceX + 18, textY, 8, regularFont);
     drawText(page, String(item.quantity), qtyX + 12, textY, 8, regularFont);
     drawText(page, String(item.lineTotal.toFixed(0)), totalX + 10, textY, 8, regularFont);
   });
 
-  const footerTop = tableTop - tableHeight - 24;
+  const footerTop = tableTop - tableHeight - 26;
 
   drawText(page, "Delivery Cost=", left + 10, footerTop, 9, boldFont);
   drawText(page, String(order.deliveryCharge.toFixed(0)), left + 112, footerTop, 9, regularFont);
@@ -319,6 +353,28 @@ function drawInvoiceBox(
   drawText(page, String(order.totalAmount.toFixed(0)), 487, footerTop - 20, 9, regularFont);
 
   drawText(page, "Note :", left + 14, footerTop - 44, 10, boldFont);
+
+  if (banglaNoteImage) {
+    page.drawImage(banglaNoteImage, {
+      x: left + 56,
+      y: footerTop - 50,
+      width: 390,
+      height: 26,
+    });
+  } else {
+    drawWrappedText(
+      page,
+      RETURN_NOTICE_EN,
+      left + 56,
+      footerTop - 42,
+      usableWidth - 70,
+      10,
+      7.5,
+      regularFont,
+      2
+    );
+  }
+
   drawLine(page, left, topY - boxHeight, left + usableWidth, topY - boxHeight);
 }
 
@@ -350,30 +406,59 @@ export async function GET(
     return new Response("Invoice batch not found", { status: 404 });
   }
 
-  const orders: OrderForPdf[] = batch.items.map((item) => ({
-    invoiceId: item.order.invoiceId,
-    customerName: item.order.customerName,
-    phone: item.order.phone,
-    address: item.order.address,
-    courier: item.order.courier,
-    discount: Number(item.order.discount),
-    advance: Number(item.order.advance),
-    deliveryCharge: Number(item.order.deliveryCharge),
-    totalAmount: Number(item.order.totalAmount),
-    createdAt: item.order.createdAt,
-    pageName: item.order.page?.name || "Invoice",
-    note: item.order.note || "",
-    items: item.order.items.map((orderItem) => ({
-      productName: orderItem.productName,
-      quantity: orderItem.quantity,
-      unitPrice: Number(orderItem.unitPrice),
-      lineTotal: Number(orderItem.lineTotal),
-    })),
-  }));
+const orders: OrderForPdf[] = batch.items.map((item) => ({
+  invoiceId: item.order.invoiceId || "",
+  customerName: item.order.customerName || "",
+  phone: item.order.phone || "",
+  address: item.order.address || "",
+  courier: item.order.courier || "",
+  discount: Number(item.order.discount),
+  advance: Number(item.order.advance),
+  deliveryCharge: Number(item.order.deliveryCharge),
+  totalAmount: Number(item.order.totalAmount),
+  createdAt: item.order.createdAt,
+  pageName: item.order.page?.name || "Invoice",
+  note: item.order.note || "",
+  items: item.order.items.map((orderItem) => ({
+    productName: orderItem.productName || "",
+    quantity: orderItem.quantity,
+    unitPrice: Number(orderItem.unitPrice),
+    lineTotal: Number(orderItem.lineTotal),
+  })),
+}));
 
   const pdfDoc = await PDFDocument.create();
+  pdfDoc.registerFontkit(fontkit);
+
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  let banglaFont: any | null = null;
+
+  try {
+    const fontPath = path.join(
+      process.cwd(),
+      "public",
+      "fonts",
+      "NotoSansBengali-Regular.ttf"
+    );
+    const fontBytes = fs.readFileSync(fontPath);
+    banglaFont = await pdfDoc.embedFont(fontBytes);
+  } catch {
+    banglaFont = null;
+  }
+
+  let banglaNoteImage: any | null = null;
+
+  try {
+    const noteImagePath = path.join(process.cwd(), "public", "invoice-note-bn.png");
+    if (fs.existsSync(noteImagePath)) {
+      const noteImageBytes = fs.readFileSync(noteImagePath);
+      banglaNoteImage = await pdfDoc.embedPng(noteImageBytes);
+    }
+  } catch {
+    banglaNoteImage = null;
+  }
 
   let i = 0;
 
@@ -383,7 +468,16 @@ export async function GET(
 
     if (currentMode === "full") {
       const page = pdfDoc.addPage([595.28, 841.89]);
-      drawInvoiceBox(page, current, 810, 760, regularFont, boldFont);
+      drawInvoiceBox(
+        page,
+        current,
+        810,
+        760,
+        regularFont,
+        boldFont,
+        banglaFont,
+        banglaNoteImage
+      );
       i += 1;
       continue;
     }
@@ -393,10 +487,28 @@ export async function GET(
 
     const page = pdfDoc.addPage([595.28, 841.89]);
 
-    drawInvoiceBox(page, current, 810, 380, regularFont, boldFont);
+    drawInvoiceBox(
+      page,
+      current,
+      810,
+      380,
+      regularFont,
+      boldFont,
+      banglaFont,
+      banglaNoteImage
+    );
 
     if (next && nextMode === "half") {
-      drawInvoiceBox(page, next, 395, 380, regularFont, boldFont);
+      drawInvoiceBox(
+        page,
+        next,
+        395,
+        380,
+        regularFont,
+        boldFont,
+        banglaFont,
+        banglaNoteImage
+      );
       i += 2;
     } else {
       i += 1;

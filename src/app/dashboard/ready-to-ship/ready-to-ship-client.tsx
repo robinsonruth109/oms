@@ -26,6 +26,7 @@ type BatchRow = {
   totalOrders: number;
   createdAt: string;
   createdByName: string;
+  downloadUrl?: string;
 };
 
 type Props = {
@@ -381,9 +382,22 @@ export default function ReadyToShipClient({
                         />
                       </p>
                     </div>
-                    <p className="text-sm font-medium text-slate-700">
-                      {batch.totalOrders} orders
-                    </p>
+
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-medium text-slate-700">
+                        {batch.totalOrders} orders
+                      </p>
+                      {batch.downloadUrl ? (
+                        <a
+                          href={batch.downloadUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                        >
+                          Download PDF
+                        </a>
+                      ) : null}
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
                     By {batch.createdByName} on {batch.createdAt}
@@ -427,9 +441,22 @@ export default function ReadyToShipClient({
                         />
                       </p>
                     </div>
-                    <p className="text-sm font-medium text-slate-700">
-                      {batch.totalOrders} orders
-                    </p>
+
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-medium text-slate-700">
+                        {batch.totalOrders} orders
+                      </p>
+                      {batch.downloadUrl ? (
+                        <a
+                          href={batch.downloadUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                        >
+                          Download CSV
+                        </a>
+                      ) : null}
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
                     By {batch.createdByName} on {batch.createdAt}

@@ -3,20 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-function escapeCsv(value: string | number) {
-  const stringValue = String(value ?? "");
-  if (
-    stringValue.includes(",") ||
-    stringValue.includes('"') ||
-    stringValue.includes("\n")
-  ) {
-    return `"${stringValue.replace(/"/g, '""')}"`;
-  }
-  return stringValue;
-}
-
 function keepAsText(value: string) {
-  return `="${String(value || "")}"`;
+  return `="${String(value || "").replace(/"/g, '""')}"`;
 }
 
 export async function GET(
@@ -42,36 +30,52 @@ export async function GET(
     return new Response("CSV batch not found", { status: 404 });
   }
 
-  const rows = [
-    [
-      "Merchant order id",
-      "Name",
-      "Contact No.",
-      "Customer Address",
-      "District",
-      "Price",
-      "Instruction",
-    ],
-    ...batch.items.map((batchItem) => {
-      const order = batchItem.order;
-
-      return [
-        keepAsText(order.invoiceId),
-        order.customerName,
-        keepAsText(order.phone),
-        order.address,
-        "",
-        Number(order.totalAmount).toFixed(2),
-        order.note || "",
-      ];
-    }),
+  const headers = [
+    "Invoice ID",
+    "Customer Name",
+    "Phone",
+    "Address",
+    "Courier",
+    "Total Amount",
+    "Ready To Ship Date",
   ];
 
-  const csv = rows
-    .map((row) => row.map((cell) => escapeCsv(cell)).join(","))
-    .join("\n");
+  const rows = batch.items.map((item) => {
+    const order = item.order;
 
-  return new Response(csv, {
+    return [
+      keepAsText(order.invoiceId || ""),
+      order.customerName || "",
+      keepAsText(order.phone || ""),
+      (order.address || "").replace(/\r?\n/g, " "),
+      order.courier || "",
+      String(Number(order.totalAmount || 0)),
+      order.readyToShipAt
+        ? new Date(order.readyToShipAt).toISOString().slice(0, 10)
+        : "",
+    ];
+  });
+
+  const csvContent = [
+    headers.join(","),
+    ...rows.map((row) =>
+      row
+        .map((cell) => {
+          const value = String(cell ?? "");
+          if (
+            value.includes(",") ||
+            value.includes('"') ||
+            value.includes("\n")
+          ) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        })
+        .join(",")
+    ),
+  ].join("\n");
+
+  return new Response(csvContent, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${batch.batchNo}.csv"`,

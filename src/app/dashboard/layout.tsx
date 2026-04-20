@@ -117,6 +117,11 @@ export default async function DashboardLayout({
                       Products
                     </Button>
                   </Link>
+                  <Link href="/dashboard/all-orders">
+                    <Button variant="outline" size="sm">
+                      All Orders
+                    </Button>
+                  </Link>
                   <Link href="/dashboard/orders">
                     <Button variant="outline" size="sm">
                       Orders
@@ -155,6 +160,11 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/reports">
                     <Button variant="outline" size="sm">
                       Reports
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard/product-report">
+                    <Button variant="outline" size="sm">
+                      Product Report
                     </Button>
                   </Link>
                 </>
@@ -254,6 +264,11 @@ export default async function DashboardLayout({
                     label="Orders"
                   />
                   <NavLink
+                    href="/dashboard/all-orders"
+                    icon={<Package className="h-4 w-4" />}
+                    label="All Orders"
+                  />
+                  <NavLink
                     href="/dashboard/pending-orders"
                     icon={<ClipboardList className="h-4 w-4" />}
                     label="Pending Orders"
@@ -287,6 +302,11 @@ export default async function DashboardLayout({
                     href="/dashboard/reports"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Reports"
+                  />
+                  <NavLink
+                    href="/dashboard/product-report"
+                    icon={<BarChart3 className="h-4 w-4" />}
+                    label="Product Report"
                   />
                 </>
               )}

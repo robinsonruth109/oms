@@ -1,33 +1,29 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
+import "dotenv/config";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { PrismaClient } from "../generated/prisma/client";
 
-declare global {
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
-}
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not set in .env");
-}
-
-const prismaClientSingleton = () => {
-  const pool = new Pool({
-    connectionString,
+function prismaClientSingleton() {
+  const adapter = new PrismaMariaDb({
+    host: "localhost",
+    user: "root",
+    password: "Sabbir44477&&",
+    database: "oms_db",
+    connectionLimit: 5,
   });
-
-  const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
     adapter,
     log: ["error", "warn"],
   });
-};
+}
 
-export const prisma = global.prisma ?? prismaClientSingleton();
+export const prisma =
+  globalForPrisma.prisma ?? prismaClientSingleton();
 
 if (process.env.NODE_ENV !== "production") {
-  global.prisma = prisma;
+  globalForPrisma.prisma = prisma;
 }

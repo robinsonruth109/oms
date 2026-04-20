@@ -1,6 +1,5 @@
 "use server";
 
-import { Prisma, OrderStatus } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
@@ -17,7 +16,7 @@ type SaveCallingOrderInput = {
   courier: string;
   status: "READY_TO_SHIP" | "NO_ANSWER" | "PHONE_OFF" | "STOCK_OUT" | "CANCELLED";
   note?: string;
-  pageId?: string;  
+  pageId?: string;
   singleItem?: {
     orderItemId: string;
     productId: string;
@@ -222,8 +221,8 @@ export async function saveCallingOrder(
                 productSku: product.sku,
                 productName: product.name,
                 quantity: item.quantity,
-                unitPrice: new Prisma.Decimal(unitPrice),
-                lineTotal: new Prisma.Decimal(lineTotal),
+                unitPrice,
+                lineTotal,
               },
             });
           } else {
@@ -234,8 +233,8 @@ export async function saveCallingOrder(
                 productSku: product.sku,
                 productName: product.name,
                 quantity: item.quantity,
-                unitPrice: new Prisma.Decimal(unitPrice),
-                lineTotal: new Prisma.Decimal(lineTotal),
+                unitPrice,
+                lineTotal,
               },
             });
           }
@@ -283,8 +282,8 @@ export async function saveCallingOrder(
             productSku: product.sku,
             productName: product.name,
             quantity,
-            unitPrice: new Prisma.Decimal(Number(product.sellingPrice)),
-            lineTotal: new Prisma.Decimal(updatedLineTotal),
+            unitPrice: Number(product.sellingPrice),
+            lineTotal: updatedLineTotal,
           },
         });
       }
@@ -313,15 +312,15 @@ export async function saveCallingOrder(
           customerName,
           phone,
           address,
-          discount: new Prisma.Decimal(discount),
-          deliveryCharge: new Prisma.Decimal(deliveryCharge),
-          subtotal: new Prisma.Decimal(subtotal),
-          totalAmount: new Prisma.Decimal(totalAmount),
+          discount,
+          deliveryCharge,
+          subtotal,
+          totalAmount,
           courier: courierRecord?.slug || null,
           readyToShipAt: readyToShipAt
             ? new Date(`${readyToShipAt}T00:00:00`)
             : order.readyToShipAt,
-          orderStatus: status as OrderStatus,
+          orderStatus: status,
           note: note || order.note,
           calledByUserId: session.user.id,
           calledAt: new Date(),

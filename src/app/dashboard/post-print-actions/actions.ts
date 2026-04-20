@@ -185,11 +185,15 @@ export async function restoreStockOutOrder(orderId: string): Promise<ActionState
       where: { id: orderId },
       data: {
         orderStatus: "READY_TO_SHIP",
+        invoiceDownloaded: false,
+        csvDownloaded: false,
+        readyToShipAt: new Date(),
       },
     });
 
     revalidatePath("/dashboard/stock-out");
     revalidatePath("/dashboard/ready-to-ship");
+    revalidatePath("/dashboard/post-print-actions");
 
     return {
       success: true,

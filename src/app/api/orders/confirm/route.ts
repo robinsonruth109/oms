@@ -1,23 +1,45 @@
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-function generateInvoice() {
-  return "GL" + Math.floor(10000 + Math.random() * 90000);
-}
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
 
-export async function POST(req: Request) {
-  const { orderId, courier } = await req.json();
+    const orderId = String(body.orderId || "").trim();
+    const courier = String(body.courier || "").trim();
+    const invoice = String(body.invoice || "").trim();
 
-  const invoice = generateInvoice();
+    if (!orderId) {
+      return NextResponse.json(
+        { success: false, message: "Order ID is required." },
+        { status: 400 }
+      );
+    }
 
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      orderStatus: "READY_TO_SHIP",
-      courier,
-      invoiceCode: invoice,
-      calledAt: new Date(),
-    },
-  });
+    await prisma.order.update({
+      where: {
+        id: orderId,
+      },
+      data: {
+        orderStatus: "READY_TO_SHIP",
+        courier,
+        invoiceId: invoice,
+        calledAt: new Date(),
+      },
+    });
 
-  return Response.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      message: "Order confirmed successfully.",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          error instanceof Error ? error.message : "Failed to confirm order.",
+      },
+      { status: 500 }
+    );
+  }
 }

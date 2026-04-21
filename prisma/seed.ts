@@ -1,8 +1,15 @@
+import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "@prisma/client";
 
-const adapter = new PrismaMariaDb(process.env.DATABASE_URL!);
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+const adapter = new PrismaMariaDb(databaseUrl);
 
 const prisma = new PrismaClient({
   adapter,
@@ -31,6 +38,10 @@ async function main() {
         status: true,
       },
     });
+
+    console.log("Default admin created.");
+  } else {
+    console.log("Default admin already exists.");
   }
 }
 

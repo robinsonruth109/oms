@@ -375,6 +375,21 @@ function drawInvoiceBox(
     );
   }
 
+  const courierText = safeAscii(order.courier || "");
+      if (courierText) {
+        drawWrappedText(
+          page,
+          courierText,
+          395,
+          footerTop - 50,
+          140,
+          12,
+          11,
+          boldFont,
+          2
+        );
+      }
+
   drawLine(page, left, topY - boxHeight, left + usableWidth, topY - boxHeight);
 }
 
@@ -406,26 +421,26 @@ export async function GET(
     return new Response("Invoice batch not found", { status: 404 });
   }
 
-const orders: OrderForPdf[] = batch.items.map((item) => ({
-  invoiceId: item.order.invoiceId || "",
-  customerName: item.order.customerName || "",
-  phone: item.order.phone || "",
-  address: item.order.address || "",
-  courier: item.order.courier || "",
-  discount: Number(item.order.discount),
-  advance: Number(item.order.advance),
-  deliveryCharge: Number(item.order.deliveryCharge),
-  totalAmount: Number(item.order.totalAmount),
-  createdAt: item.order.createdAt,
-  pageName: item.order.page?.name || "Invoice",
-  note: item.order.note || "",
-  items: item.order.items.map((orderItem) => ({
-    productName: orderItem.productName || "",
-    quantity: orderItem.quantity,
-    unitPrice: Number(orderItem.unitPrice),
-    lineTotal: Number(orderItem.lineTotal),
-  })),
-}));
+  const orders: OrderForPdf[] = batch.items.map((item) => ({
+    invoiceId: item.order.invoiceId || "",
+    customerName: item.order.customerName || "",
+    phone: item.order.phone || "",
+    address: item.order.address || "",
+    courier: item.order.courier || "",
+    discount: Number(item.order.discount),
+    advance: Number(item.order.advance),
+    deliveryCharge: Number(item.order.deliveryCharge),
+    totalAmount: Number(item.order.totalAmount),
+    createdAt: item.order.createdAt,
+    pageName: item.order.page?.name || "Invoice",
+    note: item.order.note || "",
+    items: item.order.items.map((orderItem) => ({
+      productName: orderItem.productName || "",
+      quantity: orderItem.quantity,
+      unitPrice: Number(orderItem.unitPrice),
+      lineTotal: Number(orderItem.lineTotal),
+    })),
+  }));
 
   const pdfDoc = await PDFDocument.create();
   pdfDoc.registerFontkit(fontkit);

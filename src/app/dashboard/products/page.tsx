@@ -25,20 +25,17 @@ export default async function ProductsPage({
             {
               sku: {
                 contains: q,
-                mode: "insensitive" as const,
               },
             },
             {
               name: {
                 contains: q,
-                mode: "insensitive" as const,
               },
             },
             {
               parent: {
                 sku: {
                   contains: q,
-                  mode: "insensitive" as const,
                 },
               },
             },
@@ -46,7 +43,6 @@ export default async function ProductsPage({
               parent: {
                 name: {
                   contains: q,
-                  mode: "insensitive" as const,
                 },
               },
             },

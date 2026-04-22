@@ -66,13 +66,14 @@ export default async function CallingPanelPage({
       where: {
         status: true,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        {
+          sku: "asc",
+        },
+      ],
       include: {
         parent: true,
       },
-      take: 1000,
     }),
     prisma.orderSource.findMany({
       where: {

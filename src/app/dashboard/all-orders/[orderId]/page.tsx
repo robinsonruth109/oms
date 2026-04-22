@@ -31,7 +31,9 @@ export default async function AllOrderViewPage({ params }: Props) {
     prisma.product.findMany({
       where: { status: true },
       include: { parent: true },
-      take: 1000,
+      orderBy: {
+        sku: "asc",
+      },
     }),
     prisma.courier.findMany({
       where: { status: true },
@@ -69,10 +71,10 @@ export default async function AllOrderViewPage({ params }: Props) {
           ? order.readyToShipAt.toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10),
         source: {
-              id: order.source?.id || "",
-              name: order.source?.name || "",
-              type: order.source?.type || "",
-            },
+          id: order.source?.id || "",
+          name: order.source?.name || "",
+          type: order.source?.type || "",
+        },
         page: order.page
           ? {
               id: order.page.id,

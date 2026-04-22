@@ -42,62 +42,68 @@ function CourierLabel({ courier }: { courier: string | null }) {
 }
 
 export default async function OrdersPage() {
-  const [pages, sources, products, couriers, orders] = await Promise.all([
-    prisma.page.findMany({
-      where: { status: true },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        prefixCode: true,
-      },
-    }),
-    prisma.orderSource.findMany({
-      where: { status: true },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-      },
-    }),
-    prisma.product.findMany({
-      where: { status: true },
-      orderBy: { createdAt: "desc" },
-      include: {
-        parent: true,
-      },
-      take: 1000,
-    }),
-    prisma.courier.findMany({
-      where: { status: true },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-      },
-    }),
-    prisma.order.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
-      include: {
-        page: true,
-        source: true,
-        items: true,
-      },
-      take: 20,
-    }),
-  ]);
+  const pages = await prisma.page.findMany({
+    where: { status: true },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      prefixCode: true,
+    },
+  });
 
-  const productOptions = products.map((product) => ({
-    id: product.id,
-    sku: product.sku,
-    name: product.name,
-    sellingPrice: Number(product.sellingPrice),
-    parentSku: product.parent.sku,
-  }));
+  const sources = await prisma.orderSource.findMany({
+    where: { status: true },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+    },
+  });
+
+  const couriers = await prisma.courier.findMany({
+    where: { status: true },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  });
+
+  const orders = await prisma.order.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+    include: {
+      page: true,
+      source: true,
+      items: true,
+    },
+    take: 20,
+  });
+
+  const products = await prisma.product.findMany({
+    where: { status: true },
+    orderBy: [
+      { sku: "asc" },
+      { createdAt: "desc" },
+    ],
+    include: {
+      parent: true,
+    },
+  });
+
+  const productOptions = products
+    .filter((product) => product.parent)
+    .map((product) => ({
+      id: product.id,
+      sku: product.sku,
+      name: product.name,
+      sellingPrice: Number(product.sellingPrice),
+      parentSku: product.parent.sku,
+    }));
 
   return (
     <div className="space-y-6">

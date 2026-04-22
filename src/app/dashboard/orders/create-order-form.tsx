@@ -52,15 +52,88 @@ type CreateOrderFormProps = {
   couriers: CourierOption[];
 };
 
+function makeRowId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `row-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function createEmptyRow(): ProductRow {
   return {
-    rowId: crypto.randomUUID(),
+    rowId: makeRowId(),
     search: "",
     productId: "",
     productLabel: "",
     unitPrice: 0,
     quantity: 1,
   };
+}
+
+function normalizeText(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeLoose(value: string) {
+  return normalizeText(value).replace(/[^a-z0-9]/g, "");
+}
+
+function getProductSearchText(row: ProductRow) {
+  return row.search.trim();
+}
+
+function filterProducts(products: ProductOption[], rawQuery: string) {
+  const q = normalizeText(rawQuery);
+  const qLoose = normalizeLoose(rawQuery);
+
+  if (!q && !qLoose) {
+    return products.slice(0, 20);
+  }
+
+  const startsWithMatches: ProductOption[] = [];
+  const containsMatches: ProductOption[] = [];
+
+  for (const product of products) {
+    const sku = normalizeText(product.sku);
+    const name = normalizeText(product.name);
+    const parentSku = normalizeText(product.parentSku);
+
+    const skuLoose = normalizeLoose(product.sku);
+    const nameLoose = normalizeLoose(product.name);
+    const parentLoose = normalizeLoose(product.parentSku);
+
+    const starts =
+      (q &&
+        (sku.startsWith(q) ||
+          name.startsWith(q) ||
+          parentSku.startsWith(q))) ||
+      (qLoose &&
+        (skuLoose.startsWith(qLoose) ||
+          nameLoose.startsWith(qLoose) ||
+          parentLoose.startsWith(qLoose)));
+
+    const contains =
+      (q &&
+        (sku.includes(q) ||
+          name.includes(q) ||
+          parentSku.includes(q))) ||
+      (qLoose &&
+        (skuLoose.includes(qLoose) ||
+          nameLoose.includes(qLoose) ||
+          parentLoose.includes(qLoose)));
+
+    if (starts) {
+      startsWithMatches.push(product);
+    } else if (contains) {
+      containsMatches.push(product);
+    }
+  }
+
+  return [...startsWithMatches, ...containsMatches].slice(0, 20);
 }
 
 export default function CreateOrderForm({
@@ -145,21 +218,7 @@ export default function CreateOrderForm({
     const map: Record<string, ProductOption[]> = {};
 
     for (const row of rows) {
-      const q = (row.productLabel || row.search).trim().toLowerCase();
-
-      if (!q) {
-        map[row.rowId] = products.slice(0, 10);
-      } else {
-        map[row.rowId] = products
-          .filter((product) => {
-            return (
-              product.sku.toLowerCase().includes(q) ||
-              product.name.toLowerCase().includes(q) ||
-              product.parentSku.toLowerCase().includes(q)
-            );
-          })
-          .slice(0, 10);
-      }
+      map[row.rowId] = filterProducts(products, getProductSearchText(row));
     }
 
     return map;

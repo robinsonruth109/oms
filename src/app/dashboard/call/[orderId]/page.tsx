@@ -28,17 +28,33 @@ export default async function CallingOrderViewPage({ params }: Props) {
 
   const [products, couriers, pages] = await Promise.all([
     prisma.product.findMany({
-      where: { status: true },
-      include: { parent: true },
-      take: 1000,
+      where: {
+        status: true,
+      },
+      include: {
+        parent: true,
+      },
+      orderBy: [
+        {
+          sku: "asc",
+        },
+      ],
     }),
     prisma.courier.findMany({
-      where: { status: true },
-      orderBy: { name: "asc" },
+      where: {
+        status: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
     }),
     prisma.page.findMany({
-      where: { status: true },
-      orderBy: { name: "asc" },
+      where: {
+        status: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
       select: {
         id: true,
         name: true,

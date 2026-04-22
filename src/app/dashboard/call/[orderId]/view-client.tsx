@@ -84,6 +84,76 @@ function createEmptyItem(): EditableItem {
   };
 }
 
+function normalizeText(value: string) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeLooseText(value: string) {
+  return normalizeText(value).replace(/[^a-z0-9\u0980-\u09ff]+/g, "");
+}
+
+function getProductSearchText(product: ProductOption) {
+  return [
+    product.sku,
+    product.name,
+    product.parentSku,
+    normalizeLooseText(product.sku),
+    normalizeLooseText(product.name),
+    normalizeLooseText(product.parentSku),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function findMatchedProduct(
+  item: OrderItem,
+  products: ProductOption[]
+): ProductOption | null {
+  if (item.productId) {
+    const byId = products.find((product) => product.id === item.productId);
+    if (byId) return byId;
+  }
+
+  const itemSku = normalizeText(item.productSku);
+  const itemName = normalizeText(item.productName);
+  const itemSkuLoose = normalizeLooseText(item.productSku);
+  const itemNameLoose = normalizeLooseText(item.productName);
+
+  const exactSku = products.find(
+    (product) => normalizeText(product.sku) === itemSku
+  );
+  if (exactSku) return exactSku;
+
+  const exactName = products.find(
+    (product) => normalizeText(product.name) === itemName
+  );
+  if (exactName) return exactName;
+
+  const exactLooseSku = products.find(
+    (product) => normalizeLooseText(product.sku) === itemSkuLoose
+  );
+  if (exactLooseSku) return exactLooseSku;
+
+  const exactLooseName = products.find(
+    (product) => normalizeLooseText(product.name) === itemNameLoose
+  );
+  if (exactLooseName) return exactLooseName;
+
+  const partial = products.find((product) => {
+    const searchText = getProductSearchText(product);
+
+    return (
+      (!!itemSku && searchText.includes(itemSku)) ||
+      (!!itemName && searchText.includes(itemName)) ||
+      (!!itemSkuLoose && searchText.includes(itemSkuLoose)) ||
+      (!!itemNameLoose && searchText.includes(itemNameLoose))
+    );
+  });
+
+  return partial || null;
+}
+
 export default function CallingOrderView({
   order,
   products,
@@ -108,12 +178,18 @@ export default function CallingOrderView({
   >("READY_TO_SHIP");
   const [note, setNote] = useState(order.note || "");
   const [items, setItems] = useState<EditableItem[]>(
-    order.items.map((item) => ({
-      orderItemId: item.id,
-      productId: item.productId || "",
-      productLabel: `${item.productSku} - ${item.productName}`,
-      quantity: item.quantity,
-    }))
+    order.items.map((item) => {
+      const matched = findMatchedProduct(item, products);
+
+      return {
+        orderItemId: item.id,
+        productId: matched?.id || item.productId || "",
+        productLabel: matched
+          ? `${matched.sku} - ${matched.name}`
+          : `${item.productSku} - ${item.productName}`,
+        quantity: item.quantity,
+      };
+    })
   );
   const [message, setMessage] = useState<{
     success: boolean;
@@ -148,26 +224,66 @@ export default function CallingOrderView({
   }
 
   function getFilteredProducts(label: string) {
-    const q = label.trim().toLowerCase();
+    const q = normalizeText(label);
+    const qLoose = normalizeLooseText(label);
 
-    if (!q) {
-      return products.slice(0, 10);
+    if (!q && !qLoose) {
+      return products.slice(0, 50);
     }
 
-    return products
-      .filter((product) => {
-        return (
-          product.sku.toLowerCase().includes(q) ||
-          product.name.toLowerCase().includes(q) ||
-          product.parentSku.toLowerCase().includes(q)
-        );
-      })
-      .slice(0, 10);
+    const startsWithMatches: ProductOption[] = [];
+    const containsMatches: ProductOption[] = [];
+
+    for (const product of products) {
+      const sku = normalizeText(product.sku);
+      const name = normalizeText(product.name);
+      const parentSku = normalizeText(product.parentSku);
+
+      const skuLoose = normalizeLooseText(product.sku);
+      const nameLoose = normalizeLooseText(product.name);
+      const parentSkuLoose = normalizeLooseText(product.parentSku);
+
+      const searchText = `${sku} ${name} ${parentSku}`;
+      const searchLooseText = `${skuLoose} ${nameLoose} ${parentSkuLoose}`;
+
+      const isStartsWith =
+        (!!q &&
+          (sku.startsWith(q) ||
+            name.startsWith(q) ||
+            parentSku.startsWith(q))) ||
+        (!!qLoose &&
+          (skuLoose.startsWith(qLoose) ||
+            nameLoose.startsWith(qLoose) ||
+            parentSkuLoose.startsWith(qLoose)));
+
+      const isContains =
+        (!!q &&
+          (searchText.includes(q) ||
+            sku.includes(q) ||
+            name.includes(q) ||
+            parentSku.includes(q))) ||
+        (!!qLoose &&
+          (searchLooseText.includes(qLoose) ||
+            skuLoose.includes(qLoose) ||
+            nameLoose.includes(qLoose) ||
+            parentSkuLoose.includes(qLoose)));
+
+      if (isStartsWith) {
+        startsWithMatches.push(product);
+      } else if (isContains) {
+        containsMatches.push(product);
+      }
+    }
+
+    return [...startsWithMatches, ...containsMatches].slice(0, 50);
   }
 
   const pricing = useMemo(() => {
-    const lines = items.map((item) => {
-      const product = products.find((p) => p.id === item.productId);
+    const lines = items.map((item, index) => {
+      const product =
+        products.find((p) => p.id === item.productId) ||
+        findMatchedProduct(order.items[index], products);
+
       const unitPrice = product?.price || 0;
       const lineTotal = unitPrice * item.quantity;
 
@@ -188,7 +304,7 @@ export default function CallingOrderView({
       subtotal,
       finalTotal,
     };
-  }, [items, products, deliveryCharge, discount, order.advance]);
+  }, [items, products, deliveryCharge, discount, order.advance, order.items]);
 
   function handleSave() {
     setMessage(null);
@@ -363,33 +479,39 @@ export default function CallingOrderView({
 
                     {!item.productId && (
                       <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border bg-white">
-                        {filteredProducts.map((product) => (
-                          <button
-                            key={product.id}
-                            type="button"
-                            onClick={() => selectProduct(index, product)}
-                            className="flex w-full flex-col items-start border-b px-4 py-3 text-left last:border-b-0 hover:bg-slate-50"
-                          >
-                            <span className="text-sm font-semibold text-slate-900">
-                              {product.sku}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {product.name}
-                            </span>
-                            <span className="text-xs text-slate-400">
-                              Parent: {product.parentSku} | Sell: ৳{" "}
-                              {product.price.toFixed(2)}
-                            </span>
-                          </button>
-                        ))}
-
-                        {!filteredProducts.length && (
+                        {filteredProducts.length > 0 ? (
+                          filteredProducts.map((product) => (
+                            <button
+                              key={product.id}
+                              type="button"
+                              onClick={() => selectProduct(index, product)}
+                              className="flex w-full flex-col items-start border-b px-4 py-3 text-left last:border-b-0 hover:bg-slate-50"
+                            >
+                              <span className="text-sm font-semibold text-slate-900">
+                                {product.sku}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {product.name}
+                              </span>
+                              <span className="text-xs text-slate-400">
+                                Parent: {product.parentSku} | Sell: ৳{" "}
+                                {product.price.toFixed(2)}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
                           <div className="px-4 py-3 text-sm text-slate-500">
                             No product found.
                           </div>
                         )}
                       </div>
                     )}
+
+                    {item.productId ? (
+                      <p className="mt-2 text-xs text-emerald-600">
+                        Selected: {item.productLabel}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="xl:col-span-2">

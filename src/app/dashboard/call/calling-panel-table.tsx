@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { directCancelCallingOrder, saveCallingOrder } from "./actions";
@@ -104,8 +104,83 @@ function formatMoney(value: number) {
   return `৳ ${value.toFixed(2)}`;
 }
 
-function getDefaultState(order: CallingOrder): EditableRowState {
+function normalizeText(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizePhone(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeLooseText(value: string) {
+  return normalizeText(value).replace(/[^a-z0-9\u0980-\u09ff]+/g, "");
+}
+
+function findMatchedProduct(
+  order: CallingOrder,
+  products: ProductOption[]
+): ProductOption | null {
   const firstItem = order.items[0];
+  if (!firstItem) return null;
+
+  if (firstItem.productId) {
+    const byId = products.find((product) => product.id === firstItem.productId);
+    if (byId) return byId;
+  }
+
+  const itemSku = normalizeText(firstItem.productSku);
+  const itemName = normalizeText(firstItem.productName);
+  const itemSkuLoose = normalizeLooseText(firstItem.productSku);
+  const itemNameLoose = normalizeLooseText(firstItem.productName);
+
+  const exactSku = products.find(
+    (product) => normalizeText(product.sku) === itemSku
+  );
+  if (exactSku) return exactSku;
+
+  const exactName = products.find(
+    (product) => normalizeText(product.name) === itemName
+  );
+  if (exactName) return exactName;
+
+  const looseSku = products.find(
+    (product) => normalizeLooseText(product.sku) === itemSkuLoose
+  );
+  if (looseSku) return looseSku;
+
+  const looseName = products.find(
+    (product) => normalizeLooseText(product.name) === itemNameLoose
+  );
+  if (looseName) return looseName;
+
+  const partial = products.find((product) => {
+    const sku = normalizeText(product.sku);
+    const name = normalizeText(product.name);
+    const skuLoose = normalizeLooseText(product.sku);
+    const nameLoose = normalizeLooseText(product.name);
+
+    return (
+      (!!itemSku && (sku.includes(itemSku) || itemSku.includes(sku))) ||
+      (!!itemName && (name.includes(itemName) || itemName.includes(name))) ||
+      (!!itemSkuLoose &&
+        (skuLoose.includes(itemSkuLoose) || itemSkuLoose.includes(skuLoose))) ||
+      (!!itemNameLoose &&
+        (nameLoose.includes(itemNameLoose) || itemNameLoose.includes(nameLoose)))
+    );
+  });
+
+  return partial || null;
+}
+
+function getDefaultState(
+  order: CallingOrder,
+  products: ProductOption[]
+): EditableRowState {
+  const firstItem = order.items[0];
+  const matchedProduct = findMatchedProduct(order, products);
 
   return {
     customerName: order.customerName,
@@ -121,18 +196,23 @@ function getDefaultState(order: CallingOrder): EditableRowState {
         : "READY_TO_SHIP",
     note: order.note || "",
     productSearch: "",
-    selectedProductId: firstItem?.productId || "",
-    selectedProductLabel: firstItem
-      ? `${firstItem.productSku} - ${firstItem.productName}`
-      : "",
+    selectedProductId: matchedProduct?.id || "",
+    selectedProductLabel: matchedProduct
+      ? `${matchedProduct.sku} - ${matchedProduct.name}`
+      : firstItem
+        ? `${firstItem.productSku} - ${firstItem.productName}`
+        : "",
     quantity: firstItem?.quantity || 1,
     pageId: order.pageId || "",
   };
 }
 
-function buildInitialMap(orders: CallingOrder[]) {
+function buildInitialMap(
+  orders: CallingOrder[],
+  products: ProductOption[]
+) {
   return orders.reduce<Record<string, EditableRowState>>((acc, order) => {
-    acc[order.id] = getDefaultState(order);
+    acc[order.id] = getDefaultState(order, products);
     return acc;
   }, {});
 }
@@ -167,40 +247,95 @@ export default function CallingPanelTable({
   pages: PageOption[];
 }) {
   const [rowMap, setRowMap] = useState<Record<string, EditableRowState>>(
-    buildInitialMap(orders)
+    buildInitialMap(orders, products)
   );
-  const [messageMap, setMessageMap] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [messageMap, setMessageMap] = useState<
+    Record<string, { success: boolean; message: string }>
+  >({});
   const [pendingRowId, setPendingRowId] = useState<string | null>(null);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  useEffect(() => {
+    setRowMap(buildInitialMap(orders, products));
+  }, [orders, products]);
+
+  function getRow(order: CallingOrder) {
+    return rowMap[order.id] || getDefaultState(order, products);
+  }
+
   function updateRow(orderId: string, patch: Partial<EditableRowState>) {
+    const order = orders.find((item) => item.id === orderId);
+    if (!order) return;
+
     setRowMap((prev) => ({
       ...prev,
       [orderId]: {
-        ...prev[orderId],
+        ...(prev[orderId] || getDefaultState(order, products)),
         ...patch,
       },
     }));
   }
 
-  function getFilteredProducts(orderId: string) {
-    const row = rowMap[orderId];
-    const q = (row.selectedProductLabel || row.productSearch || "").trim().toLowerCase();
+  function getFilteredProducts(order: CallingOrder) {
+    const row = getRow(order);
+    const raw =
+      row.productSearch !== "" ? row.productSearch : row.selectedProductLabel;
+    const q = normalizeText(raw);
+    const qLoose = normalizeLooseText(raw);
 
-    if (!q) {
-      return products.slice(0, 8);
+    if (!q && !qLoose) {
+      return products;
     }
 
-    return products
-      .filter((product) => {
-        return (
-          product.sku.toLowerCase().includes(q) ||
-          product.name.toLowerCase().includes(q) ||
-          product.parentSku.toLowerCase().includes(q)
-        );
-      })
-      .slice(0, 8);
+    const startsWithMatches: ProductOption[] = [];
+    const containsMatches: ProductOption[] = [];
+
+    for (const product of products) {
+      const sku = normalizeText(product.sku);
+      const name = normalizeText(product.name);
+      const parentSku = normalizeText(product.parentSku);
+      const combined = normalizeText(
+        `${product.sku} ${product.name} ${product.parentSku}`
+      );
+
+      const skuLoose = normalizeLooseText(product.sku);
+      const nameLoose = normalizeLooseText(product.name);
+      const parentSkuLoose = normalizeLooseText(product.parentSku);
+      const combinedLoose = normalizeLooseText(
+        `${product.sku} ${product.name} ${product.parentSku}`
+      );
+
+      const isStartsWith =
+        (!!q &&
+          (sku.startsWith(q) ||
+            name.startsWith(q) ||
+            parentSku.startsWith(q))) ||
+        (!!qLoose &&
+          (skuLoose.startsWith(qLoose) ||
+            nameLoose.startsWith(qLoose) ||
+            parentSkuLoose.startsWith(qLoose)));
+
+      const isContains =
+        (!!q &&
+          (sku.includes(q) ||
+            name.includes(q) ||
+            parentSku.includes(q) ||
+            combined.includes(q))) ||
+        (!!qLoose &&
+          (skuLoose.includes(qLoose) ||
+            nameLoose.includes(qLoose) ||
+            parentSkuLoose.includes(qLoose) ||
+            combinedLoose.includes(qLoose)));
+
+      if (isStartsWith) {
+        startsWithMatches.push(product);
+      } else if (isContains) {
+        containsMatches.push(product);
+      }
+    }
+
+    return [...startsWithMatches, ...containsMatches];
   }
 
   function selectProduct(orderId: string, product: ProductOption) {
@@ -227,7 +362,7 @@ export default function CallingPanelTable({
   }
 
   function handleSave(order: CallingOrder) {
-    const row = rowMap[order.id];
+    const row = getRow(order);
     const isSingleItem = order.items.length === 1;
 
     clearMessage(order.id);
@@ -280,6 +415,39 @@ export default function CallingPanelTable({
     };
   }, [orders]);
 
+  const duplicateKeyMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+
+    for (const order of orders) {
+      const row = rowMap[order.id] || getDefaultState(order, products);
+      const phone = normalizePhone(row.phone || order.phone || "");
+
+      let productKey = "";
+
+      if (order.items.length === 1) {
+        productKey = row.selectedProductId
+          ? `id:${row.selectedProductId}`
+          : normalizeText(
+              row.selectedProductLabel ||
+                `${order.items[0]?.productSku || ""} ${order.items[0]?.productName || ""}`
+            );
+      } else {
+        productKey = normalizeText(
+          order.items
+            .map((item) => `${item.productSku} ${item.productName}`)
+            .join(" | ")
+        );
+      }
+
+      const key = `${phone}__${productKey}`;
+
+      if (!phone || !productKey) continue;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+
+    return counts;
+  }, [orders, rowMap, products]);
+
   return (
     <div className="rounded-3xl border bg-white shadow-sm">
       <div className="border-b px-5 py-4 sm:px-6">
@@ -323,10 +491,12 @@ export default function CallingPanelTable({
 
       <div className="space-y-4 p-4">
         {orders.map((order) => {
-          const row = rowMap[order.id];
+          const row = getRow(order);
           const isSingleItem = order.items.length === 1;
-          const filteredProducts = getFilteredProducts(order.id);
-          const selectedProduct = products.find((product) => product.id === row.selectedProductId);
+          const filteredProducts = getFilteredProducts(order);
+          const selectedProduct = products.find(
+            (product) => product.id === row.selectedProductId
+          );
           const currentUnitPrice = selectedProduct
             ? selectedProduct.sellingPrice
             : order.items[0]?.unitPrice || 0;
@@ -339,8 +509,33 @@ export default function CallingPanelTable({
           );
           const rowMessage = messageMap[order.id];
 
+          const duplicatePhone = normalizePhone(row.phone || order.phone || "");
+          const duplicateProductKey = isSingleItem
+            ? row.selectedProductId
+              ? `id:${row.selectedProductId}`
+              : normalizeText(
+                  row.selectedProductLabel ||
+                    `${order.items[0]?.productSku || ""} ${order.items[0]?.productName || ""}`
+                )
+            : normalizeText(
+                order.items
+                  .map((item) => `${item.productSku} ${item.productName}`)
+                  .join(" | ")
+              );
+
+          const duplicateKey = `${duplicatePhone}__${duplicateProductKey}`;
+          const hasDuplicateMemo =
+            !!duplicatePhone &&
+            !!duplicateProductKey &&
+            (duplicateKeyMap[duplicateKey] || 0) > 1;
+
           return (
-            <div key={order.id} className="rounded-2xl border bg-slate-50 p-4">
+            <div
+              key={order.id}
+              className={`rounded-2xl border p-4 ${
+                hasDuplicateMemo ? "border-red-300 bg-red-50" : "bg-slate-50"
+              }`}
+            >
               <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -350,7 +545,9 @@ export default function CallingPanelTable({
                     <StatusBadge status={order.orderStatus} />
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    Source: {order.source.name} · Platform: {order.integration?.platform || "N/A"} · External ID: {order.externalOrderId || "N/A"}
+                    Source: {order.source.name} · Platform:{" "}
+                    {order.integration?.platform || "N/A"} · External ID:{" "}
+                    {order.externalOrderId || "N/A"}
                   </p>
                 </div>
 
@@ -414,7 +611,11 @@ export default function CallingPanelTable({
                         <Search className="h-4 w-4 text-slate-400" />
                         <input
                           type="text"
-                          value={row.selectedProductLabel || row.productSearch}
+                          value={
+                            row.productSearch !== ""
+                              ? row.productSearch
+                              : row.selectedProductLabel
+                          }
                           onChange={(e) =>
                             updateRow(order.id, {
                               productSearch: e.target.value,
@@ -443,7 +644,8 @@ export default function CallingPanelTable({
                                 {product.name}
                               </span>
                               <span className="text-xs text-slate-400">
-                                Parent: {product.parentSku} | Sell: ৳ {product.sellingPrice.toFixed(2)}
+                                Parent: {product.parentSku} | Sell: ৳{" "}
+                                {product.sellingPrice.toFixed(2)}
                               </span>
                             </button>
                           ))}
@@ -455,10 +657,18 @@ export default function CallingPanelTable({
                           )}
                         </div>
                       )}
+
+                      {row.selectedProductId ? (
+                        <p className="text-xs text-emerald-600">
+                          Selected: {row.selectedProductLabel}
+                        </p>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="rounded-xl border bg-white p-3 text-sm text-slate-600">
-                      <p className="font-medium text-slate-900">Multiple products found.</p>
+                      <p className="font-medium text-slate-900">
+                        Multiple products found.
+                      </p>
                       <div className="mt-2 space-y-1">
                         {order.items.map((item) => (
                           <p key={item.id}>
@@ -615,6 +825,12 @@ export default function CallingPanelTable({
                   />
                 </div>
               </div>
+
+              {hasDuplicateMemo ? (
+                <div className="mt-4 rounded-2xl bg-red-100 px-4 py-3 text-sm font-medium text-red-700">
+                  Duplicate detected: same phone and same product found in another row.
+                </div>
+              ) : null}
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-slate-500">

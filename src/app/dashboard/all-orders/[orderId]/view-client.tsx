@@ -90,6 +90,86 @@ function createEmptyItem(): EditableItem {
   };
 }
 
+function normalizeText(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeLooseText(value: string) {
+  return normalizeText(value).replace(/[^a-z0-9\u0980-\u09ff]+/g, "");
+}
+
+function findMatchedProduct(
+  item: OrderItem,
+  products: ProductOption[]
+): ProductOption | null {
+  if (item.productId) {
+    const byId = products.find((product) => product.id === item.productId);
+    if (byId) return byId;
+  }
+
+  const itemSku = normalizeText(item.productSku);
+  const itemName = normalizeText(item.productName);
+  const itemSkuLoose = normalizeLooseText(item.productSku);
+  const itemNameLoose = normalizeLooseText(item.productName);
+
+  const exactSku = products.find(
+    (product) => normalizeText(product.sku) === itemSku
+  );
+  if (exactSku) return exactSku;
+
+  const exactName = products.find(
+    (product) => normalizeText(product.name) === itemName
+  );
+  if (exactName) return exactName;
+
+  const exactLooseSku = products.find(
+    (product) => normalizeLooseText(product.sku) === itemSkuLoose
+  );
+  if (exactLooseSku) return exactLooseSku;
+
+  const exactLooseName = products.find(
+    (product) => normalizeLooseText(product.name) === itemNameLoose
+  );
+  if (exactLooseName) return exactLooseName;
+
+  const partialMatch = products.find((product) => {
+    const sku = normalizeText(product.sku);
+    const name = normalizeText(product.name);
+    const parentSku = normalizeText(product.parentSku);
+    const skuLoose = normalizeLooseText(product.sku);
+    const nameLoose = normalizeLooseText(product.name);
+    const parentSkuLoose = normalizeLooseText(product.parentSku);
+
+    return (
+      (!!itemSku &&
+        (sku.includes(itemSku) ||
+          itemSku.includes(sku) ||
+          name.includes(itemSku) ||
+          parentSku.includes(itemSku))) ||
+      (!!itemName &&
+        (name.includes(itemName) ||
+          itemName.includes(name) ||
+          sku.includes(itemName) ||
+          parentSku.includes(itemName))) ||
+      (!!itemSkuLoose &&
+        (skuLoose.includes(itemSkuLoose) ||
+          itemSkuLoose.includes(skuLoose) ||
+          nameLoose.includes(itemSkuLoose) ||
+          parentSkuLoose.includes(itemSkuLoose))) ||
+      (!!itemNameLoose &&
+        (nameLoose.includes(itemNameLoose) ||
+          itemNameLoose.includes(nameLoose) ||
+          skuLoose.includes(itemNameLoose) ||
+          parentSkuLoose.includes(itemNameLoose)))
+    );
+  });
+
+  return partialMatch || null;
+}
+
 export default function AllOrderView({
   order,
   products,
@@ -123,12 +203,18 @@ export default function AllOrderView({
   const [note, setNote] = useState(order.note || "");
   const [items, setItems] = useState<EditableItem[]>(
     order.items.length
-      ? order.items.map((item) => ({
-          orderItemId: item.id,
-          productId: item.productId || "",
-          productLabel: `${item.productSku} - ${item.productName}`,
-          quantity: item.quantity,
-        }))
+      ? order.items.map((item) => {
+          const matched = findMatchedProduct(item, products);
+
+          return {
+            orderItemId: item.id,
+            productId: matched?.id || item.productId || "",
+            productLabel: matched
+              ? `${matched.sku} - ${matched.name}`
+              : `${item.productSku} - ${item.productName}`,
+            quantity: item.quantity,
+          };
+        })
       : [createEmptyItem()]
   );
   const [message, setMessage] = useState<{
@@ -162,24 +248,65 @@ export default function AllOrderView({
   }
 
   function getFilteredProducts(label: string) {
-    const q = label.trim().toLowerCase();
+    const q = normalizeText(label);
+    const qLoose = normalizeLooseText(label);
 
-    if (!q) return products.slice(0, 10);
+    if (!q && !qLoose) return products.slice(0, 20);
 
-    return products
-      .filter((product) => {
-        return (
-          product.sku.toLowerCase().includes(q) ||
-          product.name.toLowerCase().includes(q) ||
-          product.parentSku.toLowerCase().includes(q)
-        );
-      })
-      .slice(0, 10);
+    const startsWith: ProductOption[] = [];
+    const contains: ProductOption[] = [];
+
+    for (const product of products) {
+      const sku = normalizeText(product.sku);
+      const name = normalizeText(product.name);
+      const parent = normalizeText(product.parentSku);
+
+      const skuLoose = normalizeLooseText(product.sku);
+      const nameLoose = normalizeLooseText(product.name);
+      const parentLoose = normalizeLooseText(product.parentSku);
+
+      const haystack = `${sku} ${name} ${parent}`;
+      const haystackLoose = `${skuLoose} ${nameLoose} ${parentLoose}`;
+
+      const matchStartsWith =
+        (!!q &&
+          (sku.startsWith(q) ||
+            name.startsWith(q) ||
+            parent.startsWith(q))) ||
+        (!!qLoose &&
+          (skuLoose.startsWith(qLoose) ||
+            nameLoose.startsWith(qLoose) ||
+            parentLoose.startsWith(qLoose)));
+
+      const matchContains =
+        (!!q &&
+          (sku.includes(q) ||
+            name.includes(q) ||
+            parent.includes(q) ||
+            haystack.includes(q))) ||
+        (!!qLoose &&
+          (skuLoose.includes(qLoose) ||
+            nameLoose.includes(qLoose) ||
+            parentLoose.includes(qLoose) ||
+            haystackLoose.includes(qLoose)));
+
+      if (matchStartsWith) {
+        startsWith.push(product);
+      } else if (matchContains) {
+        contains.push(product);
+      }
+    }
+
+    return [...startsWith, ...contains].slice(0, 20);
   }
 
   const pricing = useMemo(() => {
-    const lines = items.map((item) => {
-      const product = products.find((p) => p.id === item.productId);
+    const lines = items.map((item, index) => {
+      const matchedFromState = products.find((p) => p.id === item.productId);
+      const matchedFromOriginal =
+        order.items[index] ? findMatchedProduct(order.items[index], products) : null;
+      const product = matchedFromState || matchedFromOriginal;
+
       const unitPrice = product?.price || 0;
       const lineTotal = unitPrice * item.quantity;
 
@@ -200,7 +327,7 @@ export default function AllOrderView({
       subtotal,
       finalTotal,
     };
-  }, [items, products, deliveryCharge, discount, advance]);
+  }, [items, products, deliveryCharge, discount, advance, order.items]);
 
   function handleSave() {
     setMessage(null);
@@ -421,6 +548,12 @@ export default function AllOrderView({
                         )}
                       </div>
                     )}
+
+                    {item.productId ? (
+                      <p className="mt-2 text-xs text-emerald-600">
+                        Selected: {item.productLabel}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="xl:col-span-2">

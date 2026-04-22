@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import puppeteer from "puppeteer-core";
 import fs from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
@@ -28,8 +27,8 @@ type OrderForPdf = {
   note: string;
 };
 
-const RETURN_NOTICE_EN =
-  "Note: If product is returned, it must be returned in intact condition. Packet must not be opened, as this is not a dress.";
+const RETURN_NOTICE_BN =
+  "বিঃ দ্রঃ কোন কারনে প্রোডাক্ট ফেরত দিতে ইন্ট্যাক অবস্থায় ব্যাক দিতে হবে, প্যাকেট খোলা যাবে না, যেহেতু এটা ড্রেস না।";
 
 function formatDate(date: Date) {
   return date.toLocaleDateString("en-GB", {
@@ -39,358 +38,467 @@ function formatDate(date: Date) {
   });
 }
 
-function safeAscii(text: string) {
-  return String(text || "").replace(/[^\x20-\x7E]/g, " ");
+function escapeHtml(value: string) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
-function hasUnicode(text: string) {
-  return /[^\x00-\x7F]/.test(String(text || ""));
+function safeText(value: string) {
+  return String(value || "").trim();
 }
 
-function drawText(
-  page: any,
-  text: string,
-  x: number,
-  y: number,
-  size: number,
-  font: any,
-  color = rgb(0, 0, 0)
-) {
-  page.drawText(String(text || ""), {
-    x,
-    y,
-    size,
-    font,
-    color,
-  });
-}
-
-function drawLine(page: any, x1: number, y1: number, x2: number, y2: number) {
-  page.drawLine({
-    start: { x: x1, y: y1 },
-    end: { x: x2, y: y2 },
-    thickness: 1,
-    color: rgb(0, 0, 0),
-  });
-}
-
-function drawRect(page: any, x: number, y: number, width: number, height: number) {
-  page.drawRectangle({
-    x,
-    y,
-    width,
-    height,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1,
-  });
-}
-
-function barcodeBits(input: string) {
-  const chars = `*${input.toUpperCase()}*`;
-  const patterns: Record<string, string> = {
-    "0": "101001101101",
-    "1": "110100101011",
-    "2": "101100101011",
-    "3": "110110010101",
-    "4": "101001101011",
-    "5": "110100110101",
-    "6": "101100110101",
-    "7": "101001011011",
-    "8": "110100101101",
-    "9": "101100101101",
-    A: "110101001011",
-    B: "101101001011",
-    C: "110110100101",
-    D: "101011001011",
-    E: "110101100101",
-    F: "101101100101",
-    G: "101010011011",
-    H: "110101001101",
-    I: "101101001101",
-    J: "101011001101",
-    K: "110101010011",
-    L: "101101010011",
-    M: "110110101001",
-    N: "101011010011",
-    O: "110101101001",
-    P: "101101101001",
-    Q: "101010110011",
-    R: "110101011001",
-    S: "101101011001",
-    T: "101011011001",
-    U: "110010101011",
-    V: "100110101011",
-    W: "110011010101",
-    X: "100101101011",
-    Y: "110010110101",
-    Z: "100110110101",
-    "-": "100101011011",
-    ".": "110010101101",
-    " ": "100110101101",
-    "$": "100100100101",
-    "/": "100100101001",
-    "+": "100101001001",
-    "%": "101001001001",
-    "*": "100101101101",
-  };
-
-  const chunks: string[] = [];
-
-  for (const ch of chars) {
-    if (patterns[ch]) {
-      chunks.push(patterns[ch]);
-      chunks.push("0");
-    }
+function splitItemsForHalfPage(items: OrderForPdf["items"], limit = 5) {
+  const rows = [...items];
+  while (rows.length < limit) {
+    rows.push({
+      productName: "",
+      quantity: 0,
+      unitPrice: 0,
+      lineTotal: 0,
+    });
   }
-
-  return chunks.join("");
+  return rows.slice(0, limit);
 }
 
-function drawBarcode(
-  page: any,
-  value: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-) {
-  const printableValue = safeAscii(value).toUpperCase();
-  const bits = barcodeBits(printableValue);
-  if (!bits) return;
-
-  const barWidth = width / bits.length;
-
-  for (let i = 0; i < bits.length; i += 1) {
-    if (bits[i] === "1") {
-      page.drawRectangle({
-        x: x + i * barWidth,
-        y,
-        width: Math.max(barWidth, 0.7),
-        height,
-        color: rgb(0, 0, 0),
-      });
-    }
+function splitItemsForFullPage(items: OrderForPdf["items"], limit = 12) {
+  const rows = [...items];
+  while (rows.length < limit) {
+    rows.push({
+      productName: "",
+      quantity: 0,
+      unitPrice: 0,
+      lineTotal: 0,
+    });
   }
-}
-
-function fitSingleLine(text: string, maxWidth: number, font: any, size: number) {
-  const clean = safeAscii(text);
-  if (font.widthOfTextAtSize(clean, size) <= maxWidth) {
-    return clean;
-  }
-
-  let result = clean;
-  while (result.length > 0 && font.widthOfTextAtSize(`${result}...`, size) > maxWidth) {
-    result = result.slice(0, -1);
-  }
-
-  return result ? `${result}...` : "";
-}
-
-function fitSingleLineUnicode(text: string, maxWidth: number, font: any, size: number) {
-  const clean = String(text || "").trim();
-  if (!clean) return "";
-
-  if (font.widthOfTextAtSize(clean, size) <= maxWidth) {
-    return clean;
-  }
-
-  let result = clean;
-  while (result.length > 0 && font.widthOfTextAtSize(`${result}...`, size) > maxWidth) {
-    result = result.slice(0, -1);
-  }
-
-  return result ? `${result}...` : "";
-}
-
-function drawWrappedText(
-  page: any,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number,
-  size: number,
-  font: any,
-  maxLines = 2
-) {
-  const words = safeAscii(text).split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    const nextWidth = font.widthOfTextAtSize(next, size);
-
-    if (nextWidth <= maxWidth) {
-      current = next;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-      if (lines.length >= maxLines - 1) break;
-    }
-  }
-
-  if (current && lines.length < maxLines) lines.push(current);
-
-  lines.forEach((line, index) => {
-    drawText(page, line, x, y - index * lineHeight, size, font);
-  });
+  return rows.slice(0, limit);
 }
 
 function getInvoiceMode(order: OrderForPdf) {
   return order.items.length > 10 ? "full" : "half";
 }
 
-function drawInvoiceBox(
-  page: any,
-  order: OrderForPdf,
-  topY: number,
-  boxHeight: number,
-  regularFont: any,
-  boldFont: any,
-  banglaFont: any | null,
-  banglaNoteImage: any | null
-) {
-  const left = 30;
-  const usableWidth = 535;
-  const isHalf = boxHeight <= 400;
+function buildInvoiceHtml(orders: OrderForPdf[]) {
+  const invoiceBlocks = orders.map((order) => {
+    const mode = getInvoiceMode(order);
+    const rows =
+      mode === "full"
+        ? splitItemsForFullPage(order.items, 12)
+        : splitItemsForHalfPage(order.items, 5);
 
-  const title = safeAscii(order.pageName || "Invoice");
+    const rowsHtml = rows
+      .map(
+        (item) => `
+          <tr>
+            <td class="product-cell">${escapeHtml(item.productName)}</td>
+            <td class="num-cell">${item.unitPrice ? item.unitPrice.toFixed(0) : ""}</td>
+            <td class="num-cell">${item.quantity ? String(item.quantity) : ""}</td>
+            <td class="num-cell">${item.lineTotal ? item.lineTotal.toFixed(0) : ""}</td>
+          </tr>
+        `
+      )
+      .join("");
 
-  drawText(page, title, 215, topY - 8, 16, boldFont);
-  drawText(page, "Mirpur, Dhaka (01303559063)", 208, topY - 28, 8, regularFont);
+    return `
+      <section class="invoice invoice-${mode}">
+        <div class="invoice-inner">
+          <div class="header">
+            <div class="date-line">
+              <span class="label">Date :</span>
+              <span class="value">${escapeHtml(formatDate(order.createdAt))}</span>
+            </div>
 
-  drawText(page, "Date :", left, topY - 48, 9, boldFont);
-  drawText(page, formatDate(order.createdAt), left + 48, topY - 48, 9, boldFont);
+            <div class="shop-block">
+              <h1>${escapeHtml(order.pageName || "Invoice")}</h1>
+              <div class="shop-subtitle">Mirpur, Dhaka (01303559063)</div>
+            </div>
 
-  drawText(page, "Phone:", 455, topY - 48, 9, boldFont);
-  drawText(page, order.phone, 500, topY - 48, 9, boldFont);
+            <div class="phone-line">
+              <span class="label">Phone:</span>
+              <span class="value">${escapeHtml(order.phone)}</span>
+            </div>
+          </div>
 
-  drawText(page, "Invoice Code :", left, topY - 68, 10, boldFont);
-  drawText(page, order.invoiceId, left + 104, topY - 68, 12, boldFont);
+          <div class="meta">
+            <div class="left-meta">
+              <div class="meta-row invoice-row">
+                <span class="label">Invoice Code :</span>
+                <span class="value invoice-value">${escapeHtml(order.invoiceId)}</span>
+              </div>
 
-  drawText(page, "Name:", left, topY - 90, 10, boldFont);
-  drawText(page, safeAscii(order.customerName), left + 104, topY - 90, 10, boldFont);
+              <div class="meta-row">
+                <span class="label">Name:</span>
+                <span class="value bangla">${escapeHtml(safeText(order.customerName))}</span>
+              </div>
 
-  drawText(page, "Address:", left, topY - 112, 10, boldFont);
-  drawRect(page, left + 100, topY - 122, 425, 24);
-  drawWrappedText(
-    page,
-    order.address,
-    left + 106,
-    topY - 114,
-    413,
-    10,
-    9,
-    regularFont,
-    2
-  );
+              <div class="meta-row address-row">
+                <span class="label address-label">Address:</span>
+                <div class="address-box bangla">${escapeHtml(safeText(order.address))}</div>
+              </div>
+            </div>
 
-  drawBarcode(page, order.invoiceId, 410, topY - 90, 110, 18);
+            <div class="right-meta">
+              <div class="barcode-wrap">
+                <svg class="barcode" id="barcode-${escapeHtml(order.invoiceId)}"></svg>
+              </div>
+            </div>
+          </div>
 
-  const tableTop = topY - 145;
-  const tableLeft = left;
-  const tableWidth = usableWidth;
-  const headerHeight = 28;
-  const bodyRows = isHalf ? 5 : 12;
-  const rowHeight = isHalf ? 18 : 20;
-  const tableHeight = headerHeight + rowHeight * bodyRows;
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th class="product-head">Product Name</th>
+                <th class="small-head">Price</th>
+                <th class="small-head">QTY</th>
+                <th class="small-head">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
 
-  const priceX = tableLeft + 372;
-  const qtyX = tableLeft + 436;
-  const totalX = tableLeft + 470;
+          <div class="summary">
+            <div class="summary-left">
+              <div class="summary-row">
+                <span class="label">Delivery Cost=</span>
+                <span class="value">${order.deliveryCharge.toFixed(0)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="label">Discount=</span>
+                <span class="value">${order.discount.toFixed(0)}</span>
+              </div>
+              <div class="note-row">
+                <span class="label">Note :</span>
+                <span class="value bangla">${escapeHtml(RETURN_NOTICE_BN)}</span>
+              </div>
+            </div>
 
-  drawRect(page, tableLeft, tableTop - tableHeight, tableWidth, tableHeight);
-  drawLine(page, tableLeft, tableTop - headerHeight, tableLeft + tableWidth, tableTop - headerHeight);
-  drawLine(page, priceX, tableTop, priceX, tableTop - tableHeight);
-  drawLine(page, qtyX, tableTop, qtyX, tableTop - tableHeight);
-  drawLine(page, totalX, tableTop, totalX, tableTop - tableHeight);
-
-  for (let i = 1; i <= bodyRows; i += 1) {
-    drawLine(
-      page,
-      tableLeft,
-      tableTop - headerHeight - rowHeight * i,
-      tableLeft + tableWidth,
-      tableTop - headerHeight - rowHeight * i
-    );
-  }
-
-  drawText(page, "Product Name", tableLeft + 150, tableTop - 18, 9, boldFont);
-  drawText(page, "Price", priceX + 18, tableTop - 18, 9, boldFont);
-  drawText(page, "QTY", qtyX + 10, tableTop - 18, 9, boldFont);
-  drawText(page, "Total", totalX + 12, tableTop - 18, 9, boldFont);
-
-  order.items.slice(0, bodyRows).forEach((item, index) => {
-    const rowTop = tableTop - headerHeight - rowHeight * index;
-    const textY = rowTop - rowHeight + 5;
-
-    const productFont = banglaFont && hasUnicode(item.productName) ? banglaFont : regularFont;
-    const productName =
-      productFont === banglaFont
-        ? fitSingleLineUnicode(item.productName, 355, productFont, 8)
-        : fitSingleLine(item.productName, 355, productFont, 8);
-
-    drawText(page, productName, tableLeft + 6, textY, 8, productFont);
-    drawText(page, String(item.unitPrice.toFixed(0)), priceX + 18, textY, 8, regularFont);
-    drawText(page, String(item.quantity), qtyX + 12, textY, 8, regularFont);
-    drawText(page, String(item.lineTotal.toFixed(0)), totalX + 10, textY, 8, regularFont);
+            <div class="summary-right">
+              <div class="summary-row">
+                <span class="label">Advance =</span>
+                <span class="value">${order.advance.toFixed(0)}</span>
+              </div>
+              <div class="summary-row grand-total">
+                <span class="label">Grand Total=</span>
+                <span class="value">${order.totalAmount.toFixed(0)}</span>
+              </div>
+              <div class="courier-line">${escapeHtml(order.courier || "")}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    `;
   });
 
-  const footerTop = tableTop - tableHeight - 26;
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Invoice Batch</title>
+        <style>
+          @font-face {
+            font-family: "NotoSansBengali";
+            src: url("file://${path
+              .join(process.cwd(), "public", "fonts", "NotoSansBengali-Regular.ttf")
+              .replace(/\\/g, "/")}") format("truetype");
+            font-weight: 400;
+            font-style: normal;
+          }
 
-  drawText(page, "Delivery Cost=", left + 10, footerTop, 9, boldFont);
-  drawText(page, String(order.deliveryCharge.toFixed(0)), left + 112, footerTop, 9, regularFont);
+          * {
+            box-sizing: border-box;
+          }
 
-  drawText(page, "Advance =", 410, footerTop, 9, boldFont);
-  drawText(page, String(order.advance.toFixed(0)), 487, footerTop, 9, regularFont);
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: white;
+            color: #000;
+            font-family: Arial, Helvetica, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
 
-  drawText(page, "Discount=", left + 14, footerTop - 20, 9, boldFont);
-  drawText(page, String(order.discount.toFixed(0)), left + 112, footerTop - 20, 9, regularFont);
+          body {
+            width: 210mm;
+            margin: 0 auto;
+          }
 
-  drawText(page, "Grand Total=", 410, footerTop - 20, 9, boldFont);
-  drawText(page, String(order.totalAmount.toFixed(0)), 487, footerTop - 20, 9, regularFont);
+          .bangla {
+            font-family: "NotoSansBengali", Arial, sans-serif;
+            line-height: 1.35;
+            word-break: break-word;
+            white-space: pre-wrap;
+          }
 
-  drawText(page, "Note :", left + 14, footerTop - 44, 10, boldFont);
+          .invoice {
+            width: 190mm;
+            margin: 0 auto;
+            border-bottom: 1px solid #000;
+            page-break-inside: avoid;
+          }
 
-  if (banglaNoteImage) {
-    page.drawImage(banglaNoteImage, {
-      x: left + 56,
-      y: footerTop - 50,
-      width: 390,
-      height: 26,
-    });
-  } else {
-    drawWrappedText(
-      page,
-      RETURN_NOTICE_EN,
-      left + 56,
-      footerTop - 42,
-      usableWidth - 70,
-      10,
-      7.5,
-      regularFont,
-      2
-    );
+          .invoice-half {
+            min-height: 135mm;
+            padding: 8mm 0 4mm;
+          }
+
+          .invoice-full {
+            min-height: 270mm;
+            padding: 8mm 0 4mm;
+            page-break-after: always;
+          }
+
+          .invoice-inner {
+            width: 100%;
+          }
+
+          .header {
+            display: grid;
+            grid-template-columns: 1fr 1.3fr 1fr;
+            align-items: start;
+            margin-bottom: 6mm;
+          }
+
+          .shop-block {
+            text-align: center;
+          }
+
+          .shop-block h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+          }
+
+          .shop-subtitle {
+            margin-top: 4px;
+            font-size: 11px;
+          }
+
+          .date-line,
+          .phone-line {
+            font-size: 11px;
+            font-weight: 700;
+            padding-top: 18px;
+          }
+
+          .date-line .label,
+          .phone-line .label {
+            margin-right: 8px;
+          }
+
+          .phone-line {
+            text-align: right;
+          }
+
+          .meta {
+            display: grid;
+            grid-template-columns: 1fr 140px;
+            gap: 12px;
+            margin-bottom: 6mm;
+          }
+
+          .meta-row {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 6px;
+            font-size: 12px;
+          }
+
+          .meta-row .label {
+            width: 110px;
+            font-weight: 700;
+            flex-shrink: 0;
+          }
+
+          .meta-row .value {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .invoice-row .invoice-value {
+            font-size: 22px;
+            font-weight: 700;
+            line-height: 1;
+          }
+
+          .address-row {
+            align-items: stretch;
+          }
+
+          .address-label {
+            padding-top: 7px;
+          }
+
+          .address-box {
+            border: 1px solid #000;
+            min-height: 36px;
+            padding: 6px 8px;
+            width: 100%;
+            font-size: 11px;
+          }
+
+          .right-meta {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+
+          .barcode-wrap {
+            width: 100%;
+            text-align: center;
+            padding-top: 18px;
+          }
+
+          .barcode {
+            width: 120px;
+            height: 36px;
+          }
+
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 6mm;
+            table-layout: fixed;
+          }
+
+          .items-table th,
+          .items-table td {
+            border: 1px solid #000;
+            padding: 6px 6px;
+            font-size: 11px;
+            vertical-align: middle;
+          }
+
+          .items-table thead th {
+            text-align: center;
+            font-weight: 700;
+          }
+
+          .product-head {
+            width: calc(100% - 180px);
+          }
+
+          .small-head {
+            width: 60px;
+          }
+
+          .product-cell {
+            word-break: break-word;
+            white-space: pre-wrap;
+            font-family: "NotoSansBengali", Arial, sans-serif;
+          }
+
+          .num-cell {
+            text-align: center;
+          }
+
+          .summary {
+            display: grid;
+            grid-template-columns: 1fr 180px;
+            gap: 18px;
+            align-items: start;
+          }
+
+          .summary-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+          }
+
+          .summary-row .label {
+            font-weight: 700;
+            min-width: 100px;
+          }
+
+          .note-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 11px;
+          }
+
+          .note-row .label {
+            font-weight: 700;
+            min-width: 48px;
+            padding-top: 2px;
+          }
+
+          .note-row .value {
+            flex: 1;
+          }
+
+          .grand-total {
+            font-size: 13px;
+            font-weight: 700;
+          }
+
+          .courier-line {
+            margin-top: 18px;
+            text-align: right;
+            font-size: 11px;
+            font-weight: 700;
+            word-break: break-word;
+          }
+
+          @page {
+            size: A4;
+            margin: 0;
+          }
+        </style>
+      </head>
+      <body>
+        ${invoiceBlocks.join("")}
+
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+        <script>
+          (() => {
+            const values = ${JSON.stringify(orders.map((o) => o.invoiceId || ""))};
+            for (const value of values) {
+              const el = document.getElementById("barcode-" + value);
+              if (!el || !value || typeof JsBarcode === "undefined") continue;
+              JsBarcode(el, value, {
+                format: "CODE128",
+                displayValue: false,
+                margin: 0,
+                height: 36,
+                width: 1.2
+              });
+            }
+          })();
+        </script>
+      </body>
+    </html>
+  `;
+}
+
+function resolveChromeExecutablePath() {
+  const fromEnv = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (fromEnv) return fromEnv;
+
+  const candidates = [
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
-  const courierText = safeAscii(order.courier || "");
-      if (courierText) {
-        drawWrappedText(
-          page,
-          courierText,
-          395,
-          footerTop - 50,
-          140,
-          12,
-          11,
-          boldFont,
-          2
-        );
-      }
-
-  drawLine(page, left, topY - boxHeight, left + usableWidth, topY - boxHeight);
+  return undefined;
 }
 
 export async function GET(
@@ -442,100 +550,77 @@ export async function GET(
     })),
   }));
 
-  const pdfDoc = await PDFDocument.create();
-  pdfDoc.registerFontkit(fontkit);
+  const html = buildInvoiceHtml(orders);
+  const executablePath = resolveChromeExecutablePath();
 
-  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  if (!executablePath) {
+    return new Response(
+      "PDF generation failed: Chrome executable not found. Set PUPPETEER_EXECUTABLE_PATH.",
+      { status: 500 }
+    );
+  }
 
-  let banglaFont: any | null = null;
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
 
   try {
-    const fontPath = path.join(
-      process.cwd(),
-      "public",
-      "fonts",
-      "NotoSansBengali-Regular.ttf"
-    );
-    const fontBytes = fs.readFileSync(fontPath);
-    banglaFont = await pdfDoc.embedFont(fontBytes);
-  } catch {
-    banglaFont = null;
-  }
+    browser = await puppeteer.launch({
+      executablePath:
+        process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/google-chrome",
+      headless: true,
+      timeout: 60000,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-zygote",
+        "--no-first-run",
+        "--disable-background-networking",
+      ],
+    });
 
-  let banglaNoteImage: any | null = null;
+    const page = await browser.newPage();
 
-  try {
-    const noteImagePath = path.join(process.cwd(), "public", "invoice-note-bn.png");
-    if (fs.existsSync(noteImagePath)) {
-      const noteImageBytes = fs.readFileSync(noteImagePath);
-      banglaNoteImage = await pdfDoc.embedPng(noteImageBytes);
-    }
-  } catch {
-    banglaNoteImage = null;
-  }
+    await page.setViewport({
+      width: 794,
+      height: 1123,
+      deviceScaleFactor: 1.5,
+    });
 
-  let i = 0;
+    await page.setContent(html, {
+      waitUntil: "networkidle0",
+      timeout: 60000,
+    });
 
-  while (i < orders.length) {
-    const current = orders[i];
-    const currentMode = getInvoiceMode(current);
+    await page.emulateMediaType("screen");
 
-    if (currentMode === "full") {
-      const page = pdfDoc.addPage([595.28, 841.89]);
-      drawInvoiceBox(
-        page,
-        current,
-        810,
-        760,
-        regularFont,
-        boldFont,
-        banglaFont,
-        banglaNoteImage
-      );
-      i += 1;
-      continue;
-    }
+    const pdfBytes = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "0mm",
+        right: "0mm",
+        bottom: "0mm",
+        left: "0mm",
+      },
+    });
 
-    const next = orders[i + 1];
-    const nextMode = next ? getInvoiceMode(next) : null;
+    return new Response(Buffer.from(pdfBytes), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${batch.batchNo}.pdf"`,
+      },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown PDF generation error";
 
-    const page = pdfDoc.addPage([595.28, 841.89]);
-
-    drawInvoiceBox(
-      page,
-      current,
-      810,
-      380,
-      regularFont,
-      boldFont,
-      banglaFont,
-      banglaNoteImage
-    );
-
-    if (next && nextMode === "half") {
-      drawInvoiceBox(
-        page,
-        next,
-        395,
-        380,
-        regularFont,
-        boldFont,
-        banglaFont,
-        banglaNoteImage
-      );
-      i += 2;
-    } else {
-      i += 1;
+    return new Response(`PDF generation failed: ${message}`, {
+      status: 500,
+    });
+  } finally {
+    if (browser) {
+      await browser.close();
     }
   }
-
-  const pdfBytes = await pdfDoc.save();
-
-  return new Response(Buffer.from(pdfBytes), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${batch.batchNo}.pdf"`,
-    },
-  });
 }

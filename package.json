@@ -29,6 +29,8 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.20.0",
     "prisma": "^7.7.0",
+    "puppeteer": "^24.42.0",
+    "puppeteer-core": "^24.42.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",

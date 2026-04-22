@@ -24,6 +24,7 @@ FROM base AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 RUN npm ci
 
 FROM base AS builder

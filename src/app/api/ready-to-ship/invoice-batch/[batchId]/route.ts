@@ -5,6 +5,8 @@ import path from "path";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type OrderForPdf = {
   invoiceId: string;
@@ -562,24 +564,22 @@ export async function GET(
 
   let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
 
-  try {
-    browser = await puppeteer.launch({
-      executablePath:
-        process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/google-chrome",
-      headless: true,
-      timeout: 60000,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--no-first-run",
-        "--disable-background-networking",
-      ],
-    });
+    try {
+      browser = await puppeteer.launch({
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        headless: true,
+        timeout: 60000,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-zygote",
+          "--no-first-run",
+        ],
+      });
 
-    const page = await browser.newPage();
+      const page = await browser.newPage();
 
     await page.setViewport({
       width: 794,

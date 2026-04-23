@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function keepAsText(value: string) {
   return `="${String(value || "").replace(/"/g, '""')}"`;
@@ -35,7 +37,7 @@ export async function GET(
     "Customer Name",
     "Phone",
     "Address",
-    "Courier",
+    "District",
     "Total Amount",
     "Ready To Ship Date",
   ];
@@ -44,17 +46,17 @@ export async function GET(
     const order = item.order;
 
     return [
-      keepAsText(order.invoiceId || ""),
-      order.customerName || "",
-      keepAsText(order.phone || ""),
-      (order.address || "").replace(/\r?\n/g, " "),
-      order.courier || "",
-      String(Number(order.totalAmount || 0)),
-      order.readyToShipAt
-        ? new Date(order.readyToShipAt).toISOString().slice(0, 10)
-        : "",
-    ];
-  });
+        keepAsText(order.invoiceId || ""),
+        order.customerName || "",
+        keepAsText(order.phone || ""),
+        (order.address || "").replace(/\r?\n/g, " "),
+        "", // 👈 empty District field
+        String(Number(order.totalAmount || 0)),
+        order.readyToShipAt
+          ? new Date(order.readyToShipAt).toISOString().slice(0, 10)
+          : "",
+      ];
+    });
 
   const csvContent = [
     headers.join(","),

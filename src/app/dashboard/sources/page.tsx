@@ -1,7 +1,11 @@
-import { prisma } from "@/lib/prisma";
 import CreateSourceForm from "./create-source-form";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function SourcesPage() {
+  const { prisma } = await import("@/lib/prisma");
+
   const sources = await prisma.orderSource.findMany({
     orderBy: {
       createdAt: "desc",

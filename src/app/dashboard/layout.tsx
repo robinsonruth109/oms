@@ -23,7 +23,9 @@ import {
 import { authOptions } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic"; 
+export const revalidate = 0;
+
 
 type DashboardLayoutProps = {
   children: ReactNode;

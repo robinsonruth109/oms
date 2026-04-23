@@ -1,7 +1,11 @@
-import { prisma } from "@/lib/prisma";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import PendingOrdersTable from "./pending-orders-table";
 
+
 export default async function PendingOrdersPage() {
+  const { prisma } = await import("@/lib/prisma");
   const orders = await prisma.order.findMany({
     where: {
       orderStatus: "PENDING_CONFIRMATION",

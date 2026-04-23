@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import CreateIntegrationForm from "./create-integration-form";
 import {
   CopyTextButton,
@@ -6,6 +5,9 @@ import {
   SecretField,
   ToggleIntegrationButton,
 } from "./integration-row-actions";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function maskApiKey(value: string) {
   if (value.length <= 10) return value;
@@ -40,6 +42,8 @@ function samplePayload(apiKey: string) {
 }
 
 export default async function IntegrationsPage() {
+  const { prisma } = await import("@/lib/prisma");
+
   const [sources, integrations] = await Promise.all([
     prisma.orderSource.findMany({
       orderBy: {
@@ -66,7 +70,8 @@ export default async function IntegrationsPage() {
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">Integrations</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Manage unlimited Shopify and Laravel stores using separate slugs and API keys.
+          Manage unlimited Shopify and Laravel stores using separate slugs and
+          API keys.
         </p>
       </section>
 
@@ -135,7 +140,7 @@ export default async function IntegrationsPage() {
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                           Short API Key View
                         </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900 break-all">
+                        <p className="mt-1 break-all text-sm font-semibold text-slate-900">
                           {maskApiKey(integration.apiKey)}
                         </p>
                       </div>
@@ -146,7 +151,7 @@ export default async function IntegrationsPage() {
                         Endpoint
                       </p>
 
-                      <div className="rounded-xl border bg-white px-3 py-2 text-sm text-slate-800 break-all">
+                      <div className="break-all rounded-xl border bg-white px-3 py-2 text-sm text-slate-800">
                         {endpoint}
                       </div>
 
@@ -195,7 +200,7 @@ export default async function IntegrationsPage() {
                     Sample JSON Payload
                   </p>
                   <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-100">
-{samplePayload(integration.apiKey)}
+                    {samplePayload(integration.apiKey)}
                   </pre>
                 </div>
               </div>

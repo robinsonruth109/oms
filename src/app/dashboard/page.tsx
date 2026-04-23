@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import {
   Users,
   Package,
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function getLocalDayRange() {
   const now = new Date();
@@ -111,6 +111,7 @@ function fmtMoney(value: number) {
 }
 
 export default async function DashboardHomePage() {
+  const { prisma } = await import("@/lib/prisma");
   const { start, end } = getLocalDayRange();
 
   const [

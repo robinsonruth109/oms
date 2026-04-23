@@ -20,12 +20,10 @@ import {
   Send,
   BarChart3,
 } from "lucide-react";
-import { authOptions } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 
-export const dynamic = "force-dynamic"; 
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -54,6 +52,7 @@ function NavLink({
 export default async function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
+  const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
 
   if (!session) {

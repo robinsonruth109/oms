@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { prisma } from "@/lib/prisma";
 import ProductReportClient from "./report-client";
 
 type ProductReportPageProps = {
@@ -42,6 +41,8 @@ type ProductReportRow = {
 export default async function ProductReportPage({
   searchParams,
 }: ProductReportPageProps) {
+  const { prisma } = await import("@/lib/prisma");
+
   const params = (await searchParams) || {};
 
   const today = getLocalDateInputValue();

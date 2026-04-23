@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import DeleteOrderButton from "./delete-order-button";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type AllOrdersPageProps = {
   searchParams?: Promise<{
@@ -17,6 +17,8 @@ function formatMoney(value: number) {
 export default async function AllOrdersPage({
   searchParams,
 }: AllOrdersPageProps) {
+  const { prisma } = await import("@/lib/prisma");
+
   const params = (await searchParams) || {};
   const q = (params.q || "").trim();
 
@@ -71,7 +73,7 @@ export default async function AllOrdersPage({
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <form className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div className="md:col-span-3 space-y-2">
+          <div className="space-y-2 md:col-span-3">
             <label htmlFor="q" className="text-sm font-medium text-slate-700">
               Search Order
             </label>

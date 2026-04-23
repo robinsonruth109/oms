@@ -2,6 +2,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import ReadyToShipClient from "./ready-to-ship-client";
 
+export const dynamic = "force-dynamic";
+
 type ReadyToShipPageProps = {
   searchParams?: Promise<{
     courier?: string;

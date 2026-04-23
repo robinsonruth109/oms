@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import CallingOrderView from "./view-client";
 
+export const dynamic = "force-dynamic";
+
 type Props = {
   params: Promise<{
     orderId: string;

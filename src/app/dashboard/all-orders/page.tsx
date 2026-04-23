@@ -2,6 +2,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import DeleteOrderButton from "./delete-order-button";
 
+export const dynamic = "force-dynamic";
+
 type AllOrdersPageProps = {
   searchParams?: Promise<{
     q?: string;

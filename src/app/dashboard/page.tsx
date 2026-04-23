@@ -21,6 +21,8 @@ import {
   Store,
 } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 function getLocalDayRange() {
   const now = new Date();
   const start = new Date(now);

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import CreateOrderForm from "./create-order-form";
 
+export const dynamic = "force-dynamic";
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     READY_TO_SHIP: "bg-emerald-100 text-emerald-700",

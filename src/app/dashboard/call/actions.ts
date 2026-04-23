@@ -327,7 +327,12 @@ export async function saveCallingOrder(
           pageId,
         },
       });
-    });
+    },
+      {
+      timeout: 20000, // 20 seconds
+      maxWait: 20000,
+    }
+      );
 
     revalidatePath("/dashboard/call");
     revalidatePath(`/dashboard/call/${order.id}`);

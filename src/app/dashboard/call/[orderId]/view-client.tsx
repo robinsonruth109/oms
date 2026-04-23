@@ -84,13 +84,24 @@ function createEmptyItem(): EditableItem {
   };
 }
 
+
+
+function normalizeLoose(value: string) {
+  return normalizeText(value).replace(/[^a-z0-9]/g, "");
+}
+
+
 function normalizeText(value: string) {
   return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function normalizeLooseText(value: string) {
-  return normalizeText(value).replace(/[^a-z0-9\u0980-\u09ff]+/g, "");
+  return normalizeText(value).replace(/[^a-z0-9]/g, "");
 }
+
+
+
+
 
 function getProductSearchText(product: ProductOption) {
   return [
@@ -107,51 +118,65 @@ function getProductSearchText(product: ProductOption) {
 }
 
 function findMatchedProduct(
-  item: OrderItem,
+  item: EditableItem | undefined,
   products: ProductOption[]
 ): ProductOption | null {
+  if (!item) return null;
+
   if (item.productId) {
     const byId = products.find((product) => product.id === item.productId);
     if (byId) return byId;
   }
 
-  const itemSku = normalizeText(item.productSku);
-  const itemName = normalizeText(item.productName);
-  const itemSkuLoose = normalizeLooseText(item.productSku);
-  const itemNameLoose = normalizeLooseText(item.productName);
+  const label = item.productLabel || "";
+  const q = normalizeText(label);
+  const qLoose = normalizeLoose(label);
 
-  const exactSku = products.find(
-    (product) => normalizeText(product.sku) === itemSku
-  );
-  if (exactSku) return exactSku;
+  if (!q && !qLoose) return null;
 
-  const exactName = products.find(
-    (product) => normalizeText(product.name) === itemName
-  );
-  if (exactName) return exactName;
+  for (const product of products) {
+    const sku = normalizeText(product.sku);
+    const name = normalizeText(product.name);
+    const parentSku = normalizeText(product.parentSku);
 
-  const exactLooseSku = products.find(
-    (product) => normalizeLooseText(product.sku) === itemSkuLoose
-  );
-  if (exactLooseSku) return exactLooseSku;
+    const skuLoose = normalizeLoose(product.sku);
+    const nameLoose = normalizeLoose(product.name);
+    const parentLoose = normalizeLoose(product.parentSku);
 
-  const exactLooseName = products.find(
-    (product) => normalizeLooseText(product.name) === itemNameLoose
-  );
-  if (exactLooseName) return exactLooseName;
+    if (
+      sku === q ||
+      name === q ||
+      parentSku === q ||
+      skuLoose === qLoose ||
+      nameLoose === qLoose ||
+      parentLoose === qLoose
+    ) {
+      return product;
+    }
+  }
 
-  const partial = products.find((product) => {
-    const searchText = getProductSearchText(product);
+  for (const product of products) {
+    const sku = normalizeText(product.sku);
+    const name = normalizeText(product.name);
+    const parentSku = normalizeText(product.parentSku);
 
-    return (
-      (!!itemSku && searchText.includes(itemSku)) ||
-      (!!itemName && searchText.includes(itemName)) ||
-      (!!itemSkuLoose && searchText.includes(itemSkuLoose)) ||
-      (!!itemNameLoose && searchText.includes(itemNameLoose))
-    );
-  });
+    const skuLoose = normalizeLoose(product.sku);
+    const nameLoose = normalizeLoose(product.name);
+    const parentLoose = normalizeLoose(product.parentSku);
 
-  return partial || null;
+    if (
+      sku.includes(q) ||
+      name.includes(q) ||
+      parentSku.includes(q) ||
+      skuLoose.includes(qLoose) ||
+      nameLoose.includes(qLoose) ||
+      parentLoose.includes(qLoose)
+    ) {
+      return product;
+    }
+  }
+
+  return null;
 }
 
 export default function CallingOrderView({
@@ -279,32 +304,29 @@ export default function CallingOrderView({
   }
 
   const pricing = useMemo(() => {
-    const lines = items.map((item, index) => {
-      const product =
-        products.find((p) => p.id === item.productId) ||
-        findMatchedProduct(order.items[index], products);
-
-      const unitPrice = product?.price || 0;
-      const lineTotal = unitPrice * item.quantity;
-
-      return {
-        unitPrice,
-        lineTotal,
-      };
-    });
-
-    const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
-    const finalTotal = Math.max(
-      subtotal + deliveryCharge - discount - order.advance,
-      0
-    );
+  const lines = items.map((item) => {
+    const product = findMatchedProduct(item, products);
+    const unitPrice = product?.price || 0;
+    const lineTotal = unitPrice * (item?.quantity || 1);
 
     return {
-      lines,
-      subtotal,
-      finalTotal,
+      unitPrice,
+      lineTotal,
     };
-  }, [items, products, deliveryCharge, discount, order.advance, order.items]);
+  });
+
+  const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const finalTotal = Math.max(
+    subtotal + deliveryCharge - discount - order.advance,
+    0
+  );
+
+  return {
+    lines,
+    subtotal,
+    finalTotal,
+  };
+}, [items, products, deliveryCharge, discount, order.advance]);
 
   function handleSave() {
     setMessage(null);

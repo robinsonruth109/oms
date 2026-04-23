@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type ReportsPageProps = {
   searchParams?: Promise<{
@@ -89,6 +90,7 @@ function applyStatus(bucket: Bucket, status: string) {
 export default async function ReportsPage({
   searchParams,
 }: ReportsPageProps) {
+  const { prisma } = await import("@/lib/prisma");
   const params = (await searchParams) || {};
 
   const today = getLocalDateInputValue();

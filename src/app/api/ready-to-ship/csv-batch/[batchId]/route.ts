@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +12,7 @@ export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ batchId: string }> }
 ) {
+  const { prisma } = await import("@/lib/prisma");
   const { batchId } = await context.params;
 
   const batch = await prisma.csvBatch.findUnique({
@@ -46,17 +46,17 @@ export async function GET(
     const order = item.order;
 
     return [
-        keepAsText(order.invoiceId || ""),
-        order.customerName || "",
-        keepAsText(order.phone || ""),
-        (order.address || "").replace(/\r?\n/g, " "),
-        "", // 👈 empty District field
-        String(Number(order.totalAmount || 0)),
-        order.readyToShipAt
-          ? new Date(order.readyToShipAt).toISOString().slice(0, 10)
-          : "",
-      ];
-    });
+      keepAsText(order.invoiceId || ""),
+      order.customerName || "",
+      keepAsText(order.phone || ""),
+      (order.address || "").replace(/\r?\n/g, " "),
+      "",
+      String(Number(order.totalAmount || 0)),
+      order.readyToShipAt
+        ? new Date(order.readyToShipAt).toISOString().slice(0, 10)
+        : "",
+    ];
+  });
 
   const csvContent = [
     headers.join(","),

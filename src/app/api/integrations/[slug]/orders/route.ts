@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  importIntegrationOrderBySlug,
-  type IncomingIntegrationOrder,
-} from "@/lib/integration-order-import";
+import type { IncomingIntegrationOrder } from "@/lib/integration-order-import";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +12,10 @@ export async function POST(
   try {
     const { slug } = await context.params;
     const body = (await request.json()) as IncomingIntegrationOrder;
+
+    const { importIntegrationOrderBySlug } = await import(
+      "@/lib/integration-order-import"
+    );
 
     const result = await importIntegrationOrderBySlug(slug, body);
 

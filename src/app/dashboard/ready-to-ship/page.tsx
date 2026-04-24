@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import ReadyToShipClient from "./ready-to-ship-client";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type ReadyToShipPageProps = {
   searchParams?: Promise<{
@@ -20,6 +20,7 @@ function formatDateTime(date: Date) {
 export default async function ReadyToShipPage({
   searchParams,
 }: ReadyToShipPageProps) {
+  const { prisma } = await import("@/lib/prisma");
   const params = (await searchParams) || {};
   const courier = (params.courier || "").trim();
   const from = (params.from || "").trim();

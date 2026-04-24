@@ -1,8 +1,9 @@
-import { prisma } from "@/lib/prisma";
+
 import { notFound } from "next/navigation";
 import CallingOrderView from "./view-client";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type Props = {
   params: Promise<{
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export default async function CallingOrderViewPage({ params }: Props) {
+  const { prisma } = await import("@/lib/prisma");
   const { orderId } = await params;
 
   const order = await prisma.order.findUnique({

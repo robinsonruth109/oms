@@ -1,5 +1,7 @@
-import { prisma } from "@/lib/prisma";
 import StockOutClient from "./stock-out-client";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type StockOutItemRow = {
   orderId: string;
@@ -39,6 +41,8 @@ type GroupedStockOutRow = {
 };
 
 export default async function StockOutPage() {
+  const { prisma } = await import("@/lib/prisma");
+
   const orders = await prisma.order.findMany({
     where: {
       orderStatus: "STOCK_OUT",
@@ -121,9 +125,5 @@ export default async function StockOutPage() {
     a.productSku.localeCompare(b.productSku)
   );
 
-  return (
-    <StockOutClient
-      rows={groupedRows}
-    />
-  );
+  return <StockOutClient rows={groupedRows} />;
 }

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+
 import CallingPanelTable from "./calling-panel-table";
 
 type CallingPanelPageProps = {
@@ -8,10 +8,12 @@ type CallingPanelPageProps = {
     importedTo?: string;
   }>;
 };
-
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export default async function CallingPanelPage({
   searchParams,
 }: CallingPanelPageProps) {
+  const { prisma } = await import("@/lib/prisma");
   const params = (await searchParams) || {};
   const source = (params.source || "").trim();
   const importedFrom = (params.importedFrom || "").trim();

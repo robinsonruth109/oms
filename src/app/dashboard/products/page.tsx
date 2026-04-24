@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import CreateProductForm from "./create-product-form";
 import CsvImportForm from "./csv-import-form";
 import EditProductForm from "./edit-product-form";
+
 
 type ProductsPageProps = {
   searchParams?: Promise<{
@@ -10,14 +10,15 @@ type ProductsPageProps = {
     edit?: string;
   }>;
 };
-
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export default async function ProductsPage({
   searchParams,
 }: ProductsPageProps) {
   const params = (await searchParams) || {};
   const q = (params.q || "").trim();
   const edit = (params.edit || "").trim();
-
+  const { prisma } = await import("@/lib/prisma");
   const where =
     q.length > 0
       ? {

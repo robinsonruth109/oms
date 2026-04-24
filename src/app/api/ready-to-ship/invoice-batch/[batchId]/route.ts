@@ -476,7 +476,7 @@ function buildInvoiceHtml(orders: OrderForPdf[],fontPath: string) {
   `;
 }
 
-function resolveChromeExecutablePath() {
+function resolveChromeExecutablePath(fs: any) {
   const fromEnv = process.env.PUPPETEER_EXECUTABLE_PATH;
   if (fromEnv) return fromEnv;
 
@@ -501,8 +501,6 @@ export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ batchId: string }> }
 ) {
-    const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
-    const fontkit = (await import("@pdf-lib/fontkit")).default;
     const fs = await import("fs");
     const path = await import("path");
     const puppeteer = (await import("puppeteer-core")).default;
@@ -511,83 +509,61 @@ export async function GET(
       .replace(/\\/g, "/");
     const { prisma } = await import("@/lib/prisma");
 
-    type OrderForPdf = {
-      invoiceId: string;
-      customerName: string;
-      phone: string;
-      address: string;
-      courier: string;
-      discount: number;
-      advance: number;
-      deliveryCharge: number;
-      totalAmount: number;
-      createdAt: Date;
-      pageName: string;
-      items: {
-        productName: string;
-        quantity: number;
-        unitPrice: number;
-        lineTotal: number;
-      }[];
-      note: string;
-    };
 
-    const RETURN_NOTICE_EN =
-      "Note: If product is returned, it must be returned in intact condition. Packet must not be opened, as this is not a dress.";
 
-    function formatDate(date: Date) {
-      return date.toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-    }
+    // function formatDate(date: Date) {
+    //   return date.toLocaleDateString("en-GB", {
+    //     day: "numeric",
+    //     month: "short",
+    //     year: "numeric",
+    //   });
+    // }
 
-    function safeAscii(text: string) {
-      return String(text || "").replace(/[^\x20-\x7E]/g, " ");
-    }
+    // function safeAscii(text: string) {
+    //   return String(text || "").replace(/[^\x20-\x7E]/g, " ");
+    // }
 
-    function hasUnicode(text: string) {
-      return /[^\x00-\x7F]/.test(String(text || ""));
-    }
+    // function hasUnicode(text: string) {
+    //   return /[^\x00-\x7F]/.test(String(text || ""));
+    // }
 
-    function drawText(
-      page: any,
-      text: string,
-      x: number,
-      y: number,
-      size: number,
-      font: any,
-      color = rgb(0, 0, 0)
-    ) {
-      page.drawText(String(text || ""), {
-        x,
-        y,
-        size,
-        font,
-        color,
-      });
-    }
+    // function drawText(
+    //   page: any,
+    //   text: string,
+    //   x: number,
+    //   y: number,
+    //   size: number,
+    //   font: any,
+    //   color = rgb(0, 0, 0)
+    // ) {
+    //   page.drawText(String(text || ""), {
+    //     x,
+    //     y,
+    //     size,
+    //     font,
+    //     color,
+    //   });
+    // }
 
-    function drawLine(page: any, x1: number, y1: number, x2: number, y2: number) {
-      page.drawLine({
-        start: { x: x1, y: y1 },
-        end: { x: x2, y: y2 },
-        thickness: 1,
-        color: rgb(0, 0, 0),
-      });
-    }
+    // function drawLine(page: any, x1: number, y1: number, x2: number, y2: number) {
+    //   page.drawLine({
+    //     start: { x: x1, y: y1 },
+    //     end: { x: x2, y: y2 },
+    //     thickness: 1,
+    //     color: rgb(0, 0, 0),
+    //   });
+    // }
 
-    function drawRect(page: any, x: number, y: number, width: number, height: number) {
-      page.drawRectangle({
-        x,
-        y,
-        width,
-        height,
-        borderColor: rgb(0, 0, 0),
-        borderWidth: 1,
-      });
-    }
+    // function drawRect(page: any, x: number, y: number, width: number, height: number) {
+    //   page.drawRectangle({
+    //     x,
+    //     y,
+    //     width,
+    //     height,
+    //     borderColor: rgb(0, 0, 0),
+    //     borderWidth: 1,
+    //   });
+    // }
   const { batchId } = await context.params;
 
   const batch = await prisma.invoiceBatch.findUnique({
@@ -634,7 +610,7 @@ export async function GET(
   }));
 
   const html = buildInvoiceHtml(orders, fontPath);
-  const executablePath = resolveChromeExecutablePath();
+  const executablePath = resolveChromeExecutablePath(fs);
 
   if (!executablePath) {
     return new Response(
@@ -647,7 +623,7 @@ export async function GET(
 
     try {
       browser = await puppeteer.launch({
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        executablePath,
         headless: true,
         timeout: 60000,
         args: [

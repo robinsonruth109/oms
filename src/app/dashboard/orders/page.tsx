@@ -1,7 +1,9 @@
-import { prisma } from "@/lib/prisma";
+
 import CreateOrderForm from "./create-order-form";
 
+
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -44,6 +46,7 @@ function CourierLabel({ courier }: { courier: string | null }) {
 }
 
 export default async function OrdersPage() {
+  const { prisma } = await import("@/lib/prisma");
   const pages = await prisma.page.findMany({
     where: { status: true },
     orderBy: { name: "asc" },

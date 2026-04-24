@@ -1,7 +1,7 @@
-import { prisma } from "@/lib/prisma";
 import { BadgeCheck, UserCog, UserRound } from "lucide-react";
 import CreateUserForm from "./create-user-form";
-
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 function RoleBadge({ role }: { role: string }) {
   if (role === "ADMIN") {
     return (
@@ -19,6 +19,7 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 export default async function UsersPage() {
+  const { prisma } = await import("@/lib/prisma");
   const users = await prisma.user.findMany({
     orderBy: {
       createdAt: "desc",

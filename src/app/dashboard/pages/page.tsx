@@ -1,7 +1,10 @@
-import { prisma } from "@/lib/prisma";
 import CreatePageForm from "./create-page-form";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function PagesPage() {
+  const { prisma } = await import("@/lib/prisma");
   const pages = await prisma.page.findMany({
     orderBy: {
       createdAt: "desc",

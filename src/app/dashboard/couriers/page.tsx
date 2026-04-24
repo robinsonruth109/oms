@@ -1,8 +1,10 @@
-import { prisma } from "@/lib/prisma";
+
 import CreateCourierForm from "./create-courier-form";
 import CourierStatusButton from "./courier-row-actions";
-
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export default async function CouriersPage() {
+  const { prisma } = await import("@/lib/prisma");
   const couriers = await prisma.courier.findMany({
     orderBy: {
       createdAt: "desc",

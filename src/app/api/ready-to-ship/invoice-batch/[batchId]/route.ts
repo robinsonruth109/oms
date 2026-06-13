@@ -49,38 +49,23 @@ function safeText(value: string) {
   return String(value || "").trim();
 }
 
-function splitItemsForHalfPage(items: OrderForPdf["items"], limit = 4) {
-  const rows = [...items];
-
-  while (rows.length < limit) {
-    rows.push({
-      productName: "",
-      quantity: 0,
-      unitPrice: 0,
-      lineTotal: 0,
-    });
-  }
-
-  return rows.slice(0, limit);
-}
-
-function splitItemsForFullPage(items: OrderForPdf["items"], limit = 10) {
-  const rows = [...items];
-
-  while (rows.length < limit) {
-    rows.push({
-      productName: "",
-      quantity: 0,
-      unitPrice: 0,
-      lineTotal: 0,
-    });
-  }
-
-  return rows.slice(0, limit);
-}
-
 function getInvoiceMode(order: OrderForPdf) {
-  return order.items.length > 4 ? "full" : "half";
+  return order.items.length > 3 ? "full" : "half";
+}
+
+function makeRows(items: OrderForPdf["items"], limit: number) {
+  const rows = [...items];
+
+  while (rows.length < limit) {
+    rows.push({
+      productName: "",
+      quantity: 0,
+      unitPrice: 0,
+      lineTotal: 0,
+    });
+  }
+
+  return rows.slice(0, limit);
 }
 
 function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
@@ -88,11 +73,12 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
     .map((order) => {
       const invoiceId = safeText(order.invoiceId);
       const mode = getInvoiceMode(order);
+      const rows = mode === "full" ? makeRows(order.items, 10) : makeRows(order.items, 3);
 
-      const rows =
-        mode === "full"
-          ? splitItemsForFullPage(order.items, 10)
-          : splitItemsForHalfPage(order.items, 4);
+      const subtotal = order.items.reduce(
+        (sum, item) => sum + Number(item.lineTotal || 0),
+        0
+      );
 
       const rowsHtml = rows
         .map(
@@ -107,11 +93,6 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
           `
         )
         .join("");
-
-      const subtotal = order.items.reduce(
-        (sum, item) => sum + Number(item.lineTotal || 0),
-        0
-      );
 
       return `
         <section class="invoice invoice-${mode}">
@@ -136,10 +117,17 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
                   <span>Invoice Code</span>
                   <b>${escapeHtml(invoiceId)}</b>
                 </div>
+
                 <div class="info-row">
                   <span>Name</span>
                   <b class="bangla">${escapeHtml(safeText(order.customerName))}</b>
                 </div>
+
+                <div class="info-row">
+                  <span>Phone</span>
+                  <b class="phone-number">${escapeHtml(safeText(order.phone))}</b>
+                </div>
+
                 <div class="info-row address-line">
                   <span>Address</span>
                   <b class="bangla">${escapeHtml(safeText(order.address))}</b>
@@ -175,10 +163,12 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
                     <span>Delivery Cost</span>
                     <b>৳ ${order.deliveryCharge.toFixed(0)}</b>
                   </div>
+
                   <div>
                     <span>Discount</span>
                     <b>৳ ${order.discount.toFixed(0)}</b>
                   </div>
+
                   <div>
                     <span>Advance</span>
                     <b>৳ ${order.advance.toFixed(0)}</b>
@@ -210,20 +200,25 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
 
   return `
     <!doctype html>
-    <html>
+    <html lang="en">
       <head>
         <meta charset="UTF-8" />
+        <title>Invoice Batch</title>
+
         <style>
           @font-face {
             font-family: "NotoSansBengali";
             src: url("file://${fontPath}") format("truetype");
+            font-weight: 400;
+            font-style: normal;
           }
 
           * {
             box-sizing: border-box;
           }
 
-          html, body {
+          html,
+          body {
             margin: 0;
             padding: 0;
             background: #fff;
@@ -240,25 +235,32 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
 
           .bangla {
             font-family: "NotoSansBengali", Arial, sans-serif;
-            line-height: 1.3;
+            line-height: 1.2;
             word-break: break-word;
+            white-space: pre-wrap;
           }
 
           .invoice {
             width: 190mm;
             margin: 0 auto;
             page-break-inside: avoid;
+            overflow: hidden;
           }
 
           .invoice-half {
-            height: 148mm;
-            padding: 6mm 0 3mm;
+            height: 145mm;
+            padding: 7mm 0 2mm;
           }
 
           .invoice-full {
-            height: 296mm;
+            height: 292mm;
             padding: 7mm 0;
             page-break-after: always;
+          }
+
+          .invoice-inner {
+            width: 100%;
+            height: 100%;
           }
 
           .top-line {
@@ -268,57 +270,59 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
 
           .header {
             display: grid;
-            grid-template-columns: 1fr 45mm;
+            grid-template-columns: 1fr 38mm;
             align-items: start;
-            margin-bottom: 5mm;
+            margin-bottom: 4mm;
           }
 
           h1 {
             margin: 0;
-            font-size: 22px;
+            font-size: 20px;
+            font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.4px;
           }
 
           .shop-info {
-            margin-top: 4px;
-            font-size: 11px;
+            margin-top: 2px;
+            font-size: 9px;
+            font-weight: 600;
           }
 
           .invoice-title {
             text-align: right;
-            font-size: 12px;
           }
 
           .title-box {
             display: inline-block;
             background: #000;
             color: #fff;
-            padding: 5px 18px;
-            font-size: 15px;
+            padding: 4px 14px;
+            font-size: 13px;
             font-weight: 700;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4px;
           }
 
           .date-text {
-            margin-top: 6px;
+            margin-top: 4px;
+            font-size: 10px;
             font-weight: 700;
           }
 
           .customer-grid {
             display: grid;
-            grid-template-columns: 1fr 78mm;
-            gap: 8mm;
-            margin-bottom: 4mm;
+            grid-template-columns: 1fr 70mm;
+            gap: 5mm;
+            margin-bottom: 3mm;
             align-items: center;
           }
 
           .info-row {
             display: grid;
-            grid-template-columns: 32mm 1fr;
-            gap: 4mm;
-            font-size: 12px;
-            margin-bottom: 5px;
+            grid-template-columns: 28mm 1fr;
+            gap: 3mm;
+            font-size: 10px;
+            margin-bottom: 2px;
           }
 
           .info-row span {
@@ -331,66 +335,74 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
           }
 
           .info-row b {
-            font-size: 12px;
+            font-size: 10px;
+          }
+
+          .phone-number {
+            font-size: 14px !important;
+            font-weight: 700;
+            letter-spacing: 0.3px;
           }
 
           .info-row:first-child b {
-            font-size: 20px;
-            letter-spacing: 0.4px;
+            font-size: 16px;
+            line-height: 1;
+            letter-spacing: 0.3px;
           }
 
           .address-line b {
             border: 1px solid #000;
-            padding: 5px 7px;
-            min-height: 24px;
+            padding: 3px 6px;
+            min-height: 16px;
             display: block;
           }
 
           .barcode-box {
             border: 1px dashed #000;
-            padding: 4mm 5mm 3mm;
+            padding: 5mm 4mm 3mm;
             text-align: center;
             position: relative;
           }
 
           .barcode-label {
             position: absolute;
-            top: -11px;
+            top: -10px;
             left: 50%;
             transform: translateX(-50%);
             background: #000;
             color: #fff;
-            font-size: 11px;
+            font-size: 9px;
             font-weight: 700;
-            padding: 3px 18px;
+            padding: 3px 14px;
             white-space: nowrap;
           }
 
           .barcode {
-            width: 68mm;
-            height: 18mm;
+            width: 58mm;
+            height: 13mm;
             display: block;
             margin: 0 auto;
           }
 
           .barcode-text {
-            font-size: 16px;
+            font-size: 12px;
             font-weight: 700;
-            margin-top: -2px;
+            margin-top: 0;
           }
 
           .items-table {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
-            margin-bottom: 4mm;
+            margin-bottom: 3mm;
           }
 
           .items-table th,
           .items-table td {
             border: 1px solid #000;
-            padding: 5px 6px;
-            font-size: 11px;
+            padding: 3px 5px;
+            font-size: 9px;
+            vertical-align: middle;
           }
 
           .items-table th {
@@ -400,22 +412,24 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
             font-weight: 700;
           }
 
-          .sl-head, .sl-cell {
-            width: 12mm;
+          .sl-head,
+          .sl-cell {
+            width: 10mm;
             text-align: center;
           }
 
           .small-head {
-            width: 26mm;
+            width: 24mm;
           }
 
           .qty-head {
-            width: 20mm;
+            width: 18mm;
           }
 
           .product-cell {
             font-family: "NotoSansBengali", Arial, sans-serif;
             word-break: break-word;
+            white-space: pre-wrap;
           }
 
           .num-cell {
@@ -423,26 +437,30 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
           }
 
           .invoice-half .items-table td {
+            height: 7mm;
+          }
+
+          .invoice-full .items-table td {
             height: 8mm;
           }
 
           .bottom-grid {
             display: grid;
-            grid-template-columns: 1fr 62mm;
-            gap: 8mm;
+            grid-template-columns: 1fr 58mm;
+            gap: 5mm;
           }
 
           .mini-summary {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             border: 1px solid #000;
-            margin-bottom: 4mm;
+            margin-bottom: 3mm;
           }
 
           .mini-summary div {
-            padding: 6px 10px;
+            padding: 4px 7px;
             border-right: 1px solid #000;
-            min-height: 17mm;
+            min-height: 13mm;
           }
 
           .mini-summary div:last-child {
@@ -451,58 +469,60 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
 
           .mini-summary span {
             display: block;
-            font-size: 10px;
+            font-size: 8.5px;
             font-weight: 700;
             text-transform: uppercase;
           }
 
           .mini-summary b {
             display: block;
-            margin-top: 4px;
-            font-size: 14px;
+            margin-top: 3px;
+            font-size: 12px;
           }
 
           .note-box {
             border: 1px solid #000;
-            min-height: 19mm;
-            padding: 6px 8px;
-            font-size: 11px;
+            min-height: 13mm;
+            padding: 4px 6px;
+            font-size: 9px;
+            line-height: 1.2;
           }
 
           .note-box strong {
-            margin-right: 6px;
+            margin-right: 4px;
           }
 
           .total-box {
             border: 1px solid #000;
-            font-size: 11px;
+            font-size: 9px;
           }
 
           .total-box div {
             display: flex;
             justify-content: space-between;
-            padding: 5px 8px;
+            padding: 3px 6px;
             border-bottom: 1px solid #000;
           }
 
           .total-box .grand {
             background: #000;
             color: #fff;
-            font-size: 15px;
+            font-size: 12px;
             font-weight: 700;
             text-transform: uppercase;
           }
 
           .total-box p {
-            margin: 7px 8px 5px;
+            margin: 5px 6px 4px;
             text-align: center;
+            font-size: 8.5px;
             font-weight: 700;
             word-break: break-word;
           }
 
           .cut-line {
-            margin-top: 4mm;
-            font-size: 10px;
+            margin-top: 2mm;
+            font-size: 8px;
             white-space: nowrap;
           }
 
@@ -528,8 +548,8 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
                 format: "CODE128",
                 displayValue: false,
                 margin: 0,
-                width: 1.4,
-                height: 48,
+                width: 1.05,
+                height: 34,
                 background: "#ffffff",
                 lineColor: "#000000"
               });
@@ -554,7 +574,9 @@ function resolveChromeExecutablePath(fs: any) {
   ];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
   return undefined;
@@ -576,7 +598,9 @@ export async function GET(
   const { batchId } = await context.params;
 
   const batch = await prisma.invoiceBatch.findUnique({
-    where: { id: batchId },
+    where: {
+      id: batchId,
+    },
     include: {
       items: {
         include: {
@@ -661,6 +685,7 @@ export async function GET(
     const pdfBytes = await page.pdf({
       format: "A4",
       printBackground: true,
+      preferCSSPageSize: true,
       margin: {
         top: "0mm",
         right: "0mm",

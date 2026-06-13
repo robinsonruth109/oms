@@ -14,6 +14,7 @@ type EditProductFormProps = {
     id: string;
     sku: string;
     name: string;
+    quantity: number;
     purchasePrice: string;
     sellingPrice: string;
     status: boolean;
@@ -90,6 +91,20 @@ export default function EditProductForm({ product }: EditProductFormProps) {
               name="name"
               type="text"
               defaultValue={product.name}
+              className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="quantity" className="text-sm font-medium text-slate-700">
+              Quantity
+            </label>
+            <input
+              id="quantity"
+              name="quantity"
+              type="number"
+              min="1"
+              defaultValue={product.quantity}
               className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
               required
             />

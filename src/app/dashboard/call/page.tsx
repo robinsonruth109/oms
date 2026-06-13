@@ -1,4 +1,4 @@
-
+import Link from "next/link";
 import CallingPanelTable from "./calling-panel-table";
 
 type CallingPanelPageProps = {
@@ -6,20 +6,29 @@ type CallingPanelPageProps = {
     source?: string;
     importedFrom?: string;
     importedTo?: string;
+    page?: string;
   }>;
 };
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+const PAGE_SIZE = 20;
+
 export default async function CallingPanelPage({
   searchParams,
 }: CallingPanelPageProps) {
   const { prisma } = await import("@/lib/prisma");
+
   const params = (await searchParams) || {};
   const source = (params.source || "").trim();
   const importedFrom = (params.importedFrom || "").trim();
   const importedTo = (params.importedTo || "").trim();
 
-  const where: Record<string, unknown> = {
+  const currentPage = Math.max(Number(params.page || 1), 1);
+  const skip = (currentPage - 1) * PAGE_SIZE;
+
+  const where: Record<string, any> = {
     orderStatus: {
       in: ["PENDING_CONFIRMATION", "NO_ANSWER", "PHONE_OFF"],
     },
@@ -32,78 +41,100 @@ export default async function CallingPanelPage({
   if (importedFrom || importedTo) {
     where.createdAt = {
       ...(importedFrom ? { gte: new Date(`${importedFrom}T00:00:00`) } : {}),
-      ...(importedTo ? { lte: new Date(`${importedTo}T23:59:59`) } : {}),
+      ...(importedTo ? { lte: new Date(`${importedTo}T23:59:59.999`) } : {}),
     };
   }
 
-  const [orders, couriers, products, sources, pages] = await Promise.all([
-    prisma.order.findMany({
-      where,
-      include: {
-        items: true,
-        source: true,
-        integration: true,
-        calledByUser: true,
-        page: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 300,
-    }),
-    prisma.courier.findMany({
-      where: {
-        status: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-      },
-    }),
-    prisma.product.findMany({
-      where: {
-        status: true,
-      },
-      orderBy: [
-        {
+  const [totalOrders, orders, couriers, products, sources, pages] =
+    await Promise.all([
+      prisma.order.count({ where }),
+
+      prisma.order.findMany({
+        where,
+        include: {
+          items: true,
+          source: true,
+          integration: true,
+          calledByUser: true,
+          page: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        skip,
+        take: PAGE_SIZE,
+      }),
+
+      prisma.courier.findMany({
+        where: {
+          status: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      }),
+
+      prisma.product.findMany({
+        where: {
+          status: true,
+        },
+        orderBy: {
           sku: "asc",
         },
-      ],
-      include: {
-        parent: true,
-      },
-    }),
-    prisma.orderSource.findMany({
-      where: {
-        status: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-      },
-    }),
-    prisma.page.findMany({
-      where: {
-        status: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        prefixCode: true,
-      },
-    }),
-  ]);
+        include: {
+          parent: true,
+        },
+      }),
+
+      prisma.orderSource.findMany({
+        where: {
+          status: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+        },
+      }),
+
+      prisma.page.findMany({
+        where: {
+          status: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          prefixCode: true,
+        },
+      }),
+    ]);
+
+  const totalPages = Math.max(Math.ceil(totalOrders / PAGE_SIZE), 1);
+  const hasNextPage = currentPage < totalPages;
+  const hasPrevPage = currentPage > 1;
+
+  function buildPageUrl(pageNumber: number) {
+    const query = new URLSearchParams();
+
+    if (source) query.set("source", source);
+    if (importedFrom) query.set("importedFrom", importedFrom);
+    if (importedTo) query.set("importedTo", importedTo);
+
+    query.set("page", String(pageNumber));
+
+    return `/dashboard/call?${query.toString()}`;
+  }
 
   const serializedOrders = orders.map((order) => ({
     id: order.id,
@@ -198,11 +229,10 @@ export default async function CallingPanelPage({
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <form className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <input type="hidden" name="page" value="1" />
+
           <div className="space-y-2">
-            <label
-              htmlFor="source"
-              className="text-sm font-medium text-slate-700"
-            >
+            <label htmlFor="source" className="text-sm font-medium text-slate-700">
               Source
             </label>
             <select
@@ -221,10 +251,7 @@ export default async function CallingPanelPage({
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="importedFrom"
-              className="text-sm font-medium text-slate-700"
-            >
+            <label htmlFor="importedFrom" className="text-sm font-medium text-slate-700">
               Imported From
             </label>
             <input
@@ -237,10 +264,7 @@ export default async function CallingPanelPage({
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="importedTo"
-              className="text-sm font-medium text-slate-700"
-            >
+            <label htmlFor="importedTo" className="text-sm font-medium text-slate-700">
               Imported To
             </label>
             <input
@@ -252,7 +276,7 @@ export default async function CallingPanelPage({
             />
           </div>
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-end">
             <button
               type="submit"
               className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
@@ -263,12 +287,39 @@ export default async function CallingPanelPage({
         </form>
       </section>
 
+      <div className="rounded-2xl border bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
+        Showing page <span className="font-semibold">{currentPage}</span> of{" "}
+        <span className="font-semibold">{totalPages}</span> —{" "}
+        <span className="font-semibold">{orders.length}</span> loaded from{" "}
+        <span className="font-semibold">{totalOrders}</span> total orders.
+      </div>
+
       <CallingPanelTable
         orders={serializedOrders}
         couriers={courierOptions}
         products={productOptions}
         pages={pageOptions}
       />
+
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {hasPrevPage ? (
+          <Link
+            href={buildPageUrl(currentPage - 1)}
+            className="rounded-xl border bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            Previous
+          </Link>
+        ) : null}
+
+        {hasNextPage ? (
+          <Link
+            href={buildPageUrl(currentPage + 1)}
+            className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+          >
+            Load More / Next 20
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }

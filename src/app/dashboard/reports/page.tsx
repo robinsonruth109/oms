@@ -679,10 +679,19 @@ export default async function ReportsPage({
       </section>
 
       <section className="rounded-3xl border bg-white shadow-sm">
-        <div className="border-b px-5 py-4 sm:px-6">
+        <div className="flex items-center justify-between border-b px-5 py-4 sm:px-6">
           <h2 className="text-lg font-semibold text-slate-900">
             Daily Breakdown
           </h2>
+
+          <a
+            href={`/api/reports/called-orders-csv?from=${encodeURIComponent(
+              from
+            )}&to=${encodeURIComponent(to)}&agentId=${encodeURIComponent(agentId)}`}
+            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            Download
+          </a>
         </div>
 
         <div className="overflow-x-auto">

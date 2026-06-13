@@ -70,6 +70,7 @@ export async function createProduct(
     const parentName = String(formData.get("parentName") || "").trim();
     const sku = String(formData.get("sku") || "").trim();
     const name = String(formData.get("name") || "").trim();
+    const quantity = Number(formData.get("quantity") || 1);
     const purchasePrice = toMoney(formData.get("purchasePrice"));
     const sellingPrice = toMoney(formData.get("sellingPrice"));
 
@@ -77,6 +78,13 @@ export async function createProduct(
       return {
         success: false,
         message: "Parent SKU and SKU are required.",
+      };
+    }
+
+    if (quantity <= 0) {
+      return {
+        success: false,
+        message: "Quantity must be greater than 0.",
       };
     }
 
@@ -108,6 +116,7 @@ export async function createProduct(
           parentId: parent.id,
           sku,
           name: name || sku,
+          quantity,
           purchasePrice,
           sellingPrice,
           status: true,
@@ -143,6 +152,7 @@ export async function updateProduct(
     const productId = String(formData.get("productId") || "").trim();
     const parentSku = String(formData.get("parentSku") || "").trim();
     const parentName = String(formData.get("parentName") || "").trim();
+    const quantity = Number(formData.get("quantity") || 1);
     const sku = String(formData.get("sku") || "").trim();
     const name = String(formData.get("name") || "").trim();
     const purchasePrice = toMoney(formData.get("purchasePrice"));
@@ -153,6 +163,12 @@ export async function updateProduct(
       return {
         success: false,
         message: "Product ID, parent SKU and SKU are required.",
+      };
+    }
+    if (quantity <= 0) {
+      return {
+        success: false,
+        message: "Quantity must be greater than 0.",
       };
     }
 
@@ -196,6 +212,7 @@ export async function updateProduct(
           parentId: parent.id,
           sku,
           name: name || sku,
+          quantity,
           purchasePrice,
           sellingPrice,
           status,
@@ -262,6 +279,7 @@ export async function importProductsCsv(
     let purchaseIndex = 1;
     let sellIndex = 2;
     let parentIndex = 3;
+    let quantityIndex = 4;
 
     const firstRow = rows[0].map((cell) => String(cell || "").trim().toLowerCase());
 
@@ -274,6 +292,7 @@ export async function importProductsCsv(
     if (hasHeader) {
       startIndex = 1;
       const foundSku = firstRow.findIndex((cell) => cell.includes("sku"));
+      const foundQuantity = firstRow.findIndex((cell) => cell.includes("qty") || cell.includes("quantity"));
       const foundPurchase = firstRow.findIndex((cell) => cell.includes("purchase"));
       const foundSell = firstRow.findIndex((cell) => cell.includes("sell"));
       const foundParent = firstRow.findIndex((cell) => cell.includes("parent"));
@@ -282,6 +301,7 @@ export async function importProductsCsv(
       if (foundPurchase >= 0) purchaseIndex = foundPurchase;
       if (foundSell >= 0) sellIndex = foundSell;
       if (foundParent >= 0) parentIndex = foundParent;
+      if (foundQuantity >= 0) quantityIndex = foundQuantity;
     }
 
     let importedCount = 0;
@@ -295,6 +315,7 @@ export async function importProductsCsv(
         const sku = String(row[skuIndex] || "").trim();
         const purchasePrice = toMoney(row[purchaseIndex]);
         const sellingPrice = toMoney(row[sellIndex]);
+        const quantity = Number(row[quantityIndex] || 1);
         const parentSku = String(row[parentIndex] || "").trim();
 
         if (!sku) {
@@ -322,6 +343,7 @@ export async function importProductsCsv(
               name: existingProduct.name || sku,
               purchasePrice,
               sellingPrice,
+              quantity: quantity > 0 ? quantity : 1,
               status: true,
             },
           });
@@ -335,6 +357,7 @@ export async function importProductsCsv(
               name: sku,
               purchasePrice,
               sellingPrice,
+              quantity: quantity > 0 ? quantity : 1,
               status: true,
             },
           });

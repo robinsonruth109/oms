@@ -89,6 +89,21 @@ export default function CreateProductForm() {
           </div>
 
           <div className="space-y-2">
+            <label htmlFor="quantity" className="text-sm font-medium text-slate-700">
+              Quantity
+            </label>
+            <input
+              id="quantity"
+              name="quantity"
+              type="number"
+              min="1"
+              defaultValue="1"
+              className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
             <label
               htmlFor="purchasePrice"
               className="text-sm font-medium text-slate-700"

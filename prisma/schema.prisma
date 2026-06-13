@@ -7,14 +7,14 @@ datasource db {
 }
 
 model User {
-  id             String         @id @default(uuid())
-  name           String
-  username       String         @unique
-  password       String
-  role           Role
-  status         Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id        String   @id @default(uuid())
+  name      String
+  username  String   @unique
+  password  String
+  role      Role
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   calledOrders   Order[]        @relation("CalledOrders")
   invoiceBatches InvoiceBatch[]
@@ -30,19 +30,20 @@ model Page {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  orders            Order[]
+  orders Order[]
 }
 
 model OrderSource {
-  id           String          @id @default(uuid())
-  name         String          @unique
-  type         OrderSourceType
-  status       Boolean         @default(true)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id        String          @id @default(uuid())
+  name      String          @unique
+  type      OrderSourceType
+  status    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   integrations Integration[]
   orders       Order[]
+  adsCostItems AdsCostItem[]
 }
 
 model Integration {
@@ -58,21 +59,22 @@ model Integration {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  orders        Order[]
+  orders Order[]
 
   @@index([platform])
   @@index([sourceId])
 }
 
 model ProductParent {
-  id        String    @id @default(uuid())
-  sku       String    @unique
+  id        String   @id @default(uuid())
+  sku       String   @unique
   name      String
-  status    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  products  Product[]
+  products     Product[]
+  adsCostItems AdsCostItem[]
 }
 
 model Courier {
@@ -85,65 +87,67 @@ model Courier {
 }
 
 model Product {
-  id            String        @id @default(uuid())
-  parentId      String
-  parent        ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+  id       String        @id @default(uuid())
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
 
-  sku           String        @unique
+  sku           String   @unique
   name          String
-  purchasePrice Decimal       @db.Decimal(10, 2)
-  sellingPrice  Decimal       @db.Decimal(10, 2)
-  status        Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  quantity      Int      @default(1)
+  purchasePrice Decimal  @db.Decimal(10, 2)
+  sellingPrice  Decimal  @db.Decimal(10, 2)
+  status        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  orderItems    OrderItem[]
+  orderItems     OrderItem[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model Order {
-  id                String           @id @default(uuid())
-  orderId           String?          @unique
-  invoiceId         String?          @unique
+  id        String  @id @default(uuid())
+  orderId   String? @unique
+  invoiceId String? @unique
 
-  integrationId     String?
-  integration       Integration?     @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  externalOrderId   String?
+  integrationId   String?
+  integration     Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  externalOrderId String?
 
-  sourceId          String
-  source            OrderSource      @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  sourceId String
+  source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
 
-  pageId            String?
-  page              Page?            @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  pageId String?
+  page   Page?   @relation(fields: [pageId], references: [id], onDelete: SetNull)
 
-  customerName      String
-  address           String
-  phone             String
+  customerName String
+  address      String
+  phone        String
 
-  subtotal          Decimal          @db.Decimal(10, 2)
-  discount          Decimal          @default(0) @db.Decimal(10, 2)
-  advance           Decimal          @default(0) @db.Decimal(10, 2)
-  deliveryCharge    Decimal          @default(0) @db.Decimal(10, 2)
-  totalAmount       Decimal          @db.Decimal(10, 2)
+  subtotal       Decimal @db.Decimal(10, 2)
+  discount       Decimal @default(0) @db.Decimal(10, 2)
+  advance        Decimal @default(0) @db.Decimal(10, 2)
+  deliveryCharge Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal @db.Decimal(10, 2)
 
-  orderStatus       OrderStatus      @default(PENDING_CONFIRMATION)
-  courier           String?
+  orderStatus OrderStatus @default(PENDING_CONFIRMATION)
+  courier     String?
 
-  note              String?          @db.Text
-  calledByUserId    String?
-  calledByUser      User?            @relation("CalledOrders", fields: [calledByUserId], references: [id], onDelete: SetNull)
-  calledAt          DateTime?
+  note           String?   @db.Text
+  calledByUserId String?
+  calledByUser   User?     @relation("CalledOrders", fields: [calledByUserId], references: [id], onDelete: SetNull)
+  calledAt       DateTime?
 
-  invoiceDownloaded Boolean          @default(false)
-  csvDownloaded     Boolean          @default(false)
+  invoiceDownloaded Boolean @default(false)
+  csvDownloaded     Boolean @default(false)
 
-  readyToShipAt     DateTime         @default(now())
+  readyToShipAt DateTime @default(now())
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
   items             OrderItem[]
 
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([integrationId, externalOrderId])
   @@index([integrationId])
@@ -154,22 +158,59 @@ model Order {
   @@index([calledByUserId])
 }
 
-model OrderItem {
-  id          String    @id @default(uuid())
-  orderId     String
-  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+model AdsCostUpload {
+  id          String   @id @default(uuid())
+  uploadDate  DateTime
+  fileName    String?
+  totalAmount Decimal  @db.Decimal(10, 2)
 
-  productId   String?
-  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  items AdsCostItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uploadDate])
+}
+
+model AdsCostItem {
+  id String @id @default(uuid())
+
+  uploadId String
+  upload   AdsCostUpload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  campaignName String
+  amountSpent  Decimal @db.Decimal(10, 2)
+
+  productParentId String
+  productParent   ProductParent @relation(fields: [productParentId], references: [id], onDelete: Restrict)
+
+  sourceId String
+  source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uploadId])
+  @@index([productParentId])
+  @@index([sourceId])
+}
+
+model OrderItem {
+  id      String @id @default(uuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   productSku  String
   productName String
   quantity    Int
-  unitPrice   Decimal   @db.Decimal(10, 2)
-  lineTotal   Decimal   @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  lineTotal   Decimal @db.Decimal(10, 2)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([orderId])
   @@index([productId])
@@ -177,15 +218,15 @@ model OrderItem {
 }
 
 model InvoiceBatch {
-  id              String             @id @default(uuid())
-  batchNo         String             @unique
+  id              String   @id @default(uuid())
+  batchNo         String   @unique
   courier         String
   totalOrders     Int
   createdByUserId String
-  createdByUser   User               @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
-  createdAt       DateTime           @default(now())
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
 
-  items           InvoiceBatchItem[]
+  items InvoiceBatchItem[]
 
   @@index([createdByUserId])
   @@index([courier])
@@ -197,25 +238,122 @@ model InvoiceBatchItem {
   batch   InvoiceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
   orderId String
-  order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@unique([batchId, orderId])
   @@index([orderId])
 }
 
 model CsvBatch {
-  id              String       @id @default(uuid())
-  batchNo         String       @unique
+  id              String   @id @default(uuid())
+  batchNo         String   @unique
   courier         String
   totalOrders     Int
   createdByUserId String
-  createdByUser   User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
-  createdAt       DateTime     @default(now())
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
 
-  items           CsvBatchItem[]
+  items CsvBatchItem[]
 
   @@index([createdByUserId])
   @@index([courier])
+}
+
+model PurchaseOrder {
+  id String @id @default(uuid())
+
+  invoiceNo String @unique
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  productSku  String
+  productName String
+  parentSku   String
+
+  orderDate DateTime
+
+  quantity     Int
+  quantityType String
+
+  productImage String?
+
+  unitPriceUsd      Decimal @db.Decimal(10, 2)
+  platformChargeUsd Decimal @db.Decimal(10, 2)
+  shippingUsd       Decimal @db.Decimal(10, 2)
+
+  subtotalUsd Decimal @db.Decimal(10, 2)
+
+  status String @default("PENDING")
+
+  note String?
+
+  payments PurchasePayment[]
+
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  receivedOrders PurchaseReceivedOrder[]
+}
+
+model PurchasePayment {
+  id String @id @default(uuid())
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  paymentDate DateTime
+
+  paymentType String
+
+  amountUsd Decimal @db.Decimal(10, 2)
+  usdRate   Decimal @db.Decimal(10, 2)
+  amountBdt Decimal @db.Decimal(10, 2)
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PurchaseReceivedOrder {
+  id String @id @default(uuid())
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  receiveDate DateTime
+
+  receivedQty Int
+
+  packageWeight  Decimal @db.Decimal(10, 2)
+  cnfRatePerKg   Decimal @db.Decimal(10, 2)
+  totalCnfCharge Decimal @db.Decimal(10, 2)
+
+  otherCostBdt     Decimal @db.Decimal(10, 2)
+  paidAmountBdt    Decimal @db.Decimal(10, 2)
+  grandTotalBdt    Decimal @db.Decimal(10, 2)
+  unitOriginalCost Decimal @db.Decimal(10, 2)
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([purchaseOrderId])
+}
+
+model DailyDollarRate {
+  id        String   @id @default(uuid())
+  rateDate  DateTime
+  usdAmount Decimal  @db.Decimal(10, 2)
+  bdtAmount Decimal  @db.Decimal(10, 2)
+  usdRate   Decimal  @db.Decimal(10, 2)
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([rateDate])
 }
 
 model CsvBatchItem {
@@ -224,7 +362,7 @@ model CsvBatchItem {
   batch   CsvBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
   orderId String
-  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@unique([batchId, orderId])
   @@index([orderId])

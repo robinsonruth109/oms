@@ -19,6 +19,7 @@ import {
   ClipboardList,
   Send,
   BarChart3,
+  ShoppingCart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -160,6 +161,11 @@ export default async function DashboardLayout({
                       Cancelled
                     </Button>
                   </Link>
+                  <Link href="/dashboard/ready-orders-download">
+                    <Button variant="outline" size="sm">
+                      Order Download
+                    </Button>
+                    </Link>
                   <Link href="/dashboard/reports">
                     <Button variant="outline" size="sm">
                       Reports
@@ -168,6 +174,39 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/product-report">
                     <Button variant="outline" size="sm">
                       Product Report
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard/daily-source-status">
+                    <Button variant="outline" size="sm">
+                      Daily Status
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard/products-purchases/purchase-orders">
+                    <Button variant="outline" size="sm">
+                      Purchase Orders
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/products-purchases/received-orders">
+                    <Button variant="outline" size="sm">
+                      Received Orders
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/ads-cost/upload">
+                    <Button variant="outline" size="sm">
+                      Ads Cost Upload
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/ads-cost/report">
+                    <Button variant="outline" size="sm">
+                      Ads Cost Report
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard/doller-rates">
+                    <Button variant="outline" size="sm">
+                      Dollar Rates
                     </Button>
                   </Link>
                 </>
@@ -302,6 +341,11 @@ export default async function DashboardLayout({
                     label="Cancelled"
                   />
                   <NavLink
+                    href="/dashboard/ready-orders-download"
+                    icon={<Truck className="h-4 w-4" />}
+                    label="Order Download"
+                  />
+                  <NavLink
                     href="/dashboard/reports"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Reports"
@@ -310,6 +354,40 @@ export default async function DashboardLayout({
                     href="/dashboard/product-report"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Product Report"
+                  />
+                  <NavLink
+                    href="/dashboard/daily-source-status"
+                    icon={<BarChart3 className="h-4 w-4" />}
+                    label="Daily Status"
+                  />
+                  <NavLink
+                    href="/dashboard/products-purchases/purchase-orders"
+                    icon={<ShoppingCart className="h-4 w-4" />}
+                    label="Purchase Orders"
+                  />
+
+                  <NavLink
+                    href="/dashboard/products-purchases/received-orders"
+                    icon={<Truck className="h-4 w-4" />}
+                    label="Received Orders"
+                  />
+
+                  <NavLink
+                    href="/dashboard/ads-cost/upload"
+                    icon={<Truck className="h-4 w-4" />}
+                    label="Ads Cost Upload"
+                  />
+
+                  <NavLink
+                    href="/dashboard/ads-cost/report"
+                    icon={<Truck className="h-4 w-4" />}
+                    label="Ads Cost Report"
+                  />
+
+                  <NavLink
+                    href="/dashboard/doller-rates"
+                    icon={<Truck className="h-4 w-4" />}
+                    label="Dollar Rates"
                   />
                 </>
               )}

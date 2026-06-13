@@ -108,6 +108,7 @@ export default async function ProductsPage({
             id: editProduct.id,
             sku: editProduct.sku,
             name: editProduct.name,
+            quantity: editProduct.quantity,
             purchasePrice: String(editProduct.purchasePrice),
             sellingPrice: String(editProduct.sellingPrice),
             status: editProduct.status,
@@ -155,6 +156,10 @@ export default async function ProductsPage({
                   <p className="font-medium text-slate-800">{product.parent.sku}</p>
                 </div>
                 <div>
+                  <p className="text-slate-400">Qty</p>
+                  <p className="font-medium text-slate-800">{product.quantity}</p>
+                </div>
+                <div>
                   <p className="text-slate-400">Status</p>
                   <p className="font-medium text-slate-800">
                     {product.status ? "Active" : "Inactive"}
@@ -191,6 +196,9 @@ export default async function ProductsPage({
                   Parent SKU
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Qty
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Purchase
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -216,6 +224,9 @@ export default async function ProductsPage({
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     {product.parent.sku}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-700">
+                    {product.quantity}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     ৳ {Number(product.purchasePrice).toFixed(2)}

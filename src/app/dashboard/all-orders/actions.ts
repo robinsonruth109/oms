@@ -319,6 +319,69 @@ export async function updateAllOrder(
   }
 }
 
+export async function bulkDeleteOrdersAction(
+  orderIds: string[]
+): Promise<ActionResult> {
+  const session = await getServerSession(authOptions);
+
+  if (!session || session.user.role !== "ADMIN") {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  const cleanedIds = orderIds
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+
+  if (!cleanedIds.length) {
+    return {
+      success: false,
+      message: "No orders selected.",
+    };
+  }
+
+  try {
+    const result = await prisma.order.deleteMany({
+      where: {
+        id: {
+          in: cleanedIds,
+        },
+      },
+    });
+
+    revalidatePath("/dashboard/all-orders");
+    revalidatePath("/dashboard/orders");
+    revalidatePath("/dashboard/pending-orders");
+    revalidatePath("/dashboard/call");
+    revalidatePath("/dashboard/ready-to-ship");
+    revalidatePath("/dashboard/stock-out");
+    revalidatePath("/dashboard/cancelled");
+    revalidatePath("/dashboard/reports");
+    revalidatePath("/dashboard/product-report");
+    revalidatePath("/dashboard/post-print-actions");
+
+    return {
+      success: true,
+      message: `${result.count} order(s) deleted successfully.`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to bulk delete orders.",
+    };
+  }
+}
+
+
+
+
+
+
 export async function deleteOrderAction(
   _prevState: DeleteOrderState,
   formData: FormData
@@ -347,6 +410,7 @@ export async function deleteOrderAction(
         id: orderId,
       },
     });
+
 
     revalidatePath("/dashboard/all-orders");
     revalidatePath(`/dashboard/all-orders/${orderId}`);

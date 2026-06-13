@@ -1,18 +1,17 @@
 import Link from "next/link";
-import DeleteOrderButton from "./delete-order-button";
+import AllOrdersTable from "./all-orders-table";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const PAGE_SIZE = 100;
+
 type AllOrdersPageProps = {
   searchParams?: Promise<{
     q?: string;
+    page?: string;
   }>;
 };
-
-function formatMoney(value: number) {
-  return `৳ ${value.toFixed(2)}`;
-}
 
 export default async function AllOrdersPage({
   searchParams,
@@ -21,58 +20,79 @@ export default async function AllOrdersPage({
 
   const params = (await searchParams) || {};
   const q = (params.q || "").trim();
+  const currentPage = Math.max(Number(params.page || 1), 1);
+  const skip = (currentPage - 1) * PAGE_SIZE;
 
-  const orders = await prisma.order.findMany({
-    where: q
-      ? {
-          OR: [
-            {
-              invoiceId: {
-                contains: q,
-              },
-            },
-            {
-              phone: {
-                contains: q,
-              },
-            },
-            {
-              externalOrderId: {
-                contains: q,
-              },
-            },
-            {
-              customerName: {
-                contains: q,
-              },
-            },
-          ],
-        }
-      : undefined,
-    include: {
-      source: true,
-      page: true,
-      integration: true,
-      items: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: 200,
-  });
+  const where = q
+    ? {
+        OR: [
+          { invoiceId: { contains: q } },
+          { phone: { contains: q } },
+          { externalOrderId: { contains: q } },
+          { customerName: { contains: q } },
+        ],
+      }
+    : undefined;
+
+  const [totalOrders, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      include: {
+        source: true,
+        page: true,
+        integration: true,
+        items: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: PAGE_SIZE,
+    }),
+  ]);
+
+  const totalPages = Math.max(Math.ceil(totalOrders / PAGE_SIZE), 1);
+
+  function buildPageUrl(pageNumber: number) {
+    const query = new URLSearchParams();
+
+    if (q) query.set("q", q);
+    query.set("page", String(pageNumber));
+
+    return `/dashboard/all-orders?${query.toString()}`;
+  }
+
+  const serializedOrders = orders.map((order) => ({
+    id: order.id,
+    invoiceId: order.invoiceId,
+    externalOrderId: order.externalOrderId,
+    customerName: order.customerName,
+    phone: order.phone,
+    orderStatus: order.orderStatus,
+    totalAmount: Number(order.totalAmount),
+    sourceName: order.source?.name || "N/A",
+    pageName: order.page?.name || "N/A",
+    items: order.items.map((item) => ({
+      id: item.id,
+      productSku: item.productSku,
+      quantity: item.quantity,
+    })),
+  }));
 
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">All Orders</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Search and manage all orders from every source. Use this page to fix
-          cancelled or incorrectly updated orders.
+          Search, manage, update and bulk delete orders.
         </p>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <form className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <input type="hidden" name="page" value="1" />
+
           <div className="space-y-2 md:col-span-3">
             <label htmlFor="q" className="text-sm font-medium text-slate-700">
               Search Order
@@ -98,119 +118,34 @@ export default async function AllOrdersPage({
         </form>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead className="bg-slate-50">
-              <tr className="border-b">
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Invoice
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Customer
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Source / Page
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Items
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Status
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Total
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Action
-                </th>
-              </tr>
-            </thead>
+      <div className="rounded-2xl border bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
+        Showing page <span className="font-semibold">{currentPage}</span> of{" "}
+        <span className="font-semibold">{totalPages}</span> —{" "}
+        <span className="font-semibold">{orders.length}</span> loaded from{" "}
+        <span className="font-semibold">{totalOrders}</span> total orders.
+      </div>
 
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-b last:border-b-0">
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p className="font-semibold text-slate-900">
-                        {order.invoiceId || "N/A"}
-                      </p>
-                      <p className="text-slate-500">
-                        {order.externalOrderId || "N/A"}
-                      </p>
-                    </div>
-                  </td>
+      <AllOrdersTable orders={serializedOrders} />
 
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p className="font-medium text-slate-900">
-                        {order.customerName}
-                      </p>
-                      <p className="text-slate-500">{order.phone}</p>
-                    </div>
-                  </td>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {currentPage > 1 ? (
+          <Link
+            href={buildPageUrl(currentPage - 1)}
+            className="rounded-xl border bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            Previous 100
+          </Link>
+        ) : null}
 
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div>
-                      <p>{order.source.name}</p>
-                      <p className="text-slate-500">
-                        {order.page?.name || "N/A"}
-                      </p>
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    <div className="space-y-1">
-                      {order.items.slice(0, 2).map((item) => (
-                        <p key={item.id}>
-                          {item.productSku} × {item.quantity}
-                        </p>
-                      ))}
-                      {order.items.length > 2 ? (
-                        <p className="text-slate-400">
-                          +{order.items.length - 2} more
-                        </p>
-                      ) : null}
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 text-sm font-medium text-slate-800">
-                    {order.orderStatus}
-                  </td>
-
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                    {formatMoney(Number(order.totalAmount))}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href={`/dashboard/all-orders/${order.id}`}
-                        className="inline-flex rounded-xl border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        View / Update
-                      </Link>
-
-                      <DeleteOrderButton orderId={order.id} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {!orders.length && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-6 py-8 text-center text-sm text-slate-500"
-                  >
-                    No orders found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+        {currentPage < totalPages ? (
+          <Link
+            href={buildPageUrl(currentPage + 1)}
+            className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+          >
+            Next 100
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }

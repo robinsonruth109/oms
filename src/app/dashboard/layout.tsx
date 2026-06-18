@@ -20,6 +20,8 @@ import {
   Send,
   BarChart3,
   ShoppingCart,
+  CalendarCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -89,6 +91,12 @@ export default async function DashboardLayout({
                 </Button>
               </Link>
 
+              <Link href="/dashboard/attendance">
+                <Button variant="outline" size="sm">
+                  Attendance
+                </Button>
+              </Link>
+
               {isAdmin && (
                 <>
                   <Link href="/dashboard/users">
@@ -96,91 +104,109 @@ export default async function DashboardLayout({
                       Users
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/pages">
                     <Button variant="outline" size="sm">
                       Pages
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/sources">
                     <Button variant="outline" size="sm">
                       Sources
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/integrations">
                     <Button variant="outline" size="sm">
                       Integrations
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/couriers">
                     <Button variant="outline" size="sm">
                       Couriers
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/products">
                     <Button variant="outline" size="sm">
                       Products
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/all-orders">
                     <Button variant="outline" size="sm">
                       All Orders
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/orders">
                     <Button variant="outline" size="sm">
                       Orders
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/pending-orders">
                     <Button variant="outline" size="sm">
                       Pending Orders
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/call">
                     <Button variant="outline" size="sm">
                       Calling Panel
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/ready-to-ship">
                     <Button variant="outline" size="sm">
                       Ready to Ship
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/post-print-actions">
                     <Button variant="outline" size="sm">
                       Post Print
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/stock-out">
                     <Button variant="outline" size="sm">
                       Stock Out
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/cancelled">
                     <Button variant="outline" size="sm">
                       Cancelled
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/ready-orders-download">
                     <Button variant="outline" size="sm">
                       Order Download
                     </Button>
-                    </Link>
+                  </Link>
+
                   <Link href="/dashboard/reports">
                     <Button variant="outline" size="sm">
                       Reports
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/product-report">
                     <Button variant="outline" size="sm">
                       Product Report
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/daily-source-status">
                     <Button variant="outline" size="sm">
                       Daily Status
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/products-purchases/purchase-orders">
                     <Button variant="outline" size="sm">
                       Purchase Orders
@@ -204,9 +230,22 @@ export default async function DashboardLayout({
                       Ads Cost Report
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/doller-rates">
                     <Button variant="outline" size="sm">
                       Dollar Rates
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/attendance/report">
+                    <Button variant="outline" size="sm">
+                      Attendance Report
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/attendance/violations">
+                    <Button variant="outline" size="sm">
+                      Violations
                     </Button>
                   </Link>
                 </>
@@ -219,11 +258,13 @@ export default async function DashboardLayout({
                       Pending Orders
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/call">
                     <Button variant="outline" size="sm">
                       Calling Panel
                     </Button>
                   </Link>
+
                   <Link href="/dashboard/reports">
                     <Button variant="outline" size="sm">
                       Reports
@@ -247,6 +288,7 @@ export default async function DashboardLayout({
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
                 <ShieldCheck className="h-5 w-5" />
               </div>
+
               <div>
                 <h2 className="text-xl font-bold text-slate-900">OMS</h2>
                 <p className="text-sm text-slate-500">
@@ -256,7 +298,7 @@ export default async function DashboardLayout({
             </div>
           </div>
 
-          <div className="flex-1 px-4 py-6">
+          <div className="flex-1 overflow-y-auto px-4 py-6">
             <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
               Main Menu
             </p>
@@ -268,6 +310,12 @@ export default async function DashboardLayout({
                 label="Dashboard"
               />
 
+              <NavLink
+                href="/dashboard/attendance"
+                icon={<CalendarCheck className="h-4 w-4" />}
+                label="Attendance"
+              />
+
               {isAdmin && (
                 <>
                   <NavLink
@@ -275,91 +323,109 @@ export default async function DashboardLayout({
                     icon={<Users className="h-4 w-4" />}
                     label="Manage Users"
                   />
+
                   <NavLink
                     href="/dashboard/pages"
                     icon={<FileStack className="h-4 w-4" />}
                     label="Page Master"
                   />
+
                   <NavLink
                     href="/dashboard/sources"
                     icon={<Boxes className="h-4 w-4" />}
                     label="Source Master"
                   />
+
                   <NavLink
                     href="/dashboard/integrations"
                     icon={<Plug className="h-4 w-4" />}
                     label="Integrations"
                   />
+
                   <NavLink
                     href="/dashboard/couriers"
                     icon={<Send className="h-4 w-4" />}
                     label="Courier Master"
                   />
+
                   <NavLink
                     href="/dashboard/products"
                     icon={<Shapes className="h-4 w-4" />}
                     label="Product Master"
                   />
+
                   <NavLink
                     href="/dashboard/orders"
                     icon={<Package className="h-4 w-4" />}
                     label="Orders"
                   />
+
                   <NavLink
                     href="/dashboard/all-orders"
                     icon={<Package className="h-4 w-4" />}
                     label="All Orders"
                   />
+
                   <NavLink
                     href="/dashboard/pending-orders"
                     icon={<ClipboardList className="h-4 w-4" />}
                     label="Pending Orders"
                   />
+
                   <NavLink
                     href="/dashboard/call"
                     icon={<PhoneCall className="h-4 w-4" />}
                     label="Calling Panel"
                   />
+
                   <NavLink
                     href="/dashboard/ready-to-ship"
                     icon={<Truck className="h-4 w-4" />}
                     label="Ready to Ship"
                   />
+
                   <NavLink
                     href="/dashboard/post-print-actions"
                     icon={<Ban className="h-4 w-4" />}
                     label="Post Print Actions"
                   />
+
                   <NavLink
                     href="/dashboard/stock-out"
                     icon={<PackageX className="h-4 w-4" />}
                     label="Stock Out"
                   />
+
                   <NavLink
                     href="/dashboard/cancelled"
                     icon={<Ban className="h-4 w-4" />}
                     label="Cancelled"
                   />
+
                   <NavLink
                     href="/dashboard/ready-orders-download"
                     icon={<Truck className="h-4 w-4" />}
                     label="Order Download"
                   />
+
                   <NavLink
                     href="/dashboard/reports"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Reports"
                   />
+
                   <NavLink
                     href="/dashboard/product-report"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Product Report"
                   />
+
                   <NavLink
                     href="/dashboard/daily-source-status"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Daily Status"
                   />
+
                   <NavLink
                     href="/dashboard/products-purchases/purchase-orders"
                     icon={<ShoppingCart className="h-4 w-4" />}
@@ -389,6 +455,18 @@ export default async function DashboardLayout({
                     icon={<Truck className="h-4 w-4" />}
                     label="Dollar Rates"
                   />
+
+                  <NavLink
+                    href="/dashboard/attendance/report"
+                    icon={<BarChart3 className="h-4 w-4" />}
+                    label="Attendance Report"
+                  />
+
+                  <NavLink
+                    href="/dashboard/attendance/violations"
+                    icon={<AlertTriangle className="h-4 w-4" />}
+                    label="Attendance Violations"
+                  />
                 </>
               )}
 
@@ -399,11 +477,13 @@ export default async function DashboardLayout({
                     icon={<ClipboardList className="h-4 w-4" />}
                     label="Pending Orders"
                   />
+
                   <NavLink
                     href="/dashboard/call"
                     icon={<PhoneCall className="h-4 w-4" />}
                     label="Calling Panel"
                   />
+
                   <NavLink
                     href="/dashboard/reports"
                     icon={<BarChart3 className="h-4 w-4" />}

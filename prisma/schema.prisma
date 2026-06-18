@@ -19,6 +19,9 @@ model User {
   calledOrders   Order[]        @relation("CalledOrders")
   invoiceBatches InvoiceBatch[]
   csvBatches     CsvBatch[]
+  attendances           Attendance[]
+  attendanceEvents      AttendanceEvent[]
+  attendanceViolations  AttendanceViolation[]
 }
 
 model Page {
@@ -393,4 +396,97 @@ enum OrderStatus {
   DOUBLE_ORDER
   STOCK_OUT
   RETURNED
+}
+
+
+enum AttendanceStatus {
+  ON_TIME
+  LATE
+  ABSENT
+}
+
+enum AttendanceEventType {
+  ATTEND
+  BREAK_START
+  BREAK_END
+  EVENING_BREAK_START
+  EVENING_BREAK_END
+  WORK_OFF
+}
+
+enum AttendanceViolationType {
+  LATE_ATTENDANCE
+  BREAK_OVERSTAY
+  EVENING_BREAK_OVERSTAY
+  MISSING_WORK_OFF
+}
+
+model Attendance {
+  id             String   @id @default(cuid())
+
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  attendanceDate DateTime
+
+  attendAt       DateTime?
+  workOffAt      DateTime?
+
+  status         AttendanceStatus @default(ON_TIME)
+  lateMinutes    Int              @default(0)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  events         AttendanceEvent[]
+  violations     AttendanceViolation[]
+
+  @@unique([userId, attendanceDate])
+  @@index([userId])
+  @@index([attendanceDate])
+}
+
+model AttendanceEvent {
+  id              String   @id @default(cuid())
+
+  attendanceId    String
+  attendance      Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  eventType       AttendanceEventType
+  eventTime       DateTime @default(now())
+
+  durationMinutes Int?
+  isLate          Boolean  @default(false)
+  lateMinutes     Int      @default(0)
+
+  createdAt       DateTime @default(now())
+
+  @@index([attendanceId])
+  @@index([userId])
+  @@index([eventTime])
+}
+
+model AttendanceViolation {
+  id              String   @id @default(cuid())
+
+  attendanceId    String
+  attendance      Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  violationType   AttendanceViolationType
+  violationTime   DateTime @default(now())
+
+  minutes         Int      @default(0)
+  message         String
+
+  createdAt       DateTime @default(now())
+
+  @@index([attendanceId])
+  @@index([userId])
+  @@index([violationTime])
 }

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,7 +24,7 @@ function getBangladeshDayRangeFromDateKey(dateKey: string) {
   return { start, end };
 }
 
-function formatBangladeshTime(date: Date | null) {
+function formatBangladeshTime(date: Date | null | undefined) {
   if (!date) return null;
 
   return new Intl.DateTimeFormat("en-US", {
@@ -40,6 +37,7 @@ function formatBangladeshTime(date: Date | null) {
 }
 
 async function getCurrentUserRole() {
+  const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
 
   const role =
@@ -54,6 +52,8 @@ function isAdminRole(role: string | null) {
 }
 
 export async function GET(request: NextRequest) {
+  const { prisma } = await import("@/lib/prisma");
+
   const role = await getCurrentUserRole();
 
   if (!isAdminRole(role)) {
@@ -112,8 +112,8 @@ export async function GET(request: NextRequest) {
       message: item.message,
       attendance: {
         ...item.attendance,
-        attendAtFormatted: formatBangladeshTime(item.attendance.attendAt),
-        workOffAtFormatted: formatBangladeshTime(item.attendance.workOffAt),
+        attendAtFormatted: formatBangladeshTime(item.attendance?.attendAt),
+        workOffAtFormatted: formatBangladeshTime(item.attendance?.workOffAt),
       },
     })),
   });

@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AttendanceEventType, AttendanceStatus, AttendanceViolationType } from "@prisma/client";
 import { getServerSession } from "next-auth";
-
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +11,14 @@ const OFFICE_START_HOUR = 9;
 const OFFICE_START_MINUTE = 0;
 const ATTEND_GRACE_MINUTES = 5;
 const EVENING_BREAK_ALLOWED_MINUTES = 30;
+
+type AttendanceEventTypeValue =
+  | "ATTEND"
+  | "BREAK_START"
+  | "BREAK_END"
+  | "EVENING_BREAK_START"
+  | "EVENING_BREAK_END"
+  | "WORK_OFF";
 
 function getBangladeshDateKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -31,7 +35,7 @@ function getBangladeshDayRange(date = new Date()) {
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + 1);
 
-  return { dateKey, start, end };
+  return { start, end };
 }
 
 function getBangladeshOfficeStart(date = new Date()) {
@@ -61,6 +65,7 @@ function formatBangladeshTime(date: Date | null) {
 }
 
 async function getCurrentUserId() {
+  const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
 
   const userId =
@@ -71,6 +76,7 @@ async function getCurrentUserId() {
 }
 
 async function getOrCreateTodayAttendance(userId: string, now: Date) {
+  const { prisma } = await import("@/lib/prisma");
   const { start, end } = getBangladeshDayRange(now);
 
   const existing = await prisma.attendance.findFirst({
@@ -97,7 +103,7 @@ async function getOrCreateTodayAttendance(userId: string, now: Date) {
     data: {
       userId,
       attendanceDate: start,
-      status: AttendanceStatus.ON_TIME,
+      status: "ON_TIME",
     },
     include: {
       events: {
@@ -113,11 +119,17 @@ async function getOrCreateTodayAttendance(userId: string, now: Date) {
 async function createViolation(params: {
   attendanceId: string;
   userId: string;
-  violationType: AttendanceViolationType;
+  violationType:
+    | "LATE_ATTENDANCE"
+    | "BREAK_OVERSTAY"
+    | "EVENING_BREAK_OVERSTAY"
+    | "MISSING_WORK_OFF";
   minutes: number;
   message: string;
   violationTime: Date;
 }) {
+  const { prisma } = await import("@/lib/prisma");
+
   const existing = await prisma.attendanceViolation.findFirst({
     where: {
       attendanceId: params.attendanceId,
@@ -141,6 +153,8 @@ async function createViolation(params: {
 }
 
 export async function POST(request: NextRequest) {
+  const { prisma } = await import("@/lib/prisma");
+
   const userId = await getCurrentUserId();
 
   if (!userId) {
@@ -151,14 +165,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const action = body?.action as
-    | "ATTEND"
-    | "BREAK_START"
-    | "BREAK_END"
-    | "EVENING_BREAK_START"
-    | "EVENING_BREAK_END"
-    | "WORK_OFF"
-    | undefined;
+  const action = body?.action as AttendanceEventTypeValue | undefined;
 
   if (!action) {
     return NextResponse.json(
@@ -193,12 +200,12 @@ export async function POST(request: NextRequest) {
       },
       data: {
         attendAt: now,
-        status: isLate ? AttendanceStatus.LATE : AttendanceStatus.ON_TIME,
+        status: isLate ? "LATE" : "ON_TIME",
         lateMinutes,
         events: {
           create: {
             userId,
-            eventType: AttendanceEventType.ATTEND,
+            eventType: "ATTEND",
             eventTime: now,
             isLate,
             lateMinutes,
@@ -219,7 +226,7 @@ export async function POST(request: NextRequest) {
       await createViolation({
         attendanceId: attendance.id,
         userId,
-        violationType: AttendanceViolationType.LATE_ATTENDANCE,
+        violationType: "LATE_ATTENDANCE",
         minutes: lateMinutes,
         message: `You are late in work by ${lateMinutes} minute(s).`,
         violationTime: now,
@@ -253,8 +260,8 @@ export async function POST(request: NextRequest) {
 
   if (action === "BREAK_START") {
     if (
-      lastEvent?.eventType === AttendanceEventType.BREAK_START ||
-      lastEvent?.eventType === AttendanceEventType.EVENING_BREAK_START
+      lastEvent?.eventType === "BREAK_START" ||
+      lastEvent?.eventType === "EVENING_BREAK_START"
     ) {
       return NextResponse.json(
         { success: false, message: "You are already on break." },
@@ -266,7 +273,7 @@ export async function POST(request: NextRequest) {
       data: {
         attendanceId: attendance.id,
         userId,
-        eventType: AttendanceEventType.BREAK_START,
+        eventType: "BREAK_START",
         eventTime: now,
       },
     });
@@ -279,7 +286,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "BREAK_END") {
-    if (lastEvent?.eventType !== AttendanceEventType.BREAK_START) {
+    if (lastEvent?.eventType !== "BREAK_START") {
       return NextResponse.json(
         { success: false, message: "No active normal break found." },
         { status: 400 }
@@ -292,7 +299,7 @@ export async function POST(request: NextRequest) {
       data: {
         attendanceId: attendance.id,
         userId,
-        eventType: AttendanceEventType.BREAK_END,
+        eventType: "BREAK_END",
         eventTime: now,
         durationMinutes,
       },
@@ -307,8 +314,8 @@ export async function POST(request: NextRequest) {
 
   if (action === "EVENING_BREAK_START") {
     if (
-      lastEvent?.eventType === AttendanceEventType.BREAK_START ||
-      lastEvent?.eventType === AttendanceEventType.EVENING_BREAK_START
+      lastEvent?.eventType === "BREAK_START" ||
+      lastEvent?.eventType === "EVENING_BREAK_START"
     ) {
       return NextResponse.json(
         { success: false, message: "You are already on break." },
@@ -320,7 +327,7 @@ export async function POST(request: NextRequest) {
       data: {
         attendanceId: attendance.id,
         userId,
-        eventType: AttendanceEventType.EVENING_BREAK_START,
+        eventType: "EVENING_BREAK_START",
         eventTime: now,
       },
     });
@@ -333,7 +340,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "EVENING_BREAK_END") {
-    if (lastEvent?.eventType !== AttendanceEventType.EVENING_BREAK_START) {
+    if (lastEvent?.eventType !== "EVENING_BREAK_START") {
       return NextResponse.json(
         { success: false, message: "No active evening break found." },
         { status: 400 }
@@ -350,7 +357,7 @@ export async function POST(request: NextRequest) {
       data: {
         attendanceId: attendance.id,
         userId,
-        eventType: AttendanceEventType.EVENING_BREAK_END,
+        eventType: "EVENING_BREAK_END",
         eventTime: now,
         durationMinutes,
         isLate,
@@ -362,7 +369,7 @@ export async function POST(request: NextRequest) {
       await createViolation({
         attendanceId: attendance.id,
         userId,
-        violationType: AttendanceViolationType.EVENING_BREAK_OVERSTAY,
+        violationType: "EVENING_BREAK_OVERSTAY",
         minutes: lateMinutes,
         message: `Evening break late by ${lateMinutes} minute(s).`,
         violationTime: now,
@@ -388,8 +395,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (
-      lastEvent?.eventType === AttendanceEventType.BREAK_START ||
-      lastEvent?.eventType === AttendanceEventType.EVENING_BREAK_START
+      lastEvent?.eventType === "BREAK_START" ||
+      lastEvent?.eventType === "EVENING_BREAK_START"
     ) {
       return NextResponse.json(
         { success: false, message: "Please back to seat before work off." },
@@ -406,7 +413,7 @@ export async function POST(request: NextRequest) {
         events: {
           create: {
             userId,
-            eventType: AttendanceEventType.WORK_OFF,
+            eventType: "WORK_OFF",
             eventTime: now,
           },
         },

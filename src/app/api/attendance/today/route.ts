@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,6 +38,7 @@ function formatBangladeshTime(date: Date | null) {
 }
 
 async function getCurrentUserId() {
+  const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
 
   const userId =
@@ -51,6 +49,8 @@ async function getCurrentUserId() {
 }
 
 export async function GET() {
+  const { prisma } = await import("@/lib/prisma");
+
   const userId = await getCurrentUserId();
 
   if (!userId) {

@@ -45,81 +45,126 @@ export default async function CallingPanelPage({
     };
   }
 
-  const [totalOrders, orders, couriers, products, sources, pages] =
-    await Promise.all([
-      prisma.order.count({ where }),
+  const [
+  totalOrders,
+  alreadyCalledCount,
+  notCalledCount,
+  singleItemOrderRows,
+  orders,
+  couriers,
+  products,
+  sources,
+  pages,
+] = await Promise.all([
+  prisma.order.count({ where }),
 
-      prisma.order.findMany({
-        where,
-        include: {
-          items: true,
-          source: true,
-          integration: true,
-          calledByUser: true,
-          page: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        skip,
-        take: PAGE_SIZE,
-      }),
+  prisma.order.count({
+    where: {
+      ...where,
+      calledAt: {
+        not: null,
+      },
+    },
+  }),
 
-      prisma.courier.findMany({
-        where: {
-          status: true,
-        },
-        orderBy: {
-          name: "asc",
-        },
+  prisma.order.count({
+    where: {
+      ...where,
+      calledAt: null,
+    },
+  }),
+
+  prisma.order.findMany({
+    where,
+    select: {
+      id: true,
+      items: {
         select: {
           id: true,
-          name: true,
-          slug: true,
         },
-      }),
+      },
+    },
+  }),
 
-      prisma.product.findMany({
-        where: {
-          status: true,
-        },
-        orderBy: {
-          sku: "asc",
-        },
-        include: {
-          parent: true,
-        },
-      }),
+  prisma.order.findMany({
+    where,
+    include: {
+      items: true,
+      source: true,
+      integration: true,
+      calledByUser: true,
+      page: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    skip,
+    take: PAGE_SIZE,
+  }),
 
-      prisma.orderSource.findMany({
-        where: {
-          status: true,
-        },
-        orderBy: {
-          name: "asc",
-        },
-        select: {
-          id: true,
-          name: true,
-          type: true,
-        },
-      }),
+  prisma.courier.findMany({
+    where: {
+      status: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  }),
 
-      prisma.page.findMany({
-        where: {
-          status: true,
-        },
-        orderBy: {
-          name: "asc",
-        },
-        select: {
-          id: true,
-          name: true,
-          prefixCode: true,
-        },
-      }),
-    ]);
+  prisma.product.findMany({
+    where: {
+      status: true,
+    },
+    orderBy: {
+      sku: "asc",
+    },
+    include: {
+      parent: true,
+    },
+  }),
 
+  prisma.orderSource.findMany({
+    where: {
+      status: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+    },
+  }),
+
+  prisma.page.findMany({
+    where: {
+      status: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      prefixCode: true,
+    },
+  }),
+]);
+
+const queueSummary = {
+  total: totalOrders,
+  alreadyCalled: alreadyCalledCount,
+  notCalled: notCalledCount,
+  singleItemOrders: singleItemOrderRows.filter(
+    (order) => order.items.length === 1
+  ).length,
+};
   const totalPages = Math.max(Math.ceil(totalOrders / PAGE_SIZE), 1);
   const hasNextPage = currentPage < totalPages;
   const hasPrevPage = currentPage > 1;
@@ -299,6 +344,7 @@ export default async function CallingPanelPage({
         couriers={courierOptions}
         products={productOptions}
         pages={pageOptions}
+        queueSummary={queueSummary}
       />
 
       <div className="flex flex-wrap items-center justify-center gap-3">

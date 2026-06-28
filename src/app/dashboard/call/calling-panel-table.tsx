@@ -240,11 +240,18 @@ export default function CallingPanelTable({
   couriers,
   products,
   pages,
+  queueSummary,
 }: {
   orders: CallingOrder[];
   couriers: CourierOption[];
   products: ProductOption[];
   pages: PageOption[];
+  queueSummary: {
+    total: number;
+    alreadyCalled: number;
+    notCalled: number;
+    singleItemOrders: number;
+  };
 }) {
   const [rowMap, setRowMap] = useState<Record<string, EditableRowState>>(
     buildInitialMap(orders, products)
@@ -406,14 +413,7 @@ export default function CallingPanelTable({
     });
   }
 
-  const summary = useMemo(() => {
-    return {
-      total: orders.length,
-      alreadyCalled: orders.filter((order) => order.calledAt).length,
-      notCalled: orders.filter((order) => !order.calledAt).length,
-      singleItemOrders: orders.filter((order) => order.items.length === 1).length,
-    };
-  }, [orders]);
+  const summary = queueSummary;
 
   const duplicateKeyMap = useMemo(() => {
     const counts: Record<string, number> = {};

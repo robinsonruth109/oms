@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -34,6 +35,10 @@ function getLocalDayRange() {
   return { start, end };
 }
 
+function fmtMoney(value: number) {
+  return `৳ ${value.toFixed(2)}`;
+}
+
 function StatCard({
   title,
   value,
@@ -43,7 +48,7 @@ function StatCard({
 }: {
   title: string;
   value: number | string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   href?: string;
   subtitle?: string;
 }) {
@@ -85,7 +90,7 @@ function QuickLink({
   href: string;
   title: string;
   description: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <Link
@@ -106,8 +111,190 @@ function QuickLink({
   );
 }
 
-function fmtMoney(value: number) {
-  return `৳ ${value.toFixed(2)}`;
+function ColumnChart({
+  title,
+  description,
+  data,
+}: {
+  title: string;
+  description: string;
+  data: {
+    label: string;
+    value: number;
+  }[];
+}) {
+  const max = Math.max(...data.map((item) => item.value), 1);
+
+  return (
+    <div className="rounded-3xl border bg-white p-5 shadow-sm">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+
+      <div className="flex h-72 items-end gap-3">
+        {data.map((item) => {
+          const height = Math.max((item.value / max) * 100, item.value ? 10 : 3);
+
+          return (
+            <div key={item.label} className="flex flex-1 flex-col items-center">
+              <div className="mb-2 text-sm font-bold text-slate-900">
+                {item.value}
+              </div>
+
+              <div className="flex h-48 w-full items-end rounded-2xl bg-slate-100 p-1">
+                <div
+                  className="w-full rounded-xl bg-slate-900"
+                  style={{ height: `${height}%` }}
+                />
+              </div>
+
+              <div className="mt-2 text-center text-xs font-medium text-slate-500">
+                {item.label}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HorizontalBarList({
+  title,
+  description,
+  data,
+  emptyText,
+}: {
+  title: string;
+  description: string;
+  data: {
+    id: string;
+    name: string;
+    value: number;
+    subValue?: string;
+  }[];
+  emptyText: string;
+}) {
+  const max = Math.max(...data.map((item) => item.value), 1);
+
+  return (
+    <div className="rounded-3xl border bg-white p-5 shadow-sm">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+
+      <div className="space-y-4">
+        {data.map((item) => (
+          <div key={item.id}>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  {item.name}
+                </p>
+                {item.subValue ? (
+                  <p className="text-xs text-slate-500">{item.subValue}</p>
+                ) : null}
+              </div>
+
+              <p className="text-sm font-bold text-slate-900">{item.value}</p>
+            </div>
+
+            <div className="h-3 rounded-full bg-slate-100">
+              <div
+                className="h-3 rounded-full bg-slate-900"
+                style={{
+                  width: `${Math.max((item.value / max) * 100, 4)}%`,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+
+        {!data.length && (
+          <div className="rounded-2xl border bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+            {emptyText}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DonutChart({
+  title,
+  description,
+  ready,
+  cancelled,
+  other,
+}: {
+  title: string;
+  description: string;
+  ready: number;
+  cancelled: number;
+  other: number;
+}) {
+  const total = ready + cancelled + other;
+  const readyPercent = total ? (ready / total) * 100 : 0;
+  const cancelledPercent = total ? (cancelled / total) * 100 : 0;
+
+  const gradient = total
+    ? `conic-gradient(#0f172a 0% ${readyPercent}%, #64748b ${readyPercent}% ${
+        readyPercent + cancelledPercent
+      }%, #cbd5e1 ${readyPercent + cancelledPercent}% 100%)`
+    : "conic-gradient(#e2e8f0 0% 100%)";
+
+  return (
+    <div className="rounded-3xl border bg-white p-5 shadow-sm">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+
+      <div className="flex flex-col items-center gap-5 sm:flex-row">
+        <div
+          className="relative h-44 w-44 rounded-full"
+          style={{ background: gradient }}
+        >
+          <div className="absolute inset-8 flex items-center justify-center rounded-full bg-white">
+            <div className="text-center">
+              <p className="text-3xl font-bold text-slate-900">{total}</p>
+              <p className="text-xs text-slate-500">Called</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-3">
+          <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-slate-900" />
+              <span className="text-sm font-medium text-slate-700">Ready</span>
+            </div>
+            <span className="font-bold text-slate-900">{ready}</span>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-slate-500" />
+              <span className="text-sm font-medium text-slate-700">
+                Cancelled
+              </span>
+            </div>
+            <span className="font-bold text-slate-900">{cancelled}</span>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-slate-300" />
+              <span className="text-sm font-medium text-slate-700">Other</span>
+            </div>
+            <span className="font-bold text-slate-900">{other}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default async function DashboardHomePage() {
@@ -138,50 +325,63 @@ export default async function DashboardHomePage() {
     todayRevenueRaw,
   ] = await Promise.all([
     prisma.user.count(),
+
     prisma.page.count({
       where: { status: true },
     }),
+
     prisma.orderSource.count({
       where: { status: true },
     }),
+
     prisma.integration.count(),
+
     prisma.courier.count({
       where: { status: true },
     }),
+
     prisma.product.count({
       where: { status: true },
     }),
+
     prisma.order.count(),
+
     prisma.order.count({
       where: {
         orderStatus: "PENDING_CONFIRMATION",
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "NO_ANSWER",
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "PHONE_OFF",
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "READY_TO_SHIP",
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "STOCK_OUT",
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "CANCELLED",
       },
     }),
+
     prisma.order.count({
       where: {
         calledAt: {
@@ -190,6 +390,7 @@ export default async function DashboardHomePage() {
         },
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "READY_TO_SHIP",
@@ -199,6 +400,7 @@ export default async function DashboardHomePage() {
         },
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "STOCK_OUT",
@@ -208,6 +410,7 @@ export default async function DashboardHomePage() {
         },
       },
     }),
+
     prisma.order.count({
       where: {
         orderStatus: "CANCELLED",
@@ -217,6 +420,7 @@ export default async function DashboardHomePage() {
         },
       },
     }),
+
     prisma.order.findMany({
       orderBy: {
         createdAt: "desc",
@@ -227,6 +431,7 @@ export default async function DashboardHomePage() {
       },
       take: 8,
     }),
+
     prisma.order.findMany({
       where: {
         calledAt: {
@@ -250,6 +455,7 @@ export default async function DashboardHomePage() {
         },
       },
     }),
+
     prisma.order.findMany({
       where: {
         createdAt: {
@@ -267,6 +473,7 @@ export default async function DashboardHomePage() {
         },
       },
     }),
+
     prisma.order.findMany({
       where: {
         orderStatus: "READY_TO_SHIP",
@@ -320,6 +527,8 @@ export default async function DashboardHomePage() {
   const sourceMap = new Map<string, { id: string; name: string; total: number }>();
 
   for (const row of sourceSummaryRaw) {
+    if (!row.source) continue;
+
     if (!sourceMap.has(row.source.id)) {
       sourceMap.set(row.source.id, {
         id: row.source.id,
@@ -345,15 +554,72 @@ export default async function DashboardHomePage() {
       ? `${((todayReadyToShipOrders / todayCalledOrders) * 100).toFixed(1)}%`
       : "0%";
 
+  const todayOtherCalled = Math.max(
+    todayCalledOrders - todayReadyToShipOrders - todayCancelledOrders,
+    0
+  );
+
+  const orderStatusChart = [
+    { label: "Pending", value: pendingOrders },
+    { label: "No Answer", value: noAnswerOrders },
+    { label: "Phone Off", value: phoneOffOrders },
+    { label: "Ready", value: readyToShipOrders },
+    { label: "Stock Out", value: stockOutOrders },
+    { label: "Cancelled", value: cancelledOrders },
+  ];
+
+  const agentChartData = topAgents.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    value: agent.total,
+    subValue: `${agent.ready} ready • @${agent.username}`,
+  }));
+
+  const sourceChartData = topSources.map((source) => ({
+    id: source.id,
+    name: source.name,
+    value: source.total,
+    subValue: "Today source activity",
+  }));
+
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">
-          OMS Dashboard Panel
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Overview of users, setup, orders, calling workflow, shipping and today’s performance.
-        </p>
+      <section className="overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-sm">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-300">
+              Welcome back to OMS
+            </p>
+            <h1 className="mt-2 text-3xl font-bold">
+              Graphical Dashboard Panel
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+              Live visual overview of users, setup, orders, calling workflow,
+              shipping, sources, agents and today’s performance.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl bg-white/10 p-4">
+              <p className="text-xs text-slate-300">Orders</p>
+              <p className="mt-1 text-2xl font-bold">{totalOrders}</p>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4">
+              <p className="text-xs text-slate-300">Called Today</p>
+              <p className="mt-1 text-2xl font-bold">{todayCalledOrders}</p>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4">
+              <p className="text-xs text-slate-300">Conversion</p>
+              <p className="mt-1 text-2xl font-bold">{conversionRate}</p>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4">
+              <p className="text-xs text-slate-300">Revenue</p>
+              <p className="mt-1 text-2xl font-bold">
+                {fmtMoney(todayRevenue)}
+              </p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -405,6 +671,24 @@ export default async function DashboardHomePage() {
           icon={<PhoneCall className="h-5 w-5" />}
           href="/dashboard/reports"
           subtitle="Based on called time"
+        />
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="xl:col-span-2">
+          <ColumnChart
+            title="Order Status Overview"
+            description="Column chart showing the current operational order pipeline."
+            data={orderStatusChart}
+          />
+        </div>
+
+        <DonutChart
+          title="Today Calling Outcome"
+          description="Pie-style view of today’s called order result."
+          ready={todayReadyToShipOrders}
+          cancelled={todayCancelledOrders}
+          other={todayOtherCalled}
         />
       </section>
 
@@ -469,32 +753,24 @@ export default async function DashboardHomePage() {
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
-          title="Today Ready Revenue"
-          value={fmtMoney(todayRevenue)}
-          icon={<BarChart3 className="h-5 w-5" />}
-          href="/dashboard/reports"
-          subtitle="Sum of today ready-to-ship totals"
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <HorizontalBarList
+          title="Top Agents Today"
+          description="Horizontal bar chart of agents with highest calling activity today."
+          data={agentChartData}
+          emptyText="No agent activity found today."
         />
-        <StatCard
-          title="Active Sources Today"
-          value={topSources.length}
-          icon={<Store className="h-5 w-5" />}
-          href="/dashboard/reports"
-          subtitle="Sources with orders today"
-        />
-        <StatCard
-          title="Active Agents Today"
-          value={topAgents.length}
-          icon={<Users className="h-5 w-5" />}
-          href="/dashboard/reports"
-          subtitle="Agents who called today"
+
+        <HorizontalBarList
+          title="Top Sources Today"
+          description="Horizontal bar chart of sources generating the most orders today."
+          data={sourceChartData}
+          emptyText="No source activity found today."
         />
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-4">
-        <div className="xl:col-span-3 rounded-3xl border bg-white shadow-sm">
+        <div className="rounded-3xl border bg-white shadow-sm xl:col-span-3">
           <div className="border-b px-5 py-4 sm:px-6">
             <h2 className="text-lg font-semibold text-slate-900">
               Recent Orders
@@ -544,7 +820,7 @@ export default async function DashboardHomePage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-700">
-                      {order.source.name}
+                      {order.source?.name || "N/A"}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-700">
                       {order.page?.name || "N/A"}
@@ -604,97 +880,6 @@ export default async function DashboardHomePage() {
             description="Review cancelled and closed orders."
             icon={<Ban className="h-5 w-5" />}
           />
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-3xl border bg-white shadow-sm">
-          <div className="border-b px-5 py-4 sm:px-6">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Top Agents Today
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Agents with highest calling activity today.
-            </p>
-          </div>
-
-          <div className="p-4">
-            <div className="space-y-3">
-              {topAgents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="rounded-2xl border bg-slate-50 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-900">
-                        {agent.name}
-                      </p>
-                      <p className="text-sm text-slate-500">@{agent.username}</p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {agent.total} called
-                      </p>
-                      <p className="text-xs text-emerald-600">
-                        {agent.ready} ready
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {!topAgents.length && (
-                <div className="rounded-2xl border bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
-                  No agent activity found today.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border bg-white shadow-sm">
-          <div className="border-b px-5 py-4 sm:px-6">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Top Sources Today
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Sources generating the most orders today.
-            </p>
-          </div>
-
-          <div className="p-4">
-            <div className="space-y-3">
-              {topSources.map((source) => (
-                <div
-                  key={source.id}
-                  className="rounded-2xl border bg-slate-50 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-900">
-                        {source.name}
-                      </p>
-                      <p className="text-sm text-slate-500">Today source activity</p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {source.total} orders
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {!topSources.length && (
-                <div className="rounded-2xl border bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
-                  No source activity found today.
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </section>
     </div>

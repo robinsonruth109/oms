@@ -2,8 +2,6 @@
 
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 type ActionState = {
   success: boolean;
@@ -11,8 +9,15 @@ type ActionState = {
 };
 
 async function requireAdmin() {
+  const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
+
   return Boolean(session && session.user.role === "ADMIN");
+}
+
+async function getPrisma() {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma;
 }
 
 function readRequired(formData: FormData, key: string) {
@@ -24,7 +29,10 @@ export async function createReelCategory(
   formData: FormData
 ): Promise<ActionState> {
   if (!(await requireAdmin())) {
-    return { success: false, message: "Unauthorized action." };
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
   }
 
   const name = readRequired(formData, "name");
@@ -39,33 +47,65 @@ export async function createReelCategory(
     };
   }
 
+  const prisma = await getPrisma();
+
   const [existingCategory, source, page] = await Promise.all([
-    prisma.reelCategory.findFirst({ where: { name } }),
-    prisma.orderSource.findUnique({ where: { id: sourceId } }),
-    prisma.page.findUnique({ where: { id: pageId } }),
+    prisma.reelCategory.findFirst({
+      where: {
+        name,
+      },
+    }),
+    prisma.orderSource.findUnique({
+      where: {
+        id: sourceId,
+      },
+    }),
+    prisma.page.findUnique({
+      where: {
+        id: pageId,
+      },
+    }),
   ]);
 
   if (existingCategory) {
-    return { success: false, message: "Category name already exists." };
+    return {
+      success: false,
+      message: "Category name already exists.",
+    };
   }
 
   if (!source || !page) {
-    return { success: false, message: "Selected source or page was not found." };
+    return {
+      success: false,
+      message: "Selected source or page was not found.",
+    };
   }
 
   await prisma.reelCategory.create({
-    data: { name, sourceId, pageId, status },
+    data: {
+      name,
+      sourceId,
+      pageId,
+      status,
+    },
   });
 
   revalidatePath("/dashboard/reel-categories");
-  return { success: true, message: "Reel category created successfully." };
+
+  return {
+    success: true,
+    message: "Reel category created successfully.",
+  };
 }
 
 export async function updateReelCategory(
   formData: FormData
 ): Promise<ActionState> {
   if (!(await requireAdmin())) {
-    return { success: false, message: "Unauthorized action." };
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
   }
 
   const id = readRequired(formData, "id");
@@ -75,35 +115,79 @@ export async function updateReelCategory(
   const status = formData.get("status") === "true";
 
   if (!id || !name || !sourceId || !pageId) {
-    return { success: false, message: "All category fields are required." };
+    return {
+      success: false,
+      message: "All category fields are required.",
+    };
   }
 
+  const prisma = await getPrisma();
+
   const [category, duplicate, source, page] = await Promise.all([
-    prisma.reelCategory.findUnique({ where: { id } }),
-    prisma.reelCategory.findFirst({ where: { name, NOT: { id } } }),
-    prisma.orderSource.findUnique({ where: { id: sourceId } }),
-    prisma.page.findUnique({ where: { id: pageId } }),
+    prisma.reelCategory.findUnique({
+      where: {
+        id,
+      },
+    }),
+    prisma.reelCategory.findFirst({
+      where: {
+        name,
+        NOT: {
+          id,
+        },
+      },
+    }),
+    prisma.orderSource.findUnique({
+      where: {
+        id: sourceId,
+      },
+    }),
+    prisma.page.findUnique({
+      where: {
+        id: pageId,
+      },
+    }),
   ]);
 
   if (!category) {
-    return { success: false, message: "Reel category was not found." };
+    return {
+      success: false,
+      message: "Reel category was not found.",
+    };
   }
 
   if (duplicate) {
-    return { success: false, message: "Category name already exists." };
+    return {
+      success: false,
+      message: "Category name already exists.",
+    };
   }
 
   if (!source || !page) {
-    return { success: false, message: "Selected source or page was not found." };
+    return {
+      success: false,
+      message: "Selected source or page was not found.",
+    };
   }
 
   await prisma.reelCategory.update({
-    where: { id },
-    data: { name, sourceId, pageId, status },
+    where: {
+      id,
+    },
+    data: {
+      name,
+      sourceId,
+      pageId,
+      status,
+    },
   });
 
   revalidatePath("/dashboard/reel-categories");
-  return { success: true, message: "Reel category updated successfully." };
+
+  return {
+    success: true,
+    message: "Reel category updated successfully.",
+  };
 }
 
 export async function toggleReelCategory(
@@ -111,37 +195,84 @@ export async function toggleReelCategory(
   status: boolean
 ): Promise<ActionState> {
   if (!(await requireAdmin())) {
-    return { success: false, message: "Unauthorized action." };
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
   }
 
-  const category = await prisma.reelCategory.findUnique({ where: { id } });
+  const prisma = await getPrisma();
+
+  const category = await prisma.reelCategory.findUnique({
+    where: {
+      id,
+    },
+  });
+
   if (!category) {
-    return { success: false, message: "Reel category was not found." };
+    return {
+      success: false,
+      message: "Reel category was not found.",
+    };
   }
 
-  await prisma.reelCategory.update({ where: { id }, data: { status } });
+  await prisma.reelCategory.update({
+    where: {
+      id,
+    },
+    data: {
+      status,
+    },
+  });
+
   revalidatePath("/dashboard/reel-categories");
 
   return {
     success: true,
-    message: status ? "Category activated." : "Category deactivated.",
+    message: status
+      ? "Category activated."
+      : "Category deactivated.",
   };
 }
 
-export async function deleteReelCategory(id: string): Promise<ActionState> {
+export async function deleteReelCategory(
+  id: string
+): Promise<ActionState> {
   if (!(await requireAdmin())) {
-    return { success: false, message: "Unauthorized action." };
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
   }
 
-  const category = await prisma.reelCategory.findUnique({ where: { id } });
+  const prisma = await getPrisma();
+
+  const category = await prisma.reelCategory.findUnique({
+    where: {
+      id,
+    },
+  });
+
   if (!category) {
-    return { success: false, message: "Reel category was not found." };
+    return {
+      success: false,
+      message: "Reel category was not found.",
+    };
   }
 
   try {
-    await prisma.reelCategory.delete({ where: { id } });
+    await prisma.reelCategory.delete({
+      where: {
+        id,
+      },
+    });
+
     revalidatePath("/dashboard/reel-categories");
-    return { success: true, message: "Reel category deleted successfully." };
+
+    return {
+      success: true,
+      message: "Reel category deleted successfully.",
+    };
   } catch {
     return {
       success: false,

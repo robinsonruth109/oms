@@ -1,0 +1,259 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_THUMBNAIL_SIZE_BYTES = 10 * 1024 * 1024;
+
+const ALLOWED_VIDEO_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-m4v",
+]);
+
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+]);
+
+type UploadKind = "video" | "thumbnail";
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    {
+      status,
+    }
+  );
+}
+
+function readUploadKind(value: FormDataEntryValue | null): UploadKind | null {
+  if (value === "video" || value === "thumbnail") {
+    return value;
+  }
+
+  return null;
+}
+
+function sanitiseOriginalFilename(filename: string): string {
+  const withoutExtension = filename.replace(/\.[^/.]+$/, "");
+
+  const sanitised = withoutExtension
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
+  return sanitised || "reel-media";
+}
+
+async function requireAdmin() {
+  const { authOptions } = await import("@/lib/auth");
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user || session.user.role !== "ADMIN") {
+    return null;
+  }
+
+  return session;
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await requireAdmin();
+
+    if (!session) {
+      return jsonError("You are not authorised to upload reel media.", 401);
+    }
+
+    const formData = await request.formData();
+    const fileEntry = formData.get("file");
+    const uploadKind = readUploadKind(formData.get("kind"));
+
+    if (!uploadKind) {
+      return jsonError(
+        'Upload kind must be either "video" or "thumbnail".',
+        400
+      );
+    }
+
+    if (!(fileEntry instanceof File)) {
+      return jsonError("A media file is required.", 400);
+    }
+
+    if (fileEntry.size <= 0) {
+      return jsonError("The selected file is empty.", 400);
+    }
+
+    if (uploadKind === "video") {
+      if (!ALLOWED_VIDEO_TYPES.has(fileEntry.type)) {
+        return jsonError(
+          "Unsupported video type. Use MP4, WebM, MOV or M4V.",
+          415
+        );
+      }
+
+      if (fileEntry.size > MAX_VIDEO_SIZE_BYTES) {
+        return jsonError(
+          "The reel video must not be larger than 100 MB.",
+          413
+        );
+      }
+    }
+
+    if (uploadKind === "thumbnail") {
+      if (!ALLOWED_IMAGE_TYPES.has(fileEntry.type)) {
+        return jsonError(
+          "Unsupported thumbnail type. Use JPG, PNG, WebP or AVIF.",
+          415
+        );
+      }
+
+      if (fileEntry.size > MAX_THUMBNAIL_SIZE_BYTES) {
+        return jsonError(
+          "The thumbnail must not be larger than 10 MB.",
+          413
+        );
+      }
+    }
+
+    const fileBuffer = Buffer.from(await fileEntry.arrayBuffer());
+
+    const {
+      createOptimisedReelVideoUrl,
+      createReelThumbnailUrl,
+      getReelFolder,
+      uploadBufferToCloudinary,
+    } = await import("@/lib/cloudinary");
+
+    const folder = getReelFolder();
+    const originalName = sanitiseOriginalFilename(fileEntry.name);
+    const uniqueSuffix = crypto.randomUUID();
+
+    if (uploadKind === "video") {
+      const upload = await uploadBufferToCloudinary(fileBuffer, {
+        resource_type: "video",
+        folder: `${folder}/videos`,
+        public_id: `${originalName}-${uniqueSuffix}`,
+        overwrite: false,
+        unique_filename: false,
+        use_filename: false,
+        type: "upload",
+        tags: [
+          "oms",
+          "reel-product",
+          `uploaded-by-${session.user.id}`,
+        ],
+        context: {
+          uploaded_by_user_id: session.user.id,
+          original_filename: fileEntry.name,
+        },
+      });
+
+      const publicId = upload.public_id;
+      const videoUrl = createOptimisedReelVideoUrl(publicId);
+      const thumbnailUrl = createReelThumbnailUrl(
+        publicId,
+        upload.version
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: "Reel video uploaded successfully.",
+        media: {
+          kind: "video",
+          publicId,
+          originalUrl: upload.secure_url,
+          url: videoUrl,
+          thumbnailUrl,
+          version: upload.version,
+          format: upload.format || null,
+          resourceType: upload.resource_type,
+          bytes: upload.bytes || fileEntry.size,
+          width: upload.width || null,
+          height: upload.height || null,
+          duration:
+            typeof upload.duration === "number"
+              ? upload.duration
+              : null,
+          createdAt: upload.created_at || null,
+        },
+      });
+    }
+
+    const upload = await uploadBufferToCloudinary(fileBuffer, {
+      resource_type: "image",
+      folder: `${folder}/thumbnails`,
+      public_id: `${originalName}-${uniqueSuffix}`,
+      overwrite: false,
+      unique_filename: false,
+      use_filename: false,
+      type: "upload",
+      transformation: [
+        {
+          width: 720,
+          height: 1280,
+          crop: "fill",
+          gravity: "auto",
+          quality: "auto",
+          fetch_format: "auto",
+        },
+      ],
+      tags: [
+        "oms",
+        "reel-thumbnail",
+        `uploaded-by-${session.user.id}`,
+      ],
+      context: {
+        uploaded_by_user_id: session.user.id,
+        original_filename: fileEntry.name,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Reel thumbnail uploaded successfully.",
+      media: {
+        kind: "thumbnail",
+        publicId: upload.public_id,
+        originalUrl: upload.secure_url,
+        url: upload.secure_url,
+        version: upload.version,
+        format: upload.format || null,
+        resourceType: upload.resource_type,
+        bytes: upload.bytes || fileEntry.size,
+        width: upload.width || null,
+        height: upload.height || null,
+        createdAt: upload.created_at || null,
+      },
+    });
+  } catch (error) {
+    console.error("Reel media upload failed:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "An unexpected upload error occurred.";
+
+    if (
+      message.includes("CLOUDINARY_CLOUD_NAME") ||
+      message.includes("CLOUDINARY_API_KEY") ||
+      message.includes("CLOUDINARY_API_SECRET")
+    ) {
+      return jsonError(
+        "Cloudinary has not been configured correctly.",
+        500
+      );
+    }
+
+    return jsonError("The reel media upload failed.", 500);
+  }
+}

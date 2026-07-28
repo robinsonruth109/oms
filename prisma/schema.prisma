@@ -65,6 +65,8 @@ model ReelCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  reelProducts ReelProduct[]
+
   @@index([sourceId])
   @@index([pageId])
   @@index([status])
@@ -126,6 +128,7 @@ model Product {
 
   orderItems     OrderItem[]
   purchaseOrders PurchaseOrder[]
+  reelProducts   ReelProduct[]
 }
 
 model Order {
@@ -509,4 +512,41 @@ model AttendanceViolation {
   @@index([attendanceId])
   @@index([userId])
   @@index([violationTime])
+}
+
+model ReelProduct {
+  id String @id @default(uuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  categoryId String
+  category   ReelCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  title        String
+  caption      String? @db.Text
+  displayOrder Int     @default(0)
+
+  videoUrl      String @db.Text
+  videoPublicId String @unique
+
+  thumbnailUrl      String? @db.Text
+  thumbnailPublicId String? @unique
+
+  videoDuration Decimal? @db.Decimal(10, 2)
+  videoWidth    Int?
+  videoHeight   Int?
+  videoFormat   String?
+  videoBytes    Int?
+
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, categoryId])
+  @@index([productId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([displayOrder])
+  @@index([createdAt])
 }

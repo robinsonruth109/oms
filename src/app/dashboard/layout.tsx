@@ -22,6 +22,7 @@ import {
   ShoppingCart,
   CalendarCheck,
   AlertTriangle,
+  Clapperboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -132,6 +133,12 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/products">
                     <Button variant="outline" size="sm">
                       Products
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/reel-categories">
+                    <Button variant="outline" size="sm">
+                      Reel Categories
                     </Button>
                   </Link>
 
@@ -352,6 +359,12 @@ export default async function DashboardLayout({
                     href="/dashboard/products"
                     icon={<Shapes className="h-4 w-4" />}
                     label="Product Master"
+                  />
+
+                  <NavLink
+                    href="/dashboard/reel-categories"
+                    icon={<Clapperboard className="h-4 w-4" />}
+                    label="Reel Categories"
                   />
 
                   <NavLink

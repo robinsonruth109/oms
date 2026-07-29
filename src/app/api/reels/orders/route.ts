@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -277,6 +275,7 @@ function createOrderNote({
 }
 
 export async function POST(request: Request) {
+    const { prisma } = await import("@/lib/prisma");
   try {
     let body: CreateReelOrderBody;
 

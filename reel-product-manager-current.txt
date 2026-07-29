@@ -1,0 +1,1787 @@
+"use client";
+
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useActionState,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { useRouter } from "next/navigation";
+import {
+  Eye,
+  Film,
+  ImageIcon,
+  Loader2,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  createReelProduct,
+  deleteReelProduct,
+  toggleReelProduct,
+  updateReelProduct,
+} from "./actions";
+
+type ActionResult = {
+  success: boolean;
+  message: string;
+};
+
+type ProductItem = {
+  id: string;
+  sku: string;
+  name: string;
+  sellingPrice: number;
+  status: boolean;
+  parent: {
+    id: string;
+    sku: string;
+    name: string;
+    status: boolean;
+  };
+};
+
+type CategoryItem = {
+  id: string;
+  name: string;
+  status: boolean;
+  source: {
+    id: string;
+    name: string;
+    status: boolean;
+  };
+  page: {
+    id: string;
+    name: string;
+    status: boolean;
+  };
+};
+
+type ReelProductRow = {
+  id: string;
+  productId: string;
+  categoryId: string;
+  title: string;
+  caption: string | null;
+  displayOrder: number;
+  videoUrl: string;
+  videoPublicId: string;
+  thumbnailUrl: string | null;
+  thumbnailPublicId: string | null;
+  videoDuration: number | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
+  videoFormat: string | null;
+  videoBytes: number | null;
+  status: boolean;
+  createdAt: string;
+  updatedAt: string;
+  product: ProductItem;
+  category: {
+    id: string;
+    name: string;
+    status: boolean;
+    source: {
+      id: string;
+      name: string;
+    };
+    page: {
+      id: string;
+      name: string;
+    };
+  };
+};
+
+type Props = {
+  products: ProductItem[];
+  categories: CategoryItem[];
+  reelProducts: ReelProductRow[];
+};
+
+type UploadKind = "video" | "thumbnail";
+
+type UploadedMedia = {
+  kind: UploadKind;
+  publicId: string;
+  originalUrl: string;
+  url: string;
+  thumbnailUrl?: string | null;
+  version?: number;
+  format: string | null;
+  resourceType: string;
+  bytes: number | null;
+  width: number | null;
+  height: number | null;
+  duration?: number | null;
+  createdAt?: string | null;
+};
+
+type UploadResponse = {
+  success: boolean;
+  message: string;
+  media?: UploadedMedia;
+};
+
+type MediaState = {
+  videoUrl: string;
+  videoPublicId: string;
+  thumbnailUrl: string;
+  thumbnailPublicId: string;
+  videoDuration: string;
+  videoWidth: string;
+  videoHeight: string;
+  videoFormat: string;
+  videoBytes: string;
+};
+
+const initialState: ActionResult = {
+  success: false,
+  message: "",
+};
+
+const emptyMediaState: MediaState = {
+  videoUrl: "",
+  videoPublicId: "",
+  thumbnailUrl: "",
+  thumbnailPublicId: "",
+  videoDuration: "",
+  videoWidth: "",
+  videoHeight: "",
+  videoFormat: "",
+  videoBytes: "",
+};
+
+export default function ReelProductManager({
+  products,
+  categories,
+  reelProducts,
+}: Props) {
+  const router = useRouter();
+
+  const [resetKey, setResetKey] = useState(0);
+  const [query, setQuery] = useState("");
+  const [feedback, setFeedback] = useState(initialState);
+  const [editing, setEditing] = useState<ReelProductRow | null>(null);
+  const [previewing, setPreviewing] =
+    useState<ReelProductRow | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const [createMedia, setCreateMedia] =
+    useState<MediaState>(emptyMediaState);
+  const [editMedia, setEditMedia] =
+    useState<MediaState>(emptyMediaState);
+
+  const [createVideoUploading, setCreateVideoUploading] =
+    useState(false);
+  const [createThumbnailUploading, setCreateThumbnailUploading] =
+    useState(false);
+  const [editVideoUploading, setEditVideoUploading] =
+    useState(false);
+  const [editThumbnailUploading, setEditThumbnailUploading] =
+    useState(false);
+
+  const [createUploadMessage, setCreateUploadMessage] =
+    useState(initialState);
+  const [editUploadMessage, setEditUploadMessage] =
+    useState(initialState);
+
+  const createVideoInputRef = useRef<HTMLInputElement>(null);
+  const createThumbnailInputRef = useRef<HTMLInputElement>(null);
+  const editVideoInputRef = useRef<HTMLInputElement>(null);
+  const editThumbnailInputRef = useRef<HTMLInputElement>(null);
+
+  async function submitCreate(
+    previousState: ActionResult,
+    formData: FormData
+  ): Promise<ActionResult> {
+    const result = await createReelProduct(
+      previousState,
+      formData
+    );
+
+    if (result.success) {
+      setResetKey((value) => value + 1);
+      setCreateMedia(emptyMediaState);
+      setCreateUploadMessage(initialState);
+      router.refresh();
+    }
+
+    return result;
+  }
+
+  const [createState, createAction, creating] = useActionState(
+    submitCreate,
+    initialState
+  );
+
+  const filteredReelProducts = useMemo(() => {
+    const value = query.trim().toLowerCase();
+
+    if (!value) {
+      return reelProducts;
+    }
+
+    return reelProducts.filter((reelProduct) =>
+      [
+        reelProduct.title,
+        reelProduct.caption || "",
+        reelProduct.product.name,
+        reelProduct.product.sku,
+        reelProduct.product.parent.name,
+        reelProduct.product.parent.sku,
+        reelProduct.category.name,
+        reelProduct.category.source.name,
+        reelProduct.category.page.name,
+        reelProduct.videoFormat || "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(value)
+    );
+  }, [query, reelProducts]);
+
+  function openEditModal(reelProduct: ReelProductRow) {
+    setEditing(reelProduct);
+
+    setEditMedia({
+      videoUrl: reelProduct.videoUrl,
+      videoPublicId: reelProduct.videoPublicId,
+      thumbnailUrl: reelProduct.thumbnailUrl || "",
+      thumbnailPublicId:
+        reelProduct.thumbnailPublicId || "",
+      videoDuration:
+        reelProduct.videoDuration === null
+          ? ""
+          : String(reelProduct.videoDuration),
+      videoWidth:
+        reelProduct.videoWidth === null
+          ? ""
+          : String(reelProduct.videoWidth),
+      videoHeight:
+        reelProduct.videoHeight === null
+          ? ""
+          : String(reelProduct.videoHeight),
+      videoFormat: reelProduct.videoFormat || "",
+      videoBytes:
+        reelProduct.videoBytes === null
+          ? ""
+          : String(reelProduct.videoBytes),
+    });
+
+    setEditUploadMessage(initialState);
+  }
+
+  function runAction(
+    action: () => Promise<ActionResult>,
+    closeEditor = true
+  ) {
+    setFeedback(initialState);
+
+    startTransition(async () => {
+      const result = await action();
+
+      setFeedback(result);
+
+      if (result.success) {
+        if (closeEditor) {
+          setEditing(null);
+        }
+
+        router.refresh();
+      }
+    });
+  }
+
+  async function uploadMedia(
+    file: File,
+    kind: UploadKind
+  ): Promise<UploadedMedia> {
+    const formData = new FormData();
+
+    formData.set("file", file);
+    formData.set("kind", kind);
+
+    const response = await fetch("/api/reel-products/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = (await response.json()) as UploadResponse;
+
+    if (!response.ok || !result.success || !result.media) {
+      throw new Error(
+        result.message || "The media upload failed."
+      );
+    }
+
+    return result.media;
+  }
+
+  async function deleteUploadedMedia(
+    publicId: string,
+    resourceType: "image" | "video"
+  ) {
+    if (!publicId.trim()) {
+      return;
+    }
+
+    const response = await fetch(
+      "/api/reel-products/delete-media",
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          publicId,
+          resourceType,
+        }),
+      }
+    );
+
+    const result = (await response.json()) as ActionResult;
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.message || "The media could not be deleted."
+      );
+    }
+  }
+
+  async function handleCreateUpload(
+    event: ChangeEvent<HTMLInputElement>,
+    kind: UploadKind
+  ) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    const setUploading =
+      kind === "video"
+        ? setCreateVideoUploading
+        : setCreateThumbnailUploading;
+
+    setUploading(true);
+    setCreateUploadMessage(initialState);
+
+    try {
+      const media = await uploadMedia(file, kind);
+
+      if (kind === "video") {
+        const previousVideoPublicId =
+          createMedia.videoPublicId;
+
+        setCreateMedia((current) => ({
+          ...current,
+          videoUrl: media.url,
+          videoPublicId: media.publicId,
+          thumbnailUrl: current.thumbnailPublicId
+            ? current.thumbnailUrl
+            : media.thumbnailUrl || "",
+          videoDuration:
+            media.duration === null ||
+            media.duration === undefined
+              ? ""
+              : String(media.duration),
+          videoWidth:
+            media.width === null
+              ? ""
+              : String(media.width),
+          videoHeight:
+            media.height === null
+              ? ""
+              : String(media.height),
+          videoFormat: media.format || "",
+          videoBytes:
+            media.bytes === null
+              ? ""
+              : String(media.bytes),
+        }));
+
+        if (
+          previousVideoPublicId &&
+          previousVideoPublicId !== media.publicId
+        ) {
+          await deleteUploadedMedia(
+            previousVideoPublicId,
+            "video"
+          );
+        }
+      } else {
+        const previousThumbnailPublicId =
+          createMedia.thumbnailPublicId;
+
+        setCreateMedia((current) => ({
+          ...current,
+          thumbnailUrl: media.url,
+          thumbnailPublicId: media.publicId,
+        }));
+
+        if (
+          previousThumbnailPublicId &&
+          previousThumbnailPublicId !== media.publicId
+        ) {
+          await deleteUploadedMedia(
+            previousThumbnailPublicId,
+            "image"
+          );
+        }
+      }
+
+      setCreateUploadMessage({
+        success: true,
+        message:
+          kind === "video"
+            ? "Video uploaded successfully."
+            : "Thumbnail uploaded successfully.",
+      });
+    } catch (error) {
+      setCreateUploadMessage({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The upload failed.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleEditUpload(
+    event: ChangeEvent<HTMLInputElement>,
+    kind: UploadKind
+  ) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file || !editing) {
+      return;
+    }
+
+    const setUploading =
+      kind === "video"
+        ? setEditVideoUploading
+        : setEditThumbnailUploading;
+
+    setUploading(true);
+    setEditUploadMessage(initialState);
+
+    try {
+      const media = await uploadMedia(file, kind);
+
+      if (kind === "video") {
+        const previousPublicId =
+          editMedia.videoPublicId;
+
+        setEditMedia((current) => ({
+          ...current,
+          videoUrl: media.url,
+          videoPublicId: media.publicId,
+          thumbnailUrl: current.thumbnailPublicId
+            ? current.thumbnailUrl
+            : media.thumbnailUrl || "",
+          videoDuration:
+            media.duration === null ||
+            media.duration === undefined
+              ? ""
+              : String(media.duration),
+          videoWidth:
+            media.width === null
+              ? ""
+              : String(media.width),
+          videoHeight:
+            media.height === null
+              ? ""
+              : String(media.height),
+          videoFormat: media.format || "",
+          videoBytes:
+            media.bytes === null
+              ? ""
+              : String(media.bytes),
+        }));
+
+        if (
+          previousPublicId &&
+          previousPublicId !== editing.videoPublicId &&
+          previousPublicId !== media.publicId
+        ) {
+          await deleteUploadedMedia(
+            previousPublicId,
+            "video"
+          );
+        }
+      } else {
+        const previousPublicId =
+          editMedia.thumbnailPublicId;
+
+        setEditMedia((current) => ({
+          ...current,
+          thumbnailUrl: media.url,
+          thumbnailPublicId: media.publicId,
+        }));
+
+        if (
+          previousPublicId &&
+          previousPublicId !==
+            editing.thumbnailPublicId &&
+          previousPublicId !== media.publicId
+        ) {
+          await deleteUploadedMedia(
+            previousPublicId,
+            "image"
+          );
+        }
+      }
+
+      setEditUploadMessage({
+        success: true,
+        message:
+          kind === "video"
+            ? "Replacement video uploaded."
+            : "Replacement thumbnail uploaded.",
+      });
+    } catch (error) {
+      setEditUploadMessage({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The upload failed.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeCreateVideo() {
+    if (!createMedia.videoPublicId) {
+      return;
+    }
+
+    setCreateVideoUploading(true);
+    setCreateUploadMessage(initialState);
+
+    try {
+      await deleteUploadedMedia(
+        createMedia.videoPublicId,
+        "video"
+      );
+
+      setCreateMedia((current) => ({
+        ...current,
+        videoUrl: "",
+        videoPublicId: "",
+        videoDuration: "",
+        videoWidth: "",
+        videoHeight: "",
+        videoFormat: "",
+        videoBytes: "",
+        thumbnailUrl: current.thumbnailPublicId
+          ? current.thumbnailUrl
+          : "",
+      }));
+
+      setCreateUploadMessage({
+        success: true,
+        message: "Uploaded video removed.",
+      });
+    } catch (error) {
+      setCreateUploadMessage({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The video could not be removed.",
+      });
+    } finally {
+      setCreateVideoUploading(false);
+    }
+  }
+
+  async function removeCreateThumbnail() {
+    if (!createMedia.thumbnailPublicId) {
+      return;
+    }
+
+    setCreateThumbnailUploading(true);
+    setCreateUploadMessage(initialState);
+
+    try {
+      await deleteUploadedMedia(
+        createMedia.thumbnailPublicId,
+        "image"
+      );
+
+      setCreateMedia((current) => ({
+        ...current,
+        thumbnailPublicId: "",
+        thumbnailUrl: current.videoUrl
+          ? current.thumbnailUrl
+          : "",
+      }));
+
+      setCreateUploadMessage({
+        success: true,
+        message: "Custom thumbnail removed.",
+      });
+    } catch (error) {
+      setCreateUploadMessage({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The thumbnail could not be removed.",
+      });
+    } finally {
+      setCreateThumbnailUploading(false);
+    }
+  }
+
+  async function closeEditModal() {
+    if (!editing) {
+      return;
+    }
+
+    try {
+      if (
+        editMedia.videoPublicId &&
+        editMedia.videoPublicId !==
+          editing.videoPublicId
+      ) {
+        await deleteUploadedMedia(
+          editMedia.videoPublicId,
+          "video"
+        );
+      }
+
+      if (
+        editMedia.thumbnailPublicId &&
+        editMedia.thumbnailPublicId !==
+          editing.thumbnailPublicId
+      ) {
+        await deleteUploadedMedia(
+          editMedia.thumbnailPublicId,
+          "image"
+        );
+      }
+    } catch (error) {
+      setFeedback({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Temporary uploaded media could not be removed.",
+      });
+    }
+
+    setEditing(null);
+    setEditMedia(emptyMediaState);
+    setEditUploadMessage(initialState);
+  }
+
+  function submitEdit(formData: FormData) {
+    runAction(() => updateReelProduct(formData));
+  }
+
+  function removeReelProduct(
+    reelProduct: ReelProductRow
+  ) {
+    if (
+      !window.confirm(
+        `Delete reel product “${reelProduct.title}”? The video and custom thumbnail will also be deleted from Cloudinary.`
+      )
+    ) {
+      return;
+    }
+
+    runAction(() =>
+      deleteReelProduct(reelProduct.id)
+    );
+  }
+
+  const createBusy =
+    creating ||
+    createVideoUploading ||
+    createThumbnailUploading;
+
+  const editBusy =
+    pending ||
+    editVideoUploading ||
+    editThumbnailUploading;
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+        <h1 className="text-2xl font-bold text-slate-900">
+          Reel Products
+        </h1>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Upload product videos, assign categories and control
+          which reels appear in the public feed.
+        </p>
+      </section>
+
+      <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
+            <Plus className="h-5 w-5" />
+          </div>
+
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Add Reel Product
+            </h2>
+
+            <p className="text-sm text-slate-500">
+              Upload a vertical product video and connect it
+              with a product and reel category.
+            </p>
+          </div>
+        </div>
+
+        <form
+          key={resetKey}
+          action={createAction}
+          className="space-y-5"
+        >
+          <MediaHiddenFields media={createMedia} />
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Product">
+              <select
+                name="productId"
+                required
+                defaultValue=""
+                className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+              >
+                <option value="" disabled>
+                  Select product
+                </option>
+
+                {products.map((product) => (
+                  <option
+                    key={product.id}
+                    value={product.id}
+                  >
+                    {product.name} — {product.sku}
+                    {!product.status ||
+                    !product.parent.status
+                      ? " (Inactive)"
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Reel Category">
+              <select
+                name="categoryId"
+                required
+                defaultValue=""
+                className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+              >
+                <option value="" disabled>
+                  Select category
+                </option>
+
+                {categories.map((category) => (
+                  <option
+                    key={category.id}
+                    value={category.id}
+                  >
+                    {category.name} — {category.page.name}
+                    {!category.status ||
+                    !category.source.status ||
+                    !category.page.status
+                      ? " (Inactive)"
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Reel Title">
+              <input
+                name="title"
+                required
+                placeholder="Enter reel title"
+                className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+              />
+            </Field>
+
+            <Field label="Display Order">
+              <input
+                name="displayOrder"
+                type="number"
+                min="0"
+                step="1"
+                defaultValue="0"
+                required
+                className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
+            <Field label="Caption">
+              <textarea
+                name="caption"
+                rows={6}
+                placeholder="Write a product caption for the reel"
+                className="w-full resize-none rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+              />
+            </Field>
+
+            <Field label="Status">
+              <select
+                name="status"
+                defaultValue="true"
+                className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </Field>
+          </div>
+
+          <MediaUploader
+            media={createMedia}
+            videoUploading={createVideoUploading}
+            thumbnailUploading={
+              createThumbnailUploading
+            }
+            onVideoClick={() =>
+              createVideoInputRef.current?.click()
+            }
+            onThumbnailClick={() =>
+              createThumbnailInputRef.current?.click()
+            }
+            onRemoveVideo={() =>
+              void removeCreateVideo()
+            }
+            onRemoveThumbnail={() =>
+              void removeCreateThumbnail()
+            }
+          />
+
+          <input
+            ref={createVideoInputRef}
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime,video/x-m4v"
+            className="hidden"
+            onChange={(event) =>
+              void handleCreateUpload(event, "video")
+            }
+          />
+
+          <input
+            ref={createThumbnailInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/avif"
+            className="hidden"
+            onChange={(event) =>
+              void handleCreateUpload(
+                event,
+                "thumbnail"
+              )
+            }
+          />
+
+          {createUploadMessage.message ? (
+            <Message
+              success={createUploadMessage.success}
+              text={createUploadMessage.message}
+            />
+          ) : null}
+
+          {createState.message ? (
+            <Message
+              success={createState.success}
+              text={createState.message}
+            />
+          ) : null}
+
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              disabled={
+                createBusy ||
+                !products.length ||
+                !categories.length ||
+                !createMedia.videoPublicId
+              }
+            >
+              {creating
+                ? "Saving..."
+                : createBusy
+                  ? "Uploading..."
+                  : "Save Reel Product"}
+            </Button>
+          </div>
+        </form>
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Reel Product List
+            </h2>
+
+            <p className="text-sm text-slate-500">
+              {reelProducts.length} total reel products
+            </p>
+          </div>
+
+          <div className="relative w-full sm:w-96">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+            <input
+              value={query}
+              onChange={(event) =>
+                setQuery(event.target.value)
+              }
+              placeholder="Search title, SKU, product or category"
+              className="w-full rounded-xl border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-slate-500"
+            />
+          </div>
+        </div>
+
+        {feedback.message ? (
+          <div className="px-5 pt-5 sm:px-6">
+            <Message
+              success={feedback.success}
+              text={feedback.message}
+            />
+          </div>
+        ) : null}
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead className="bg-slate-50">
+              <tr className="border-b">
+                {[
+                  "Preview",
+                  "Reel",
+                  "Product",
+                  "Category",
+                  "Order",
+                  "Status",
+                  "Created",
+                  "Actions",
+                ].map((label) => (
+                  <th
+                    key={label}
+                    className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredReelProducts.map(
+                (reelProduct) => (
+                  <tr
+                    key={reelProduct.id}
+                    className="border-b last:border-b-0"
+                  >
+                    <td className="px-6 py-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewing(reelProduct)
+                        }
+                        className="group relative h-20 w-14 overflow-hidden rounded-xl border bg-slate-100"
+                        title="Preview reel"
+                      >
+                        {reelProduct.thumbnailUrl ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={
+                                reelProduct.thumbnailUrl
+                              }
+                              alt={reelProduct.title}
+                              className="h-full w-full object-cover"
+                            />
+                          </>
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <Film className="h-5 w-5 text-slate-400" />
+                          </div>
+                        )}
+
+                        <span className="absolute inset-0 flex items-center justify-center bg-slate-950/0 transition group-hover:bg-slate-950/40">
+                          <Eye className="h-5 w-5 text-white opacity-0 transition group-hover:opacity-100" />
+                        </span>
+                      </button>
+                    </td>
+
+                    <td className="max-w-64 px-6 py-4">
+                      <p className="truncate text-sm font-semibold text-slate-900">
+                        {reelProduct.title}
+                      </p>
+
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {reelProduct.videoFormat
+                          ? reelProduct.videoFormat.toUpperCase()
+                          : "VIDEO"}
+                        {reelProduct.videoDuration !== null
+                          ? ` · ${formatDuration(
+                              reelProduct.videoDuration
+                            )}`
+                          : ""}
+                        {reelProduct.videoBytes !== null
+                          ? ` · ${formatBytes(
+                              reelProduct.videoBytes
+                            )}`
+                          : ""}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-medium text-slate-800">
+                        {reelProduct.product.name}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        {reelProduct.product.sku} · ৳
+                        {formatMoney(
+                          reelProduct.product
+                            .sellingPrice
+                        )}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-medium text-slate-800">
+                        {reelProduct.category.name}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        {
+                          reelProduct.category.source
+                            .name
+                        }{" "}
+                        ·{" "}
+                        {
+                          reelProduct.category.page
+                            .name
+                        }
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">
+                      {reelProduct.displayOrder}
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() =>
+                          runAction(
+                            () =>
+                              toggleReelProduct(
+                                reelProduct.id,
+                                !reelProduct.status
+                              ),
+                            false
+                          )
+                        }
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          reelProduct.status
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {reelProduct.status
+                          ? "Active"
+                          : "Inactive"}
+                      </button>
+                    </td>
+
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                      {new Date(
+                        reelProduct.createdAt
+                      ).toLocaleDateString("en-GB")}
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewing(
+                              reelProduct
+                            )
+                          }
+                          className="rounded-lg border p-2 text-slate-600 hover:bg-slate-50"
+                          title="Preview"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openEditModal(reelProduct)
+                          }
+                          className="rounded-lg border p-2 text-slate-600 hover:bg-slate-50"
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() =>
+                            removeReelProduct(
+                              reelProduct
+                            )
+                          }
+                          className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              )}
+
+              {!filteredReelProducts.length ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-6 py-12 text-center text-sm text-slate-500"
+                  >
+                    No reel products found.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {editing ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4">
+          <div className="mx-auto my-6 w-full max-w-5xl rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Edit Reel Product
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Update product, category, content,
+                  media or publication status.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={editBusy}
+                onClick={() =>
+                  void closeEditModal()
+                }
+                className="rounded-xl border p-2 text-slate-500 hover:bg-slate-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              action={submitEdit}
+              className="space-y-5"
+            >
+              <input
+                type="hidden"
+                name="id"
+                value={editing.id}
+              />
+
+              <MediaHiddenFields media={editMedia} />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field label="Product">
+                  <select
+                    name="productId"
+                    required
+                    defaultValue={
+                      editing.productId
+                    }
+                    className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                  >
+                    {products.map((product) => (
+                      <option
+                        key={product.id}
+                        value={product.id}
+                      >
+                        {product.name} —{" "}
+                        {product.sku}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Reel Category">
+                  <select
+                    name="categoryId"
+                    required
+                    defaultValue={
+                      editing.categoryId
+                    }
+                    className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                  >
+                    {categories.map(
+                      (category) => (
+                        <option
+                          key={category.id}
+                          value={category.id}
+                        >
+                          {category.name} —{" "}
+                          {category.page.name}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </Field>
+
+                <Field label="Reel Title">
+                  <input
+                    name="title"
+                    required
+                    defaultValue={editing.title}
+                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                  />
+                </Field>
+
+                <Field label="Display Order">
+                  <input
+                    name="displayOrder"
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    defaultValue={
+                      editing.displayOrder
+                    }
+                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                  />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
+                <Field label="Caption">
+                  <textarea
+                    name="caption"
+                    rows={5}
+                    defaultValue={
+                      editing.caption || ""
+                    }
+                    className="w-full resize-none rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                  />
+                </Field>
+
+                <Field label="Status">
+                  <select
+                    name="status"
+                    defaultValue={String(
+                      editing.status
+                    )}
+                    className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-500"
+                  >
+                    <option value="true">
+                      Active
+                    </option>
+
+                    <option value="false">
+                      Inactive
+                    </option>
+                  </select>
+                </Field>
+              </div>
+
+              <MediaUploader
+                media={editMedia}
+                videoUploading={
+                  editVideoUploading
+                }
+                thumbnailUploading={
+                  editThumbnailUploading
+                }
+                onVideoClick={() =>
+                  editVideoInputRef.current?.click()
+                }
+                onThumbnailClick={() =>
+                  editThumbnailInputRef.current?.click()
+                }
+              />
+
+              <input
+                ref={editVideoInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,video/x-m4v"
+                className="hidden"
+                onChange={(event) =>
+                  void handleEditUpload(
+                    event,
+                    "video"
+                  )
+                }
+              />
+
+              <input
+                ref={editThumbnailInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                className="hidden"
+                onChange={(event) =>
+                  void handleEditUpload(
+                    event,
+                    "thumbnail"
+                  )
+                }
+              />
+
+              {editUploadMessage.message ? (
+                <Message
+                  success={
+                    editUploadMessage.success
+                  }
+                  text={
+                    editUploadMessage.message
+                  }
+                />
+              ) : null}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={editBusy}
+                  onClick={() =>
+                    void closeEditModal()
+                  }
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  type="submit"
+                  disabled={
+                    editBusy ||
+                    !editMedia.videoPublicId
+                  }
+                >
+                  {pending
+                    ? "Saving..."
+                    : editBusy
+                      ? "Uploading..."
+                      : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {previewing ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="relative w-full max-w-sm">
+            <button
+              type="button"
+              onClick={() =>
+                setPreviewing(null)
+              }
+              className="absolute -right-2 -top-12 rounded-full bg-white p-2 text-slate-800 shadow-lg"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="overflow-hidden rounded-3xl bg-black shadow-2xl">
+              <video
+                key={previewing.videoUrl}
+                src={previewing.videoUrl}
+                poster={
+                  previewing.thumbnailUrl ||
+                  undefined
+                }
+                controls
+                playsInline
+                autoPlay
+                preload="metadata"
+                className="aspect-[9/16] max-h-[80vh] w-full object-contain"
+              >
+                Your browser does not support video
+                playback.
+              </video>
+            </div>
+
+            <div className="mt-3 rounded-2xl bg-white p-4 shadow-lg">
+              <p className="font-semibold text-slate-900">
+                {previewing.title}
+              </p>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {previewing.product.name} ·{" "}
+                {previewing.category.name}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MediaHiddenFields({
+  media,
+}: {
+  media: MediaState;
+}) {
+  return (
+    <>
+      <input
+        type="hidden"
+        name="videoUrl"
+        value={media.videoUrl}
+      />
+
+      <input
+        type="hidden"
+        name="videoPublicId"
+        value={media.videoPublicId}
+      />
+
+      <input
+        type="hidden"
+        name="thumbnailUrl"
+        value={media.thumbnailUrl}
+      />
+
+      <input
+        type="hidden"
+        name="thumbnailPublicId"
+        value={media.thumbnailPublicId}
+      />
+
+      <input
+        type="hidden"
+        name="videoDuration"
+        value={media.videoDuration}
+      />
+
+      <input
+        type="hidden"
+        name="videoWidth"
+        value={media.videoWidth}
+      />
+
+      <input
+        type="hidden"
+        name="videoHeight"
+        value={media.videoHeight}
+      />
+
+      <input
+        type="hidden"
+        name="videoFormat"
+        value={media.videoFormat}
+      />
+
+      <input
+        type="hidden"
+        name="videoBytes"
+        value={media.videoBytes}
+      />
+    </>
+  );
+}
+
+function MediaUploader({
+  media,
+  videoUploading,
+  thumbnailUploading,
+  onVideoClick,
+  onThumbnailClick,
+  onRemoveVideo,
+  onRemoveThumbnail,
+}: {
+  media: MediaState;
+  videoUploading: boolean;
+  thumbnailUploading: boolean;
+  onVideoClick: () => void;
+  onThumbnailClick: () => void;
+  onRemoveVideo?: () => void;
+  onRemoveThumbnail?: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="rounded-2xl border border-dashed p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              Reel Video
+            </p>
+
+            <p className="text-xs text-slate-500">
+              MP4, WebM, MOV or M4V · maximum 100 MB
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={videoUploading}
+            onClick={onVideoClick}
+          >
+            {videoUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+
+            {media.videoPublicId
+              ? "Replace Video"
+              : "Upload Video"}
+          </Button>
+        </div>
+
+        {media.videoUrl ? (
+          <div className="relative overflow-hidden rounded-2xl bg-black">
+            <video
+              key={media.videoUrl}
+              src={media.videoUrl}
+              poster={
+                media.thumbnailUrl || undefined
+              }
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-video w-full object-contain"
+            />
+
+            {onRemoveVideo ? (
+              <button
+                type="button"
+                disabled={videoUploading}
+                onClick={onRemoveVideo}
+                className="absolute right-3 top-3 rounded-full bg-white/90 p-2 text-red-600 shadow"
+                title="Remove uploaded video"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl bg-slate-50 text-center">
+            <Film className="h-8 w-8 text-slate-300" />
+
+            <p className="mt-2 text-sm text-slate-500">
+              No reel video uploaded
+            </p>
+          </div>
+        )}
+
+        {media.videoPublicId ? (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+            {media.videoFormat ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1">
+                {media.videoFormat.toUpperCase()}
+              </span>
+            ) : null}
+
+            {media.videoDuration ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1">
+                {formatDuration(
+                  Number(media.videoDuration)
+                )}
+              </span>
+            ) : null}
+
+            {media.videoWidth &&
+            media.videoHeight ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1">
+                {media.videoWidth} ×{" "}
+                {media.videoHeight}
+              </span>
+            ) : null}
+
+            {media.videoBytes ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1">
+                {formatBytes(
+                  Number(media.videoBytes)
+                )}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="rounded-2xl border border-dashed p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              Custom Thumbnail
+            </p>
+
+            <p className="text-xs text-slate-500">
+              Optional JPG, PNG, WebP or AVIF · maximum 10 MB
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={thumbnailUploading}
+            onClick={onThumbnailClick}
+          >
+            {thumbnailUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ImageIcon className="mr-2 h-4 w-4" />
+            )}
+
+            {media.thumbnailPublicId
+              ? "Replace"
+              : "Upload"}
+          </Button>
+        </div>
+
+        {media.thumbnailUrl ? (
+          <div className="relative mx-auto w-full max-w-48 overflow-hidden rounded-2xl bg-slate-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={media.thumbnailUrl}
+              alt="Reel thumbnail preview"
+              className="aspect-[9/16] w-full object-cover"
+            />
+
+            {onRemoveThumbnail &&
+            media.thumbnailPublicId ? (
+              <button
+                type="button"
+                disabled={thumbnailUploading}
+                onClick={onRemoveThumbnail}
+                className="absolute right-3 top-3 rounded-full bg-white/90 p-2 text-red-600 shadow"
+                title="Remove custom thumbnail"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl bg-slate-50 text-center">
+            <ImageIcon className="h-8 w-8 text-slate-300" />
+
+            <p className="mt-2 text-sm text-slate-500">
+              The generated video thumbnail will be
+              used automatically
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-sm font-medium text-slate-700">
+        {label}
+      </span>
+
+      {children}
+    </label>
+  );
+}
+
+function Message({
+  success,
+  text,
+}: {
+  success: boolean;
+  text: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl px-4 py-3 text-sm ${
+        success
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-red-50 text-red-700"
+      }`}
+    >
+      {text}
+    </div>
+  );
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+
+  const unitIndex = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, unitIndex);
+
+  return `${value.toFixed(
+    unitIndex === 0 ? 0 : 1
+  )} ${units[unitIndex]}`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0:00";
+  }
+
+  const wholeSeconds = Math.floor(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+
+  return `${minutes}:${String(
+    remainingSeconds
+  ).padStart(2, "0")}`;
+}

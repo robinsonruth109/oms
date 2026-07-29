@@ -52,9 +52,8 @@ model OrderSource {
 }
 
 model ReelCategory {
-  id   String  @id @default(uuid())
-  name String  @unique
-  slug String? @unique
+  id   String @id @default(uuid())
+  name String @unique
 
   sourceId String
   source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
@@ -71,7 +70,6 @@ model ReelCategory {
   @@index([sourceId])
   @@index([pageId])
   @@index([status])
-  @@index([slug])
 }
 
 model Integration {
@@ -446,11 +444,6 @@ enum AttendanceViolationType {
   MISSING_WORK_OFF
 }
 
-enum ReelProductMediaType {
-  IMAGE
-  VIDEO
-}
-
 model Attendance {
   id String @id @default(cuid())
 
@@ -530,11 +523,9 @@ model ReelProduct {
   categoryId String
   category   ReelCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
-  title           String
-  caption         String? @db.Text
-  descriptionHtml String? @db.LongText
-
-  displayOrder Int @default(0)
+  title        String
+  caption      String? @db.Text
+  displayOrder Int     @default(0)
 
   videoUrl      String @db.Text
   videoPublicId String @unique
@@ -552,59 +543,10 @@ model ReelProduct {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  gallery ReelProductMedia[]
-
   @@unique([productId, categoryId])
   @@index([productId])
   @@index([categoryId])
   @@index([status])
   @@index([displayOrder])
   @@index([createdAt])
-}
-
-model ReelProductMedia {
-  id String @id @default(uuid())
-
-  reelProductId String
-  reelProduct   ReelProduct @relation(fields: [reelProductId], references: [id], onDelete: Cascade)
-
-  mediaType ReelProductMediaType
-
-  url      String @db.Text
-  publicId String @unique
-
-  resourceType String
-  format       String?
-
-  width    Int?
-  height   Int?
-  duration Decimal? @db.Decimal(10, 2)
-  bytes    Int?
-
-  altText String? @db.Text
-
-  displayOrder Int     @default(0)
-  isPrimary    Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([reelProductId])
-  @@index([mediaType])
-  @@index([displayOrder])
-  @@index([isPrimary])
-  @@index([createdAt])
-}
-
-model ShopSetting {
-  id String @id @default("default")
-
-  insideDhakaDeliveryCharge  Decimal @default(70) @db.Decimal(10, 2)
-  outsideDhakaDeliveryCharge Decimal @default(150) @db.Decimal(10, 2)
-
-  metaPixelId      String?
-  metaPixelEnabled Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }

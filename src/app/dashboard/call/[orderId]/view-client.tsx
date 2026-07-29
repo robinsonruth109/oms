@@ -103,36 +103,37 @@ function normalizeLooseText(value: string) {
 
 
 
-function getProductSearchText(product: ProductOption) {
-  return [
-    product.sku,
-    product.name,
-    product.parentSku,
-    normalizeLooseText(product.sku),
-    normalizeLooseText(product.name),
-    normalizeLooseText(product.parentSku),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
+
 
 function findMatchedProduct(
-  item: EditableItem | undefined,
+  item: EditableItem | OrderItem | undefined,
   products: ProductOption[]
 ): ProductOption | null {
-  if (!item) return null;
-
-  if (item.productId) {
-    const byId = products.find((product) => product.id === item.productId);
-    if (byId) return byId;
+  if (!item) {
+    return null;
   }
 
-  const label = item.productLabel || "";
+  if (item.productId) {
+    const byId = products.find(
+      (product) => product.id === item.productId
+    );
+
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const label =
+    "productLabel" in item
+      ? item.productLabel
+      : `${item.productSku} - ${item.productName}`;
+
   const q = normalizeText(label);
   const qLoose = normalizeLoose(label);
 
-  if (!q && !qLoose) return null;
+  if (!q && !qLoose) {
+    return null;
+  }
 
   for (const product of products) {
     const sku = normalizeText(product.sku);

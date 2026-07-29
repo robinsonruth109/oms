@@ -1,0 +1,3395 @@
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/product-selector.tsx
+
+============================================================
+
+"use client";
+
+import {
+  Check,
+  ChevronDown,
+  Package,
+  Search,
+  X,
+} from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+export type ReelProductSelectorItem = {
+  id: string;
+  sku: string;
+  name: string;
+  sellingPrice: number;
+  status: boolean;
+  parent: {
+    id: string;
+    sku: string;
+    name: string;
+    status: boolean;
+  };
+};
+
+type ProductSelectorProps = {
+  products: ReelProductSelectorItem[];
+  value: string;
+  onChange: (
+    productId: string,
+    product: ReelProductSelectorItem | null
+  ) => void;
+  disabled?: boolean;
+  placeholder?: string;
+};
+
+export default function ProductSelector({
+  products,
+  value,
+  onChange,
+  disabled = false,
+  placeholder = "Search and select a product",
+}: ProductSelectorProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selectedProduct = useMemo(
+    () =>
+      products.find((product) => product.id === value) ??
+      null,
+    [products, value]
+  );
+
+  const filteredProducts = useMemo(() => {
+    const searchValue = query.trim().toLowerCase();
+
+    if (!searchValue) {
+      return products;
+    }
+
+    return products.filter((product) =>
+      [
+        product.name,
+        product.sku,
+        product.parent.name,
+        product.parent.sku,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchValue)
+    );
+  }, [products, query]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener(
+      "mousedown",
+      handlePointerDown
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handlePointerDown
+      );
+    };
+  }, []);
+
+  function selectProduct(
+    product: ReelProductSelectorItem
+  ) {
+    onChange(product.id, product);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function clearSelection() {
+    onChange("", null);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2 text-left outline-none transition hover:border-slate-400 focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
+      >
+        {selectedProduct ? (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-slate-900">
+              {selectedProduct.name}
+            </p>
+
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {selectedProduct.sku} · ৳
+              {formatMoney(
+                selectedProduct.sellingPrice
+              )}
+            </p>
+          </div>
+        ) : (
+          <span className="text-sm text-slate-400">
+            {placeholder}
+          </span>
+        )}
+
+        <div className="flex shrink-0 items-center gap-1">
+          {selectedProduct && !disabled ? (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Clear selected product"
+              onClick={(event) => {
+                event.stopPropagation();
+                clearSelection();
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" ||
+                  event.key === " "
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clearSelection();
+                }
+              }}
+              className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </span>
+          ) : null}
+
+          <ChevronDown
+            className={`h-4 w-4 text-slate-400 transition ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </div>
+      </button>
+
+      {open && !disabled ? (
+        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border bg-white shadow-xl">
+          <div className="border-b p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+              <input
+                autoFocus
+                value={query}
+                onChange={(event) =>
+                  setQuery(event.target.value)
+                }
+                placeholder="Search product name or SKU"
+                className="w-full rounded-xl border bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-slate-500 focus:bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto p-2">
+            {filteredProducts.map((product) => {
+              const isSelected = product.id === value;
+              const isInactive =
+                !product.status ||
+                !product.parent.status;
+
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() =>
+                    selectProduct(product)
+                  }
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+                    isSelected
+                      ? "bg-slate-100"
+                      : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                    <Package className="h-5 w-5" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {product.name}
+                      </p>
+
+                      {isInactive ? (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Inactive
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      SKU: {product.sku}
+                    </p>
+
+                    <p className="mt-1 text-xs font-semibold text-slate-700">
+                      ৳
+                      {formatMoney(
+                        product.sellingPrice
+                      )}
+                    </p>
+                  </div>
+
+                  {isSelected ? (
+                    <Check className="h-5 w-5 shrink-0 text-emerald-600" />
+                  ) : null}
+                </button>
+              );
+            })}
+
+            {!filteredProducts.length ? (
+              <div className="px-4 py-10 text-center">
+                <Package className="mx-auto h-8 w-8 text-slate-300" />
+
+                <p className="mt-3 text-sm font-medium text-slate-700">
+                  No products found
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Try searching with another product
+                  name or SKU.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/category-selector.tsx
+
+============================================================
+
+"use client";
+
+import {
+  Check,
+  ChevronDown,
+  Layers3,
+  Search,
+  X,
+} from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+export type ReelCategorySelectorItem = {
+  id: string;
+  name: string;
+  status: boolean;
+  source: {
+    id: string;
+    name: string;
+    status: boolean;
+  };
+  page: {
+    id: string;
+    name: string;
+    status: boolean;
+  };
+};
+
+type CategorySelectorProps = {
+  categories: ReelCategorySelectorItem[];
+  value: string;
+  onChange: (
+    categoryId: string,
+    category: ReelCategorySelectorItem | null
+  ) => void;
+  disabled?: boolean;
+  placeholder?: string;
+};
+
+export default function CategorySelector({
+  categories,
+  value,
+  onChange,
+  disabled = false,
+  placeholder = "Search and select a reel category",
+}: CategorySelectorProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selectedCategory = useMemo(
+    () =>
+      categories.find(
+        (category) => category.id === value
+      ) ?? null,
+    [categories, value]
+  );
+
+  const filteredCategories = useMemo(() => {
+    const searchValue = query.trim().toLowerCase();
+
+    if (!searchValue) {
+      return categories;
+    }
+
+    return categories.filter((category) =>
+      [
+        category.name,
+        category.source.name,
+        category.page.name,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchValue)
+    );
+  }, [categories, query]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener(
+      "mousedown",
+      handlePointerDown
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handlePointerDown
+      );
+    };
+  }, []);
+
+  function selectCategory(
+    category: ReelCategorySelectorItem
+  ) {
+    onChange(category.id, category);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function clearSelection() {
+    onChange("", null);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2 text-left outline-none transition hover:border-slate-400 focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
+      >
+        {selectedCategory ? (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-slate-900">
+              {selectedCategory.name}
+            </p>
+
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {selectedCategory.source.name} ·{" "}
+              {selectedCategory.page.name}
+            </p>
+          </div>
+        ) : (
+          <span className="text-sm text-slate-400">
+            {placeholder}
+          </span>
+        )}
+
+        <div className="flex shrink-0 items-center gap-1">
+          {selectedCategory && !disabled ? (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Clear selected category"
+              onClick={(event) => {
+                event.stopPropagation();
+                clearSelection();
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" ||
+                  event.key === " "
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clearSelection();
+                }
+              }}
+              className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </span>
+          ) : null}
+
+          <ChevronDown
+            className={`h-4 w-4 text-slate-400 transition ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </div>
+      </button>
+
+      {open && !disabled ? (
+        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border bg-white shadow-xl">
+          <div className="border-b p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+              <input
+                autoFocus
+                value={query}
+                onChange={(event) =>
+                  setQuery(event.target.value)
+                }
+                placeholder="Search category, source or page"
+                className="w-full rounded-xl border bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-slate-500 focus:bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto p-2">
+            {filteredCategories.map((category) => {
+              const isSelected =
+                category.id === value;
+
+              const isInactive =
+                !category.status ||
+                !category.source.status ||
+                !category.page.status;
+
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() =>
+                    selectCategory(category)
+                  }
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+                    isSelected
+                      ? "bg-slate-100"
+                      : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                    <Layers3 className="h-5 w-5" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {category.name}
+                      </p>
+
+                      {isInactive ? (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Inactive
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      Source: {category.source.name}
+                    </p>
+
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      Page: {category.page.name}
+                    </p>
+                  </div>
+
+                  {isSelected ? (
+                    <Check className="h-5 w-5 shrink-0 text-emerald-600" />
+                  ) : null}
+                </button>
+              );
+            })}
+
+            {!filteredCategories.length ? (
+              <div className="px-4 py-10 text-center">
+                <Layers3 className="mx-auto h-8 w-8 text-slate-300" />
+
+                <p className="mt-3 text-sm font-medium text-slate-700">
+                  No categories found
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Try another category, source or page
+                  name.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/rich-text-editor.tsx
+
+============================================================
+
+"use client";
+
+import {
+  Bold,
+  Eraser,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
+  Redo2,
+  Underline,
+  Undo2,
+} from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+type RichTextEditorProps = {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  minHeight?: number;
+};
+
+type ToolbarButtonProps = {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+};
+
+export default function RichTextEditor({
+  value,
+  onChange,
+  disabled = false,
+  placeholder = "Write the complete product description...",
+  minHeight = 220,
+}: RichTextEditorProps) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const lastValueRef = useRef(value);
+  const [isEmpty, setIsEmpty] = useState(
+    !hasVisibleContent(value)
+  );
+
+  useEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
+    if (
+      value !== lastValueRef.current &&
+      editor.innerHTML !== value
+    ) {
+      editor.innerHTML = value;
+      lastValueRef.current = value;
+      setIsEmpty(!hasVisibleContent(value));
+    }
+  }, [value]);
+
+  function emitChange() {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
+    const html = normaliseHtml(editor.innerHTML);
+
+    lastValueRef.current = html;
+    setIsEmpty(!hasVisibleContent(html));
+    onChange(html);
+  }
+
+  function focusEditor() {
+    editorRef.current?.focus();
+  }
+
+  function runCommand(
+    command: string,
+    commandValue?: string
+  ) {
+    if (disabled) {
+      return;
+    }
+
+    focusEditor();
+    document.execCommand(
+      command,
+      false,
+      commandValue
+    );
+    emitChange();
+  }
+
+  function createLink() {
+    if (disabled) {
+      return;
+    }
+
+    const url = window.prompt(
+      "Enter the full link URL:",
+      "https://"
+    );
+
+    if (!url?.trim()) {
+      return;
+    }
+
+    const trimmedUrl = url.trim();
+
+    if (!isSafeLink(trimmedUrl)) {
+      window.alert(
+        "Only http, https, mailto and tel links are allowed."
+      );
+      return;
+    }
+
+    runCommand("createLink", trimmedUrl);
+  }
+
+  function clearFormatting() {
+    if (disabled) {
+      return;
+    }
+
+    runCommand("removeFormat");
+    runCommand("unlink");
+  }
+
+  function handlePaste(
+    event: React.ClipboardEvent<HTMLDivElement>
+  ) {
+    event.preventDefault();
+
+    const text =
+      event.clipboardData.getData("text/plain");
+
+    document.execCommand(
+      "insertText",
+      false,
+      text
+    );
+
+    emitChange();
+  }
+
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl border bg-white transition ${
+        disabled
+          ? "cursor-not-allowed bg-slate-50 opacity-70"
+          : "focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-100"
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-1 border-b bg-slate-50 p-2">
+        <ToolbarButton
+          label="Bold"
+          disabled={disabled}
+          onClick={() => runCommand("bold")}
+        >
+          <Bold className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Italic"
+          disabled={disabled}
+          onClick={() => runCommand("italic")}
+        >
+          <Italic className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Underline"
+          disabled={disabled}
+          onClick={() => runCommand("underline")}
+        >
+          <Underline className="h-4 w-4" />
+        </ToolbarButton>
+
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+
+        <ToolbarButton
+          label="Bullet list"
+          disabled={disabled}
+          onClick={() =>
+            runCommand("insertUnorderedList")
+          }
+        >
+          <List className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Numbered list"
+          disabled={disabled}
+          onClick={() =>
+            runCommand("insertOrderedList")
+          }
+        >
+          <ListOrdered className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Add link"
+          disabled={disabled}
+          onClick={createLink}
+        >
+          <Link className="h-4 w-4" />
+        </ToolbarButton>
+
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+
+        <ToolbarButton
+          label="Undo"
+          disabled={disabled}
+          onClick={() => runCommand("undo")}
+        >
+          <Undo2 className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Redo"
+          disabled={disabled}
+          onClick={() => runCommand("redo")}
+        >
+          <Redo2 className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Clear formatting"
+          disabled={disabled}
+          onClick={clearFormatting}
+        >
+          <Eraser className="h-4 w-4" />
+        </ToolbarButton>
+      </div>
+
+      <div className="relative">
+        {isEmpty ? (
+          <div className="pointer-events-none absolute left-4 top-3 text-sm text-slate-400">
+            {placeholder}
+          </div>
+        ) : null}
+
+        <div
+          ref={editorRef}
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Product description"
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          onInput={emitChange}
+          onBlur={emitChange}
+          onPaste={handlePaste}
+          className="prose prose-sm max-w-none overflow-y-auto px-4 py-3 text-sm text-slate-800 outline-none prose-a:text-blue-600 prose-a:underline prose-ol:pl-6 prose-ul:pl-6"
+          style={{
+            minHeight,
+            maxHeight: 420,
+          }}
+        />
+      </div>
+
+      <div className="border-t bg-slate-50 px-4 py-2">
+        <p className="text-xs text-slate-500">
+          Supports bold, italic, underline, links and
+          ordered or bullet lists.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ToolbarButton({
+  label,
+  disabled = false,
+  onClick,
+  children,
+}: ToolbarButtonProps) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
+      onClick={onClick}
+      className="rounded-lg p-2 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function normaliseHtml(html: string) {
+  const trimmed = html.trim();
+
+  if (
+    trimmed === "<br>" ||
+    trimmed === "<div><br></div>" ||
+    trimmed === "<p><br></p>"
+  ) {
+    return "";
+  }
+
+  return trimmed;
+}
+
+function hasVisibleContent(html: string) {
+  if (!html.trim()) {
+    return false;
+  }
+
+  if (typeof document === "undefined") {
+    return html
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim().length > 0;
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  return Boolean(container.textContent?.trim());
+}
+
+function isSafeLink(value: string) {
+  return /^(https?:\/\/|mailto:|tel:)/i.test(value);
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/gallery-uploader.tsx
+
+============================================================
+
+"use client";
+
+import {
+  ChevronLeft,
+  ChevronRight,
+  Film,
+  ImageIcon,
+  Loader2,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import {
+  type ChangeEvent,
+  useRef,
+} from "react";
+import { Button } from "@/components/ui/button";
+
+export type ReelGalleryMediaType =
+  | "IMAGE"
+  | "VIDEO";
+
+export type ReelGalleryItem = {
+  /**
+   * Database ID for an already-saved gallery record.
+   * Newly uploaded items may not have one yet.
+   */
+  id?: string;
+
+  /**
+   * Stable client-side identifier.
+   */
+  clientId: string;
+
+  mediaType: ReelGalleryMediaType;
+  url: string;
+  publicId: string;
+
+  thumbnailUrl?: string | null;
+  format?: string | null;
+  bytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+
+  /**
+   * Position inside the gallery.
+   */
+  displayOrder: number;
+
+  /**
+   * True while this asset is being uploaded.
+   */
+  uploading?: boolean;
+
+  /**
+   * True when the item already exists in the database.
+   */
+  persisted?: boolean;
+};
+
+type GalleryUploaderProps = {
+  items: ReelGalleryItem[];
+  onChange: (items: ReelGalleryItem[]) => void;
+
+  /**
+   * The parent modal will perform the Cloudinary upload,
+   * then add the returned media to `items`.
+   */
+  onUploadImages: (files: File[]) => Promise<void>;
+  onUploadVideos: (files: File[]) => Promise<void>;
+
+  /**
+   * The parent modal handles Cloudinary deletion when needed.
+   */
+  onDeleteItem: (
+    item: ReelGalleryItem
+  ) => Promise<void>;
+
+  disabled?: boolean;
+  imageUploading?: boolean;
+  videoUploading?: boolean;
+  maxItems?: number;
+};
+
+const IMAGE_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/avif";
+
+const VIDEO_ACCEPT =
+  "video/mp4,video/webm,video/quicktime,video/x-m4v";
+
+export default function GalleryUploader({
+  items,
+  onChange,
+  onUploadImages,
+  onUploadVideos,
+  onDeleteItem,
+  disabled = false,
+  imageUploading = false,
+  videoUploading = false,
+  maxItems = 12,
+}: GalleryUploaderProps) {
+  const imageInputRef =
+    useRef<HTMLInputElement>(null);
+
+  const videoInputRef =
+    useRef<HTMLInputElement>(null);
+
+  const uploadBusy =
+    imageUploading || videoUploading;
+
+  const remainingSlots = Math.max(
+    maxItems - items.length,
+    0
+  );
+
+  async function handleImageSelection(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(
+      event.target.files ?? []
+    );
+
+    event.target.value = "";
+
+    if (!files.length || disabled) {
+      return;
+    }
+
+    const acceptedFiles = files
+      .filter((file) =>
+        file.type.startsWith("image/")
+      )
+      .slice(0, remainingSlots);
+
+    if (!acceptedFiles.length) {
+      return;
+    }
+
+    await onUploadImages(acceptedFiles);
+  }
+
+  async function handleVideoSelection(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(
+      event.target.files ?? []
+    );
+
+    event.target.value = "";
+
+    if (!files.length || disabled) {
+      return;
+    }
+
+    const acceptedFiles = files
+      .filter((file) =>
+        file.type.startsWith("video/")
+      )
+      .slice(0, remainingSlots);
+
+    if (!acceptedFiles.length) {
+      return;
+    }
+
+    await onUploadVideos(acceptedFiles);
+  }
+
+  function moveItem(
+    currentIndex: number,
+    direction: -1 | 1
+  ) {
+    const nextIndex =
+      currentIndex + direction;
+
+    if (
+      nextIndex < 0 ||
+      nextIndex >= items.length
+    ) {
+      return;
+    }
+
+    const nextItems = [...items];
+
+    const currentItem =
+      nextItems[currentIndex];
+
+    const targetItem =
+      nextItems[nextIndex];
+
+    nextItems[currentIndex] = targetItem;
+    nextItems[nextIndex] = currentItem;
+
+    onChange(
+      nextItems.map((item, index) => ({
+        ...item,
+        displayOrder: index,
+      }))
+    );
+  }
+
+  async function removeItem(
+    item: ReelGalleryItem
+  ) {
+    if (disabled || item.uploading) {
+      return;
+    }
+
+    await onDeleteItem(item);
+
+    const nextItems = items
+      .filter(
+        (candidate) =>
+          candidate.clientId !== item.clientId
+      )
+      .map((candidate, index) => ({
+        ...candidate,
+        displayOrder: index,
+      }));
+
+    onChange(nextItems);
+  }
+
+  return (
+    <section className="rounded-2xl border bg-white">
+      <div className="flex flex-col gap-4 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Product Gallery
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Add up to {maxItems} product images or
+            videos. The first item will appear first
+            in the gallery.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              disabled ||
+              uploadBusy ||
+              remainingSlots === 0
+            }
+            onClick={() =>
+              imageInputRef.current?.click()
+            }
+          >
+            {imageUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ImageIcon className="mr-2 h-4 w-4" />
+            )}
+
+            Add Images
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              disabled ||
+              uploadBusy ||
+              remainingSlots === 0
+            }
+            onClick={() =>
+              videoInputRef.current?.click()
+            }
+          >
+            {videoUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Film className="mr-2 h-4 w-4" />
+            )}
+
+            Add Videos
+          </Button>
+        </div>
+      </div>
+
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(event) =>
+          void handleImageSelection(event)
+        }
+      />
+
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept={VIDEO_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(event) =>
+          void handleVideoSelection(event)
+        }
+      />
+
+      <div className="p-4">
+        {items.length ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {items.map((item, index) => (
+              <GalleryCard
+                key={item.clientId}
+                item={item}
+                index={index}
+                totalItems={items.length}
+                disabled={disabled}
+                onMoveLeft={() =>
+                  moveItem(index, -1)
+                }
+                onMoveRight={() =>
+                  moveItem(index, 1)
+                }
+                onDelete={() =>
+                  void removeItem(item)
+                }
+              />
+            ))}
+
+            {remainingSlots > 0 ? (
+              <button
+                type="button"
+                disabled={disabled || uploadBusy}
+                onClick={() =>
+                  imageInputRef.current?.click()
+                }
+                className="flex aspect-square min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50 text-center transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <div className="rounded-full bg-white p-3 shadow-sm">
+                  <Plus className="h-5 w-5 text-slate-500" />
+                </div>
+
+                <p className="mt-3 text-sm font-medium text-slate-700">
+                  Add media
+                </p>
+
+                <p className="mt-1 px-3 text-xs text-slate-500">
+                  {remainingSlots} slot
+                  {remainingSlots === 1 ? "" : "s"}{" "}
+                  remaining
+                </p>
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50 px-4 text-center">
+            <div className="rounded-full bg-white p-4 shadow-sm">
+              <Upload className="h-7 w-7 text-slate-400" />
+            </div>
+
+            <p className="mt-4 text-sm font-semibold text-slate-800">
+              No gallery media added
+            </p>
+
+            <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">
+              Upload product photos or short videos
+              that customers can browse after opening
+              this reel product.
+            </p>
+
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  disabled ||
+                  uploadBusy ||
+                  remainingSlots === 0
+                }
+                onClick={() =>
+                  imageInputRef.current?.click()
+                }
+              >
+                <ImageIcon className="mr-2 h-4 w-4" />
+                Upload Images
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  disabled ||
+                  uploadBusy ||
+                  remainingSlots === 0
+                }
+                onClick={() =>
+                  videoInputRef.current?.click()
+                }
+              >
+                <Film className="mr-2 h-4 w-4" />
+                Upload Videos
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            {items.length} of {maxItems} gallery items
+            added
+          </p>
+
+          <p>
+            Use the arrow buttons to change the
+            gallery order.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GalleryCard({
+  item,
+  index,
+  totalItems,
+  disabled,
+  onMoveLeft,
+  onMoveRight,
+  onDelete,
+}: {
+  item: ReelGalleryItem;
+  index: number;
+  totalItems: number;
+  disabled: boolean;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <article className="group overflow-hidden rounded-2xl border bg-white shadow-sm">
+      <div className="relative aspect-square overflow-hidden bg-slate-100">
+        {item.mediaType === "IMAGE" ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.url}
+            alt={`Gallery item ${index + 1}`}
+            className="h-full w-full object-cover"
+          />
+        ) : item.thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.thumbnailUrl}
+            alt={`Video thumbnail ${index + 1}`}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <video
+            src={item.url}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        )}
+
+        <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-slate-950/75 px-2 py-1 text-[10px] font-semibold text-white">
+          {item.mediaType === "IMAGE" ? (
+            <ImageIcon className="h-3 w-3" />
+          ) : (
+            <Film className="h-3 w-3" />
+          )}
+
+          {item.mediaType === "IMAGE"
+            ? "IMAGE"
+            : "VIDEO"}
+        </div>
+
+        <div className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[10px] font-bold text-slate-700 shadow">
+          {index + 1}
+        </div>
+
+        {item.uploading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60 text-white">
+            <Loader2 className="h-6 w-6 animate-spin" />
+
+            <p className="mt-2 text-xs font-medium">
+              Uploading...
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="space-y-3 p-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-slate-700">
+            {item.format
+              ? item.format.toUpperCase()
+              : item.mediaType}
+          </p>
+
+          <p className="mt-1 truncate text-[11px] text-slate-500">
+            {formatMediaDetails(item)}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              title="Move left"
+              aria-label="Move gallery item left"
+              disabled={
+                disabled ||
+                item.uploading ||
+                index === 0
+              }
+              onClick={onMoveLeft}
+              className="rounded-lg border p-1.5 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              title="Move right"
+              aria-label="Move gallery item right"
+              disabled={
+                disabled ||
+                item.uploading ||
+                index === totalItems - 1
+              }
+              onClick={onMoveRight}
+              className="rounded-lg border p-1.5 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            title="Delete gallery item"
+            aria-label="Delete gallery item"
+            disabled={disabled || item.uploading}
+            onClick={onDelete}
+            className="rounded-lg border border-red-200 p-1.5 text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function formatMediaDetails(
+  item: ReelGalleryItem
+) {
+  const details: string[] = [];
+
+  if (item.width && item.height) {
+    details.push(
+      `${item.width} × ${item.height}`
+    );
+  }
+
+  if (
+    item.mediaType === "VIDEO" &&
+    item.duration !== null &&
+    item.duration !== undefined
+  ) {
+    details.push(
+      formatDuration(item.duration)
+    );
+  }
+
+  if (
+    item.bytes !== null &&
+    item.bytes !== undefined
+  ) {
+    details.push(formatBytes(item.bytes));
+  }
+
+  return details.length
+    ? details.join(" · ")
+    : "Media details unavailable";
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+
+  const unitIndex = Math.min(
+    Math.floor(
+      Math.log(bytes) / Math.log(1024)
+    ),
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, unitIndex);
+
+  return `${value.toFixed(
+    unitIndex === 0 ? 0 : 1
+  )} ${units[unitIndex]}`;
+}
+
+function formatDuration(seconds: number) {
+  if (
+    !Number.isFinite(seconds) ||
+    seconds < 0
+  ) {
+    return "0:00";
+  }
+
+  const wholeSeconds = Math.floor(seconds);
+  const minutes = Math.floor(
+    wholeSeconds / 60
+  );
+  const remainingSeconds =
+    wholeSeconds % 60;
+
+  return `${minutes}:${String(
+    remainingSeconds
+  ).padStart(2, "0")}`;
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/reel-media-uploader.tsx
+
+============================================================
+
+"use client";
+
+import {
+  Film,
+  ImageIcon,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+export type ReelMainMediaState = {
+  videoUrl: string;
+  videoPublicId: string;
+  thumbnailUrl: string;
+  thumbnailPublicId: string;
+  videoDuration: number | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
+  videoFormat: string | null;
+  videoBytes: number | null;
+};
+
+type ReelMediaUploaderProps = {
+  media: ReelMainMediaState;
+
+  videoUploading?: boolean;
+  thumbnailUploading?: boolean;
+  disabled?: boolean;
+
+  onSelectVideo: () => void;
+  onSelectThumbnail: () => void;
+
+  onRemoveVideo?: () => void;
+  onRemoveThumbnail?: () => void;
+};
+
+export default function ReelMediaUploader({
+  media,
+  videoUploading = false,
+  thumbnailUploading = false,
+  disabled = false,
+  onSelectVideo,
+  onSelectThumbnail,
+  onRemoveVideo,
+  onRemoveThumbnail,
+}: ReelMediaUploaderProps) {
+  const busy =
+    videoUploading || thumbnailUploading;
+
+  return (
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+      <section className="overflow-hidden rounded-2xl border bg-white">
+        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Main Reel Video
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Upload a vertical MP4, WebM, MOV or M4V
+              video. Maximum size: 100 MB.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || busy}
+            onClick={onSelectVideo}
+          >
+            {videoUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+
+            {media.videoPublicId
+              ? "Replace Video"
+              : "Upload Video"}
+          </Button>
+        </div>
+
+        <div className="p-4">
+          {media.videoUrl ? (
+            <div className="space-y-4">
+              <div className="relative overflow-hidden rounded-2xl bg-black">
+                <video
+                  key={media.videoUrl}
+                  src={media.videoUrl}
+                  poster={media.thumbnailUrl || undefined}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="aspect-video max-h-[520px] w-full object-contain"
+                />
+
+                {onRemoveVideo ? (
+                  <button
+                    type="button"
+                    title="Remove main reel video"
+                    aria-label="Remove main reel video"
+                    disabled={disabled || videoUploading}
+                    onClick={onRemoveVideo}
+                    className="absolute right-3 top-3 rounded-full bg-white/95 p-2 text-red-600 shadow-lg transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+
+                {videoUploading ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/65 text-white">
+                    <Loader2 className="h-7 w-7 animate-spin" />
+
+                    <p className="mt-3 text-sm font-medium">
+                      Uploading video...
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              <VideoMetadata media={media} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={disabled || busy}
+              onClick={onSelectVideo}
+              className="flex min-h-72 w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50 px-6 text-center transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {videoUploading ? (
+                <Loader2 className="h-9 w-9 animate-spin text-slate-400" />
+              ) : (
+                <div className="rounded-full bg-white p-4 shadow-sm">
+                  <Film className="h-8 w-8 text-slate-400" />
+                </div>
+              )}
+
+              <p className="mt-4 text-sm font-semibold text-slate-800">
+                {videoUploading
+                  ? "Uploading your reel..."
+                  : "Upload the main reel video"}
+              </p>
+
+              <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">
+                A 9:16 vertical video is recommended for
+                the best experience in the seller reels
+                feed.
+              </p>
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border bg-white">
+        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between xl:items-start">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Custom Thumbnail
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Optional JPG, PNG, WebP or AVIF image.
+              Maximum size: 10 MB.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              disabled ||
+              busy ||
+              !media.videoPublicId
+            }
+            onClick={onSelectThumbnail}
+          >
+            {thumbnailUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ImageIcon className="mr-2 h-4 w-4" />
+            )}
+
+            {media.thumbnailPublicId
+              ? "Replace"
+              : "Upload"}
+          </Button>
+        </div>
+
+        <div className="p-4">
+          {media.thumbnailUrl ? (
+            <div className="relative mx-auto w-full max-w-64 overflow-hidden rounded-2xl bg-slate-100">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={media.thumbnailUrl}
+                alt="Reel thumbnail preview"
+                className="aspect-[9/16] w-full object-cover"
+              />
+
+              {onRemoveThumbnail &&
+              media.thumbnailPublicId ? (
+                <button
+                  type="button"
+                  title="Remove custom thumbnail"
+                  aria-label="Remove custom thumbnail"
+                  disabled={
+                    disabled || thumbnailUploading
+                  }
+                  onClick={onRemoveThumbnail}
+                  className="absolute right-3 top-3 rounded-full bg-white/95 p-2 text-red-600 shadow-lg transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : null}
+
+              {thumbnailUploading ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/65 text-white">
+                  <Loader2 className="h-7 w-7 animate-spin" />
+
+                  <p className="mt-3 text-xs font-medium">
+                    Uploading thumbnail...
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={
+                disabled ||
+                busy ||
+                !media.videoPublicId
+              }
+              onClick={onSelectThumbnail}
+              className="flex min-h-72 w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50 px-5 text-center transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {thumbnailUploading ? (
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+              ) : (
+                <div className="rounded-full bg-white p-4 shadow-sm">
+                  <ImageIcon className="h-7 w-7 text-slate-400" />
+                </div>
+              )}
+
+              <p className="mt-4 text-sm font-semibold text-slate-800">
+                {thumbnailUploading
+                  ? "Uploading thumbnail..."
+                  : "No custom thumbnail"}
+              </p>
+
+              <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
+                The thumbnail generated from the main
+                video will be used automatically when no
+                custom thumbnail is uploaded.
+              </p>
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function VideoMetadata({
+  media,
+}: {
+  media: ReelMainMediaState;
+}) {
+  const values: string[] = [];
+
+  if (media.videoFormat) {
+    values.push(media.videoFormat.toUpperCase());
+  }
+
+  if (
+    media.videoDuration !== null &&
+    media.videoDuration !== undefined
+  ) {
+    values.push(formatDuration(media.videoDuration));
+  }
+
+  if (
+    media.videoWidth !== null &&
+    media.videoHeight !== null
+  ) {
+    values.push(
+      `${media.videoWidth} × ${media.videoHeight}`
+    );
+  }
+
+  if (
+    media.videoBytes !== null &&
+    media.videoBytes !== undefined
+  ) {
+    values.push(formatBytes(media.videoBytes));
+  }
+
+  if (!values.length) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map((value) => (
+        <span
+          key={value}
+          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+        >
+          {value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+
+  const unitIndex = Math.min(
+    Math.floor(
+      Math.log(bytes) / Math.log(1024)
+    ),
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, unitIndex);
+
+  return `${value.toFixed(
+    unitIndex === 0 ? 0 : 1
+  )} ${units[unitIndex]}`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0:00";
+  }
+
+  const wholeSeconds = Math.floor(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+
+  return `${minutes}:${String(
+    remainingSeconds
+  ).padStart(2, "0")}`;
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/reel-product-table.tsx
+
+============================================================
+
+"use client";
+
+import {
+  Edit3,
+  Eye,
+  Film,
+  ImageIcon,
+  MoreHorizontal,
+  Package,
+  Search,
+  Trash2,
+} from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Button } from "@/components/ui/button";
+
+export type ReelProductTableItem = {
+  id: string;
+  caption: string | null;
+  descriptionHtml: string | null;
+  status: boolean;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+
+  videoUrl: string;
+  videoPublicId: string;
+  thumbnailUrl: string | null;
+  thumbnailPublicId: string | null;
+
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    sellingPrice: number;
+    status: boolean;
+    parent: {
+      id: string;
+      sku: string;
+      name: string;
+      status: boolean;
+    };
+  };
+
+  category: {
+    id: string;
+    name: string;
+    status: boolean;
+    source: {
+      id: string;
+      name: string;
+      status: boolean;
+    };
+    page: {
+      id: string;
+      name: string;
+      status: boolean;
+    };
+  };
+
+  gallery: Array<{
+    id: string;
+    mediaType: "IMAGE" | "VIDEO";
+    url: string;
+    publicId: string;
+    thumbnailUrl: string | null;
+    displayOrder: number;
+  }>;
+};
+
+type ReelProductTableProps = {
+  items: ReelProductTableItem[];
+  loading?: boolean;
+  disabled?: boolean;
+  onEdit: (item: ReelProductTableItem) => void;
+  onPreview?: (item: ReelProductTableItem) => void;
+  onDelete: (item: ReelProductTableItem) => void;
+};
+
+export default function ReelProductTable({
+  items,
+  loading = false,
+  disabled = false,
+  onEdit,
+  onPreview,
+  onDelete,
+}: ReelProductTableProps) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | "ACTIVE" | "INACTIVE"
+  >("ALL");
+
+  const filteredItems = useMemo(() => {
+    const searchValue = query.trim().toLowerCase();
+
+    return items.filter((item) => {
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        (statusFilter === "ACTIVE" && item.status) ||
+        (statusFilter === "INACTIVE" && !item.status);
+
+      if (!matchesStatus) {
+        return false;
+      }
+
+      if (!searchValue) {
+        return true;
+      }
+
+      return [
+        item.caption ?? "",
+        item.product.name,
+        item.product.sku,
+        item.product.parent.name,
+        item.product.parent.sku,
+        item.category.name,
+        item.category.source.name,
+        item.category.page.name,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchValue);
+    });
+  }, [items, query, statusFilter]);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+      <div className="flex flex-col gap-4 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">
+            Reel Products
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Manage products displayed in the seller reels
+            feed.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="relative min-w-0 sm:w-80">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+            <input
+              value={query}
+              onChange={(event) =>
+                setQuery(event.target.value)
+              }
+              placeholder="Search product, SKU or category"
+              className="h-10 w-full rounded-xl border bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-slate-500 focus:bg-white"
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(
+                event.target.value as
+                  | "ALL"
+                  | "ACTIVE"
+                  | "INACTIVE"
+              )
+            }
+            className="h-10 rounded-xl border bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-500"
+          >
+            <option value="ALL">All statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <TableLoadingState />
+      ) : filteredItems.length ? (
+        <>
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-[1050px]">
+              <thead className="bg-slate-50">
+                <tr className="border-b">
+                  <TableHeader>Reel</TableHeader>
+                  <TableHeader>Product</TableHeader>
+                  <TableHeader>Category</TableHeader>
+                  <TableHeader>Gallery</TableHeader>
+                  <TableHeader>Status</TableHeader>
+                  <TableHeader>Order</TableHeader>
+                  <TableHeader>Updated</TableHeader>
+
+                  <th className="w-20 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredItems.map((item) => (
+                  <DesktopRow
+                    key={item.id}
+                    item={item}
+                    disabled={disabled}
+                    onEdit={onEdit}
+                    onPreview={onPreview}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="divide-y lg:hidden">
+            {filteredItems.map((item) => (
+              <MobileCard
+                key={item.id}
+                item={item}
+                disabled={disabled}
+                onEdit={onEdit}
+                onPreview={onPreview}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
+        <EmptyState
+          hasFilters={
+            Boolean(query.trim()) ||
+            statusFilter !== "ALL"
+          }
+        />
+      )}
+
+      <div className="flex flex-col gap-1 border-t bg-slate-50 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <p>
+          Showing {filteredItems.length} of {items.length} reel
+          products
+        </p>
+
+        <p>
+          Display order is assigned automatically.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DesktopRow({
+  item,
+  disabled,
+  onEdit,
+  onPreview,
+  onDelete,
+}: {
+  item: ReelProductTableItem;
+  disabled: boolean;
+  onEdit: (item: ReelProductTableItem) => void;
+  onPreview?: (item: ReelProductTableItem) => void;
+  onDelete: (item: ReelProductTableItem) => void;
+}) {
+  return (
+    <tr className="border-b last:border-b-0 hover:bg-slate-50/70">
+      <td className="px-4 py-4 align-top">
+        <ReelThumbnail item={item} />
+      </td>
+
+      <td className="px-4 py-4 align-top">
+        <div className="max-w-72">
+          <p className="truncate text-sm font-semibold text-slate-900">
+            {item.product.name}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            SKU: {item.product.sku}
+          </p>
+
+          <p className="mt-1 text-xs font-semibold text-slate-700">
+            ৳{formatMoney(item.product.sellingPrice)}
+          </p>
+
+          {!item.product.status ||
+          !item.product.parent.status ? (
+            <p className="mt-2 text-xs font-medium text-amber-600">
+              Linked product is inactive
+            </p>
+          ) : null}
+        </div>
+      </td>
+
+      <td className="px-4 py-4 align-top">
+        <div className="max-w-56">
+          <p className="truncate text-sm font-medium text-slate-800">
+            {item.category.name}
+          </p>
+
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {item.category.source.name}
+          </p>
+
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {item.category.page.name}
+          </p>
+        </div>
+      </td>
+
+      <td className="px-4 py-4 align-top">
+        <GallerySummary item={item} />
+      </td>
+
+      <td className="px-4 py-4 align-top">
+        <StatusBadge active={item.status} />
+      </td>
+
+      <td className="px-4 py-4 align-top">
+        <span className="inline-flex min-w-9 justify-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+          {item.displayOrder}
+        </span>
+      </td>
+
+      <td className="px-4 py-4 align-top">
+        <p className="whitespace-nowrap text-xs text-slate-600">
+          {formatDate(item.updatedAt)}
+        </p>
+
+        <p className="mt-1 whitespace-nowrap text-[11px] text-slate-400">
+          {formatTime(item.updatedAt)}
+        </p>
+      </td>
+
+      <td className="px-4 py-4 text-right align-top">
+        <RowActions
+          item={item}
+          disabled={disabled}
+          onEdit={onEdit}
+          onPreview={onPreview}
+          onDelete={onDelete}
+        />
+      </td>
+    </tr>
+  );
+}
+
+function MobileCard({
+  item,
+  disabled,
+  onEdit,
+  onPreview,
+  onDelete,
+}: {
+  item: ReelProductTableItem;
+  disabled: boolean;
+  onEdit: (item: ReelProductTableItem) => void;
+  onPreview?: (item: ReelProductTableItem) => void;
+  onDelete: (item: ReelProductTableItem) => void;
+}) {
+  return (
+    <article className="p-4">
+      <div className="flex items-start gap-3">
+        <ReelThumbnail item={item} compact />
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {item.product.name}
+              </p>
+
+              <p className="mt-1 truncate text-xs text-slate-500">
+                {item.product.sku}
+              </p>
+            </div>
+
+            <StatusBadge active={item.status} />
+          </div>
+
+          <p className="mt-2 truncate text-xs font-medium text-slate-700">
+            {item.category.name}
+          </p>
+
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {item.category.source.name} ·{" "}
+            {item.category.page.name}
+          </p>
+        </div>
+      </div>
+
+      {item.caption ? (
+        <p className="mt-3 line-clamp-2 text-sm leading-5 text-slate-600">
+          {item.caption}
+        </p>
+      ) : null}
+
+      <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center">
+        <MobileMetric
+          label="Price"
+          value={`৳${formatMoney(
+            item.product.sellingPrice
+          )}`}
+        />
+
+        <MobileMetric
+          label="Gallery"
+          value={String(item.gallery.length)}
+        />
+
+        <MobileMetric
+          label="Order"
+          value={String(item.displayOrder)}
+        />
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <p className="text-xs text-slate-500">
+          Updated {formatDate(item.updatedAt)}
+        </p>
+
+        <RowActions
+          item={item}
+          disabled={disabled}
+          onEdit={onEdit}
+          onPreview={onPreview}
+          onDelete={onDelete}
+        />
+      </div>
+    </article>
+  );
+}
+
+function ReelThumbnail({
+  item,
+  compact = false,
+}: {
+  item: ReelProductTableItem;
+  compact?: boolean;
+}) {
+  const sizeClass = compact
+    ? "h-20 w-14"
+    : "h-24 w-16";
+
+  return (
+    <div
+      className={`relative shrink-0 overflow-hidden rounded-xl bg-slate-100 ${sizeClass}`}
+    >
+      {item.thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.thumbnailUrl}
+          alt={item.product.name}
+          className="h-full w-full object-cover"
+        />
+      ) : item.videoUrl ? (
+        <video
+          src={item.videoUrl}
+          muted
+          playsInline
+          preload="metadata"
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <Film className="h-5 w-5 text-slate-400" />
+        </div>
+      )}
+
+      <div className="absolute bottom-1 right-1 rounded-full bg-slate-950/75 p-1 text-white">
+        <Film className="h-3 w-3" />
+      </div>
+    </div>
+  );
+}
+
+function GallerySummary({
+  item,
+}: {
+  item: ReelProductTableItem;
+}) {
+  const imageCount = item.gallery.filter(
+    (media) => media.mediaType === "IMAGE"
+  ).length;
+
+  const videoCount = item.gallery.filter(
+    (media) => media.mediaType === "VIDEO"
+  ).length;
+
+  if (!item.gallery.length) {
+    return (
+      <span className="text-xs text-slate-400">
+        No media
+      </span>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-xs text-slate-600">
+        <ImageIcon className="h-3.5 w-3.5" />
+        <span>
+          {imageCount} image
+          {imageCount === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-slate-600">
+        <Film className="h-3.5 w-3.5" />
+        <span>
+          {videoCount} video
+          {videoCount === 1 ? "" : "s"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RowActions({
+  item,
+  disabled,
+  onEdit,
+  onPreview,
+  onDelete,
+}: {
+  item: ReelProductTableItem;
+  disabled: boolean;
+  onEdit: (item: ReelProductTableItem) => void;
+  onPreview?: (item: ReelProductTableItem) => void;
+  onDelete: (item: ReelProductTableItem) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener(
+      "mousedown",
+      handlePointerDown
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handlePointerDown
+      );
+    };
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative inline-block text-left"
+    >
+      <Button
+        type="button"
+        size="icon"
+        variant="outline"
+        disabled={disabled}
+        aria-label="Open reel product actions"
+        onClick={() =>
+          setOpen((current) => !current)
+        }
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </Button>
+
+      {open ? (
+        <div className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-xl border bg-white p-1.5 text-left shadow-xl">
+          {onPreview ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onPreview(item);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+            >
+              <Eye className="h-4 w-4" />
+              Preview
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onEdit(item);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+          >
+            <Edit3 className="h-4 w-4" />
+            Edit
+          </button>
+
+          <div className="my-1 h-px bg-slate-100" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onDelete(item);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StatusBadge({
+  active,
+}: {
+  active: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+        active
+          ? "bg-emerald-100 text-emerald-700"
+          : "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {active ? "Active" : "Inactive"}
+    </span>
+  );
+}
+
+function TableHeader({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+      {children}
+    </th>
+  );
+}
+
+function MobileMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-700">
+        {value}
+      </p>
+
+      <p className="mt-1 text-[11px] text-slate-500">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function TableLoadingState() {
+  return (
+    <div className="space-y-3 p-4">
+      {Array.from({ length: 5 }).map(
+        (_, index) => (
+          <div
+            key={index}
+            className="flex animate-pulse items-center gap-4 rounded-xl border p-3"
+          >
+            <div className="h-20 w-14 rounded-lg bg-slate-200" />
+
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-1/3 rounded bg-slate-200" />
+              <div className="h-3 w-1/4 rounded bg-slate-100" />
+            </div>
+
+            <div className="hidden h-8 w-20 rounded bg-slate-100 sm:block" />
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+function EmptyState({
+  hasFilters,
+}: {
+  hasFilters: boolean;
+}) {
+  return (
+    <div className="flex min-h-80 flex-col items-center justify-center px-6 text-center">
+      <div className="rounded-full bg-slate-100 p-4">
+        {hasFilters ? (
+          <Search className="h-7 w-7 text-slate-400" />
+        ) : (
+          <Package className="h-7 w-7 text-slate-400" />
+        )}
+      </div>
+
+      <p className="mt-4 text-sm font-semibold text-slate-800">
+        {hasFilters
+          ? "No matching reel products"
+          : "No reel products created"}
+      </p>
+
+      <p className="mt-1 max-w-md text-sm leading-6 text-slate-500">
+        {hasFilters
+          ? "Try changing the search text or selected status."
+          : "Create a reel product to start displaying products in the seller reels feed."}
+      </p>
+    </div>
+  );
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown date";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/components/reel-product-modal.tsx
+
+============================================================
+
+"use client";
+
+import {
+  Loader2,
+  Save,
+  X,
+} from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { Button } from "@/components/ui/button";
+import CategorySelector, {
+  type ReelCategorySelectorItem,
+} from "./category-selector";
+import GalleryUploader, {
+  type ReelGalleryItem,
+} from "./gallery-uploader";
+import ProductSelector, {
+  type ReelProductSelectorItem,
+} from "./product-selector";
+import ReelMediaUploader, {
+  type ReelMainMediaState,
+} from "./reel-media-uploader";
+import RichTextEditor from "./rich-text-editor";
+
+export type ReelProductFormState = {
+  id: string | null;
+  productId: string;
+  categoryId: string;
+  caption: string;
+  descriptionHtml: string;
+  status: boolean;
+  media: ReelMainMediaState;
+  gallery: ReelGalleryItem[];
+};
+
+type ReelProductModalProps = {
+  open: boolean;
+  mode: "CREATE" | "EDIT";
+
+  form: ReelProductFormState;
+  products: ReelProductSelectorItem[];
+  categories: ReelCategorySelectorItem[];
+
+  saving?: boolean;
+  disabled?: boolean;
+
+  videoUploading?: boolean;
+  thumbnailUploading?: boolean;
+  galleryImageUploading?: boolean;
+  galleryVideoUploading?: boolean;
+
+  onFormChange: (
+    form: ReelProductFormState
+  ) => void;
+
+  onClose: () => void;
+  onSubmit: () => Promise<void> | void;
+
+  onSelectVideo: () => void;
+  onSelectThumbnail: () => void;
+
+  onRemoveVideo?: () => Promise<void> | void;
+  onRemoveThumbnail?: () => Promise<void> | void;
+
+  onUploadGalleryImages: (
+    files: File[]
+  ) => Promise<void>;
+
+  onUploadGalleryVideos: (
+    files: File[]
+  ) => Promise<void>;
+
+  onDeleteGalleryItem: (
+    item: ReelGalleryItem
+  ) => Promise<void>;
+};
+
+export default function ReelProductModal({
+  open,
+  mode,
+  form,
+  products,
+  categories,
+  saving = false,
+  disabled = false,
+  videoUploading = false,
+  thumbnailUploading = false,
+  galleryImageUploading = false,
+  galleryVideoUploading = false,
+  onFormChange,
+  onClose,
+  onSubmit,
+  onSelectVideo,
+  onSelectThumbnail,
+  onRemoveVideo,
+  onRemoveThumbnail,
+  onUploadGalleryImages,
+  onUploadGalleryVideos,
+  onDeleteGalleryItem,
+}: ReelProductModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const busy =
+    saving ||
+    videoUploading ||
+    thumbnailUploading ||
+    galleryImageUploading ||
+    galleryVideoUploading;
+
+  const selectedProduct = useMemo(
+    () =>
+      products.find(
+        (product) =>
+          product.id === form.productId
+      ) ?? null,
+    [form.productId, products]
+  );
+
+  const selectedCategory = useMemo(
+    () =>
+      categories.find(
+        (category) =>
+          category.id === form.categoryId
+      ) ?? null,
+    [categories, form.categoryId]
+  );
+
+  const validation = useMemo(
+    () => validateForm(form),
+    [form]
+  );
+
+  const formDisabled =
+    disabled || saving;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(
+      event: KeyboardEvent
+    ) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (busy) {
+        return;
+      }
+
+      onClose();
+    }
+
+    document.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
+
+    return () => {
+      document.body.style.overflow =
+        previousOverflow;
+
+      document.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+    };
+  }, [busy, onClose, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  function updateForm<
+    Key extends keyof ReelProductFormState,
+  >(
+    key: Key,
+    value: ReelProductFormState[Key]
+  ) {
+    onFormChange({
+      ...form,
+      [key]: value,
+    });
+  }
+
+
+  function handleBackdropClick(
+    event: React.MouseEvent<HTMLDivElement>
+  ) {
+    if (
+      event.target === event.currentTarget &&
+      !busy
+    ) {
+      onClose();
+    }
+  }
+
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!validation.valid || busy) {
+      return;
+    }
+
+    await onSubmit();
+  }
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={handleBackdropClick}
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-950/60 p-0 backdrop-blur-sm sm:p-4 lg:p-6"
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reel-product-modal-title"
+        className="min-h-screen w-full bg-slate-50 shadow-2xl sm:min-h-0 sm:max-w-7xl sm:rounded-3xl"
+      >
+        <form onSubmit={handleSubmit}>
+          <header className="sticky top-0 z-40 flex items-center justify-between gap-4 border-b bg-white/95 px-4 py-4 backdrop-blur sm:rounded-t-3xl sm:px-6">
+            <div className="min-w-0">
+              <h2
+                id="reel-product-modal-title"
+                className="truncate text-lg font-semibold text-slate-950"
+              >
+                {mode === "CREATE"
+                  ? "Create Reel Product"
+                  : "Edit Reel Product"}
+              </h2>
+
+              <p className="mt-1 hidden text-sm text-slate-500 sm:block">
+                Configure the linked product, reel
+                video, description and gallery.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close reel product modal"
+              disabled={busy}
+              onClick={onClose}
+              className="rounded-xl border bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </header>
+
+          <div className="space-y-6 p-4 sm:p-6">
+            <section className="rounded-2xl border bg-white p-4 sm:p-5">
+              <div className="mb-5">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Basic Information
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Select the product and category that
+                  this reel will belong to.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <FormField
+                  label="Product"
+                  required
+                  error={
+                    validation.showErrors
+                      ? validation.errors.productId
+                      : undefined
+                  }
+                >
+                  <ProductSelector
+                    products={products}
+                    value={form.productId}
+                    disabled={formDisabled}
+                    onChange={(productId) =>
+                      updateForm(
+                        "productId",
+                        productId
+                      )
+                    }
+                  />
+                </FormField>
+
+                <FormField
+                  label="Reel Category"
+                  required
+                  error={
+                    validation.showErrors
+                      ? validation.errors.categoryId
+                      : undefined
+                  }
+                >
+                  <CategorySelector
+                    categories={categories}
+                    value={form.categoryId}
+                    disabled={formDisabled}
+                    onChange={(categoryId) =>
+                      updateForm(
+                        "categoryId",
+                        categoryId
+                      )
+                    }
+                  />
+                </FormField>
+              </div>
+
+              {(selectedProduct ||
+                selectedCategory) && (
+                <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {selectedProduct ? (
+                    <SelectionSummary
+                      label="Selected product"
+                      title={selectedProduct.name}
+                      description={`${selectedProduct.sku} · ৳${formatMoney(
+                        selectedProduct.sellingPrice
+                      )}`}
+                      inactive={
+                        !selectedProduct.status ||
+                        !selectedProduct.parent.status
+                      }
+                    />
+                  ) : null}
+
+                  {selectedCategory ? (
+                    <SelectionSummary
+                      label="Selected category"
+                      title={selectedCategory.name}
+                      description={`${selectedCategory.source.name} · ${selectedCategory.page.name}`}
+                      inactive={
+                        !selectedCategory.status ||
+                        !selectedCategory.source
+                          .status ||
+                        !selectedCategory.page.status
+                      }
+                    />
+                  ) : null}
+                </div>
+              )}
+
+              <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_auto]">
+                <FormField
+                  label="Reel Caption"
+                  description="A short caption shown over or near the reel."
+                >
+                  <textarea
+                    value={form.caption}
+                    disabled={formDisabled}
+                    maxLength={500}
+                    rows={4}
+                    onChange={(event) =>
+                      updateForm(
+                        "caption",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Write a short and engaging reel caption..."
+                    className="w-full resize-y rounded-xl border bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
+                  />
+
+                  <p className="mt-1 text-right text-xs text-slate-400">
+                    {form.caption.length}/500
+                  </p>
+                </FormField>
+
+                <div className="lg:w-64">
+                  <FormField
+                    label="Status"
+                    description="Inactive reels remain saved but are hidden from the feed."
+                  >
+                    <StatusToggle
+                      checked={form.status}
+                      disabled={formDisabled}
+                      onChange={(checked) =>
+                        updateForm(
+                          "status",
+                          checked
+                        )
+                      }
+                    />
+                  </FormField>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border bg-white p-4 sm:p-5">
+              <div className="mb-5">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Product Description
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Add detailed product information that
+                  customers can read from the reel.
+                </p>
+              </div>
+
+              <RichTextEditor
+                value={form.descriptionHtml}
+                disabled={formDisabled}
+                onChange={(descriptionHtml) =>
+                  updateForm(
+                    "descriptionHtml",
+                    descriptionHtml
+                  )
+                }
+              />
+            </section>
+
+            <ReelMediaUploader
+              media={form.media}
+              disabled={formDisabled}
+              videoUploading={videoUploading}
+              thumbnailUploading={
+                thumbnailUploading
+              }
+              onSelectVideo={onSelectVideo}
+              onSelectThumbnail={
+                onSelectThumbnail
+              }
+              onRemoveVideo={
+                onRemoveVideo
+                  ? () => {
+                      void onRemoveVideo();
+                    }
+                  : undefined
+              }
+              onRemoveThumbnail={
+                onRemoveThumbnail
+                  ? () => {
+                      void onRemoveThumbnail();
+                    }
+                  : undefined
+              }
+            />
+
+            {validation.showErrors &&
+            validation.errors.video ? (
+              <p className="-mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {validation.errors.video}
+              </p>
+            ) : null}
+
+            <GalleryUploader
+              items={form.gallery}
+              disabled={formDisabled}
+              imageUploading={
+                galleryImageUploading
+              }
+              videoUploading={
+                galleryVideoUploading
+              }
+              onChange={(gallery) =>
+                updateForm("gallery", gallery)
+              }
+              onUploadImages={
+                onUploadGalleryImages
+              }
+              onUploadVideos={
+                onUploadGalleryVideos
+              }
+              onDeleteItem={
+                onDeleteGalleryItem
+              }
+            />
+          </div>
+
+          <footer className="sticky bottom-0 z-40 flex flex-col-reverse gap-3 border-t bg-white/95 px-4 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:rounded-b-3xl sm:px-6">
+            <div className="text-xs text-slate-500">
+              {busy ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Please wait while media or data is
+                  being processed.
+                </span>
+              ) : (
+                <span>
+                  Fields marked with * are required.
+                  Display order is assigned
+                  automatically.
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={onClose}
+                className="flex-1 sm:flex-none"
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="submit"
+                disabled={
+                  busy || !validation.valid
+                }
+                className="flex-1 sm:flex-none"
+              >
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+
+                {saving
+                  ? "Saving..."
+                  : mode === "CREATE"
+                    ? "Create Reel"
+                    : "Save Changes"}
+              </Button>
+            </div>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function FormField({
+  label,
+  description,
+  required = false,
+  error,
+  children,
+}: {
+  label: string;
+  description?: string;
+  required?: boolean;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-800">
+        {label}
+
+        {required ? (
+          <span className="ml-1 text-red-500">
+            *
+          </span>
+        ) : null}
+      </label>
+
+      {description ? (
+        <p className="mb-2 text-xs leading-5 text-slate-500">
+          {description}
+        </p>
+      ) : null}
+
+      {children}
+
+      {error ? (
+        <p className="mt-2 text-xs font-medium text-red-600">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function SelectionSummary({
+  label,
+  title,
+  description,
+  inactive,
+}: {
+  label: string;
+  title: string;
+  description: string;
+  inactive: boolean;
+}) {
+  return (
+    <div className="rounded-xl border bg-slate-50 px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            {label}
+          </p>
+
+          <p className="mt-1 truncate text-sm font-semibold text-slate-800">
+            {title}
+          </p>
+
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        {inactive ? (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
+            Inactive
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+            Active
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusToggle({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+        checked
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-slate-200 bg-slate-50"
+      }`}
+    >
+      <div>
+        <p
+          className={`text-sm font-semibold ${
+            checked
+              ? "text-emerald-800"
+              : "text-slate-700"
+          }`}
+        >
+          {checked ? "Active" : "Inactive"}
+        </p>
+
+        <p className="mt-0.5 text-xs text-slate-500">
+          {checked
+            ? "Visible in the seller reels feed"
+            : "Hidden from the seller reels feed"}
+        </p>
+      </div>
+
+      <span
+        className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+          checked
+            ? "bg-emerald-600"
+            : "bg-slate-300"
+        }`}
+      >
+        <span
+          className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${
+            checked ? "left-6" : "left-1"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
+function validateForm(
+  form: ReelProductFormState
+) {
+  const errors: {
+    productId?: string;
+    categoryId?: string;
+    video?: string;
+  } = {};
+
+  if (!form.productId.trim()) {
+    errors.productId =
+      "Please select a product.";
+  }
+
+  if (!form.categoryId.trim()) {
+    errors.categoryId =
+      "Please select a reel category.";
+  }
+
+  if (
+    !form.media.videoUrl.trim() ||
+    !form.media.videoPublicId.trim()
+  ) {
+    errors.video =
+      "Please upload the main reel video.";
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+    showErrors: true,
+  };
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}

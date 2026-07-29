@@ -23,6 +23,7 @@ import {
   CalendarCheck,
   AlertTriangle,
   Clapperboard,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -73,14 +74,18 @@ export default async function DashboardLayout({
           <div className="flex items-center justify-between px-4 py-4">
             <div>
               <h1 className="text-lg font-bold text-slate-900">OMS</h1>
-              <p className="text-xs text-slate-500">Order Management System</p>
+              <p className="text-xs text-slate-500">
+                Order Management System
+              </p>
             </div>
 
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-800">
                 {session.user.name}
               </p>
-              <p className="text-xs text-slate-500">{session.user.role}</p>
+              <p className="text-xs text-slate-500">
+                {session.user.role}
+              </p>
             </div>
           </div>
 
@@ -139,6 +144,12 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/reel-categories">
                     <Button variant="outline" size="sm">
                       Reel Categories
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/shop-settings">
+                    <Button variant="outline" size="sm">
+                      Shop Settings
                     </Button>
                   </Link>
 
@@ -368,6 +379,12 @@ export default async function DashboardLayout({
                   />
 
                   <NavLink
+                    href="/dashboard/shop-settings"
+                    icon={<Settings className="h-4 w-4" />}
+                    label="Shop Settings"
+                  />
+
+                  <NavLink
                     href="/dashboard/orders"
                     icon={<Package className="h-4 w-4" />}
                     label="Orders"
@@ -512,14 +529,21 @@ export default async function DashboardLayout({
               <p className="text-sm font-semibold text-slate-900">
                 {session.user.name}
               </p>
-              <p className="text-sm text-slate-500">{session.user.username}</p>
+
+              <p className="text-sm text-slate-500">
+                {session.user.username}
+              </p>
+
               <p className="mt-2 inline-flex rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
                 {session.user.role}
               </p>
             </div>
 
             <Link href="/login" className="block">
-              <Button variant="outline" className="w-full justify-start gap-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+              >
                 <LogOut className="h-4 w-4" />
                 Logout
               </Button>
@@ -533,6 +557,7 @@ export default async function DashboardLayout({
               <h1 className="text-xl font-semibold text-slate-900">
                 OMS Dashboard Panel
               </h1>
+
               <p className="text-sm text-slate-500">
                 Manage orders, stores, shipping, products, reports and
                 operations
@@ -543,7 +568,10 @@ export default async function DashboardLayout({
               <p className="text-sm font-semibold text-slate-900">
                 {session.user.name}
               </p>
-              <p className="text-sm text-slate-500">{session.user.role}</p>
+
+              <p className="text-sm text-slate-500">
+                {session.user.role}
+              </p>
             </div>
           </div>
 

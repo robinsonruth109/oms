@@ -1,0 +1,233 @@
+import { notFound } from "next/navigation";
+
+import ReelFeed, {
+  type PublicReelItem,
+} from "./reel-feed";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const SHOP_SETTING_ID = "default";
+
+const DEFAULT_INSIDE_DHAKA_DELIVERY_CHARGE = 70;
+const DEFAULT_OUTSIDE_DHAKA_DELIVERY_CHARGE = 150;
+
+type PageProps = {
+  params: Promise<{
+    slug: string;
+  }>;
+};
+
+function normalizeMoney(
+  value: {
+    toString(): string;
+  } | null | undefined,
+  fallback: number
+): string {
+  if (!value) {
+    return fallback.toFixed(2);
+  }
+
+  const amount = Number(value.toString());
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    return fallback.toFixed(2);
+  }
+
+  return amount.toFixed(2);
+}
+
+export default async function PublicReelCategoryPage({
+  params,
+}: PageProps) {
+  const { slug } = await params;
+
+  const normalizedSlug = decodeURIComponent(slug)
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedSlug) {
+    notFound();
+  }
+
+  const { prisma } = await import("@/lib/prisma");
+
+  const [category, shopSetting] = await Promise.all([
+    prisma.reelCategory.findFirst({
+      where: {
+        slug: normalizedSlug,
+        status: true,
+
+        source: {
+          status: true,
+        },
+
+        page: {
+          status: true,
+        },
+      },
+
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+
+        reelProducts: {
+          where: {
+            status: true,
+
+            product: {
+              status: true,
+            },
+          },
+
+          orderBy: [
+            {
+              displayOrder: "asc",
+            },
+            {
+              createdAt: "desc",
+            },
+          ],
+
+          select: {
+            id: true,
+            title: true,
+            caption: true,
+            descriptionHtml: true,
+            videoUrl: true,
+            thumbnailUrl: true,
+            displayOrder: true,
+
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true,
+                quantity: true,
+                sellingPrice: true,
+              },
+            },
+
+            gallery: {
+              orderBy: [
+                {
+                  isPrimary: "desc",
+                },
+                {
+                  displayOrder: "asc",
+                },
+                {
+                  createdAt: "asc",
+                },
+              ],
+
+              select: {
+                id: true,
+                mediaType: true,
+                url: true,
+                altText: true,
+                displayOrder: true,
+                isPrimary: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+
+    prisma.shopSetting.upsert({
+      where: {
+        id: SHOP_SETTING_ID,
+      },
+
+      update: {},
+
+      create: {
+        id: SHOP_SETTING_ID,
+
+        insideDhakaDeliveryCharge:
+          DEFAULT_INSIDE_DHAKA_DELIVERY_CHARGE,
+
+        outsideDhakaDeliveryCharge:
+          DEFAULT_OUTSIDE_DHAKA_DELIVERY_CHARGE,
+
+        metaPixelId: null,
+        metaPixelEnabled: false,
+      },
+
+      select: {
+        insideDhakaDeliveryCharge: true,
+        outsideDhakaDeliveryCharge: true,
+        metaPixelId: true,
+        metaPixelEnabled: true,
+      },
+    }),
+  ]);
+
+  if (!category || !category.slug) {
+    notFound();
+  }
+
+  const reels: PublicReelItem[] =
+    category.reelProducts.map((reel) => ({
+      id: reel.id,
+      title: reel.title,
+      caption: reel.caption,
+      descriptionHtml: reel.descriptionHtml,
+      videoUrl: reel.videoUrl,
+      thumbnailUrl: reel.thumbnailUrl,
+      displayOrder: reel.displayOrder,
+
+      product: {
+        id: reel.product.id,
+        name: reel.product.name,
+        sku: reel.product.sku,
+        quantity: reel.product.quantity,
+        sellingPrice:
+          reel.product.sellingPrice.toString(),
+      },
+
+      gallery: reel.gallery.map((media) => ({
+        id: media.id,
+        mediaType: String(media.mediaType),
+        url: media.url,
+        altText: media.altText,
+        displayOrder: media.displayOrder,
+        isPrimary: media.isPrimary,
+      })),
+    }));
+
+  const insideDhakaDeliveryCharge =
+    normalizeMoney(
+      shopSetting.insideDhakaDeliveryCharge,
+      DEFAULT_INSIDE_DHAKA_DELIVERY_CHARGE
+    );
+
+  const outsideDhakaDeliveryCharge =
+    normalizeMoney(
+      shopSetting.outsideDhakaDeliveryCharge,
+      DEFAULT_OUTSIDE_DHAKA_DELIVERY_CHARGE
+    );
+
+  const metaPixelId =
+    shopSetting.metaPixelEnabled &&
+    shopSetting.metaPixelId
+      ? shopSetting.metaPixelId
+      : null;
+
+  return (
+    <ReelFeed
+      categoryName={category.name}
+      categorySlug={category.slug}
+      reels={reels}
+      insideDhakaDeliveryCharge={
+        insideDhakaDeliveryCharge
+      }
+      outsideDhakaDeliveryCharge={
+        outsideDhakaDeliveryCharge
+      }
+      metaPixelId={metaPixelId}
+    />
+  );
+}

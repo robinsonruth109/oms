@@ -66,8 +66,15 @@ export default async function ReelCategoriesPage() {
   return (
     <ReelCategoryManager
       categories={categories.map((category) => ({
-        ...category,
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        sourceId: category.sourceId,
+        pageId: category.pageId,
+        status: category.status,
         createdAt: category.createdAt.toISOString(),
+        source: category.source,
+        page: category.page,
       }))}
       sources={sources}
       pages={pages}

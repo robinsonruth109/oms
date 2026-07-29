@@ -1,0 +1,834 @@
+============================================================
+FILE: src/lib/cloudinary.ts
+============================================================
+import { v2 as cloudinary } from "cloudinary";
+import type {
+  UploadApiOptions,
+  UploadApiResponse,
+} from "cloudinary";
+
+const DEFAULT_REEL_FOLDER = "oms/reel-products";
+
+let isConfigured = false;
+
+function requiredEnvironmentVariable(name: string): string {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name} is not configured.`);
+  }
+
+  return value;
+}
+
+export function getCloudinary() {
+  if (!isConfigured) {
+    cloudinary.config({
+      cloud_name: requiredEnvironmentVariable("CLOUDINARY_CLOUD_NAME"),
+      api_key: requiredEnvironmentVariable("CLOUDINARY_API_KEY"),
+      api_secret: requiredEnvironmentVariable("CLOUDINARY_API_SECRET"),
+      secure: true,
+    });
+
+    isConfigured = true;
+  }
+
+  return cloudinary;
+}
+
+export function getReelFolder(): string {
+  const configuredFolder = process.env.CLOUDINARY_REEL_FOLDER?.trim();
+
+  return configuredFolder || DEFAULT_REEL_FOLDER;
+}
+
+export function uploadBufferToCloudinary(
+  buffer: Buffer,
+  options: UploadApiOptions
+): Promise<UploadApiResponse> {
+  const client = getCloudinary();
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = client.uploader.upload_stream(
+      options,
+      (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        if (!result) {
+          reject(new Error("Cloudinary returned an empty upload response."));
+          return;
+        }
+
+        resolve(result);
+      }
+    );
+
+    uploadStream.end(buffer);
+  });
+}
+
+export async function deleteCloudinaryAsset(input: {
+  publicId: string;
+  resourceType: "image" | "video";
+}) {
+  const client = getCloudinary();
+
+  return client.uploader.destroy(input.publicId, {
+    resource_type: input.resourceType,
+    type: "upload",
+    invalidate: true,
+  });
+}
+
+export function isReelCloudinaryPublicId(publicId: string): boolean {
+  const folder = getReelFolder().replace(/^\/+|\/+$/g, "");
+
+  return (
+    publicId === folder ||
+    publicId.startsWith(`${folder}/`)
+  );
+}
+
+export function createOptimisedReelVideoUrl(publicId: string): string {
+  const client = getCloudinary();
+
+  return client.url(publicId, {
+    secure: true,
+    resource_type: "video",
+    type: "upload",
+    transformation: [
+      {
+        width: 1080,
+        height: 1920,
+        crop: "limit",
+      },
+      {
+        quality: "auto",
+        fetch_format: "auto",
+      },
+    ],
+  });
+}
+
+export function createReelThumbnailUrl(
+  publicId: string,
+  version?: number
+): string {
+  const client = getCloudinary();
+
+  return client.url(publicId, {
+    secure: true,
+    resource_type: "video",
+    type: "upload",
+    version,
+    format: "jpg",
+    transformation: [
+      {
+        start_offset: "0",
+      },
+      {
+        width: 720,
+        height: 1280,
+        crop: "fill",
+        gravity: "auto",
+      },
+      {
+        quality: "auto",
+        fetch_format: "auto",
+      },
+    ],
+  });
+}
+============================================================
+FILE: src/app/dashboard/reel-products/components/rich-text-editor.tsx
+============================================================
+"use client";
+
+import {
+  Bold,
+  Eraser,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
+  Redo2,
+  Underline,
+  Undo2,
+} from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+type RichTextEditorProps = {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  minHeight?: number;
+};
+
+type ToolbarButtonProps = {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+};
+
+export default function RichTextEditor({
+  value,
+  onChange,
+  disabled = false,
+  placeholder = "Write the complete product description...",
+  minHeight = 220,
+}: RichTextEditorProps) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const lastValueRef = useRef(value);
+  const [isEmpty, setIsEmpty] = useState(
+    !hasVisibleContent(value)
+  );
+
+  useEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
+    if (
+      value !== lastValueRef.current &&
+      editor.innerHTML !== value
+    ) {
+      editor.innerHTML = value;
+      lastValueRef.current = value;
+      setIsEmpty(!hasVisibleContent(value));
+    }
+  }, [value]);
+
+  function emitChange() {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
+    const html = normaliseHtml(editor.innerHTML);
+
+    lastValueRef.current = html;
+    setIsEmpty(!hasVisibleContent(html));
+    onChange(html);
+  }
+
+  function focusEditor() {
+    editorRef.current?.focus();
+  }
+
+  function runCommand(
+    command: string,
+    commandValue?: string
+  ) {
+    if (disabled) {
+      return;
+    }
+
+    focusEditor();
+    document.execCommand(
+      command,
+      false,
+      commandValue
+    );
+    emitChange();
+  }
+
+  function createLink() {
+    if (disabled) {
+      return;
+    }
+
+    const url = window.prompt(
+      "Enter the full link URL:",
+      "https://"
+    );
+
+    if (!url?.trim()) {
+      return;
+    }
+
+    const trimmedUrl = url.trim();
+
+    if (!isSafeLink(trimmedUrl)) {
+      window.alert(
+        "Only http, https, mailto and tel links are allowed."
+      );
+      return;
+    }
+
+    runCommand("createLink", trimmedUrl);
+  }
+
+  function clearFormatting() {
+    if (disabled) {
+      return;
+    }
+
+    runCommand("removeFormat");
+    runCommand("unlink");
+  }
+
+  function handlePaste(
+    event: React.ClipboardEvent<HTMLDivElement>
+  ) {
+    event.preventDefault();
+
+    const text =
+      event.clipboardData.getData("text/plain");
+
+    document.execCommand(
+      "insertText",
+      false,
+      text
+    );
+
+    emitChange();
+  }
+
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl border bg-white transition ${
+        disabled
+          ? "cursor-not-allowed bg-slate-50 opacity-70"
+          : "focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-100"
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-1 border-b bg-slate-50 p-2">
+        <ToolbarButton
+          label="Bold"
+          disabled={disabled}
+          onClick={() => runCommand("bold")}
+        >
+          <Bold className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Italic"
+          disabled={disabled}
+          onClick={() => runCommand("italic")}
+        >
+          <Italic className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Underline"
+          disabled={disabled}
+          onClick={() => runCommand("underline")}
+        >
+          <Underline className="h-4 w-4" />
+        </ToolbarButton>
+
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+
+        <ToolbarButton
+          label="Bullet list"
+          disabled={disabled}
+          onClick={() =>
+            runCommand("insertUnorderedList")
+          }
+        >
+          <List className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Numbered list"
+          disabled={disabled}
+          onClick={() =>
+            runCommand("insertOrderedList")
+          }
+        >
+          <ListOrdered className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Add link"
+          disabled={disabled}
+          onClick={createLink}
+        >
+          <Link className="h-4 w-4" />
+        </ToolbarButton>
+
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+
+        <ToolbarButton
+          label="Undo"
+          disabled={disabled}
+          onClick={() => runCommand("undo")}
+        >
+          <Undo2 className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Redo"
+          disabled={disabled}
+          onClick={() => runCommand("redo")}
+        >
+          <Redo2 className="h-4 w-4" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Clear formatting"
+          disabled={disabled}
+          onClick={clearFormatting}
+        >
+          <Eraser className="h-4 w-4" />
+        </ToolbarButton>
+      </div>
+
+      <div className="relative">
+        {isEmpty ? (
+          <div className="pointer-events-none absolute left-4 top-3 text-sm text-slate-400">
+            {placeholder}
+          </div>
+        ) : null}
+
+        <div
+          ref={editorRef}
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Product description"
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          onInput={emitChange}
+          onBlur={emitChange}
+          onPaste={handlePaste}
+          className="prose prose-sm max-w-none overflow-y-auto px-4 py-3 text-sm text-slate-800 outline-none prose-a:text-blue-600 prose-a:underline prose-ol:pl-6 prose-ul:pl-6"
+          style={{
+            minHeight,
+            maxHeight: 420,
+          }}
+        />
+      </div>
+
+      <div className="border-t bg-slate-50 px-4 py-2">
+        <p className="text-xs text-slate-500">
+          Supports bold, italic, underline, links and
+          ordered or bullet lists.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ToolbarButton({
+  label,
+  disabled = false,
+  onClick,
+  children,
+}: ToolbarButtonProps) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
+      onClick={onClick}
+      className="rounded-lg p-2 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function normaliseHtml(html: string) {
+  const trimmed = html.trim();
+
+  if (
+    trimmed === "<br>" ||
+    trimmed === "<div><br></div>" ||
+    trimmed === "<p><br></p>"
+  ) {
+    return "";
+  }
+
+  return trimmed;
+}
+
+function hasVisibleContent(html: string) {
+  if (!html.trim()) {
+    return false;
+  }
+
+  if (typeof document === "undefined") {
+    return html
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim().length > 0;
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  return Boolean(container.textContent?.trim());
+}
+
+function isSafeLink(value: string) {
+  return /^(https?:\/\/|mailto:|tel:)/i.test(value);
+}
+============================================================
+FILE: src/app/dashboard/reel-products/components/reel-media-uploader.tsx
+============================================================
+"use client";
+
+import {
+  Film,
+  ImageIcon,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+export type ReelMainMediaState = {
+  videoUrl: string;
+  videoPublicId: string;
+  thumbnailUrl: string;
+  thumbnailPublicId: string;
+  videoDuration: number | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
+  videoFormat: string | null;
+  videoBytes: number | null;
+};
+
+type ReelMediaUploaderProps = {
+  media: ReelMainMediaState;
+
+  videoUploading?: boolean;
+  thumbnailUploading?: boolean;
+  disabled?: boolean;
+
+  onSelectVideo: () => void;
+  onSelectThumbnail: () => void;
+
+  onRemoveVideo?: () => void;
+  onRemoveThumbnail?: () => void;
+};
+
+export default function ReelMediaUploader({
+  media,
+  videoUploading = false,
+  thumbnailUploading = false,
+  disabled = false,
+  onSelectVideo,
+  onSelectThumbnail,
+  onRemoveVideo,
+  onRemoveThumbnail,
+}: ReelMediaUploaderProps) {
+  const busy =
+    videoUploading || thumbnailUploading;
+
+  return (
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+      <section className="overflow-hidden rounded-2xl border bg-white">
+        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Main Reel Video
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Upload a vertical MP4, WebM, MOV or M4V
+              video. Maximum size: 100 MB.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || busy}
+            onClick={onSelectVideo}
+          >
+            {videoUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+
+            {media.videoPublicId
+              ? "Replace Video"
+              : "Upload Video"}
+          </Button>
+        </div>
+
+        <div className="p-4">
+          {media.videoUrl ? (
+            <div className="space-y-4">
+              <div className="relative overflow-hidden rounded-2xl bg-black">
+                <video
+                  key={media.videoUrl}
+                  src={media.videoUrl}
+                  poster={media.thumbnailUrl || undefined}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="aspect-video max-h-[520px] w-full object-contain"
+                />
+
+                {onRemoveVideo ? (
+                  <button
+                    type="button"
+                    title="Remove main reel video"
+                    aria-label="Remove main reel video"
+                    disabled={disabled || videoUploading}
+                    onClick={onRemoveVideo}
+                    className="absolute right-3 top-3 rounded-full bg-white/95 p-2 text-red-600 shadow-lg transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+
+                {videoUploading ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/65 text-white">
+                    <Loader2 className="h-7 w-7 animate-spin" />
+
+                    <p className="mt-3 text-sm font-medium">
+                      Uploading video...
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              <VideoMetadata media={media} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={disabled || busy}
+              onClick={onSelectVideo}
+              className="flex min-h-72 w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50 px-6 text-center transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {videoUploading ? (
+                <Loader2 className="h-9 w-9 animate-spin text-slate-400" />
+              ) : (
+                <div className="rounded-full bg-white p-4 shadow-sm">
+                  <Film className="h-8 w-8 text-slate-400" />
+                </div>
+              )}
+
+              <p className="mt-4 text-sm font-semibold text-slate-800">
+                {videoUploading
+                  ? "Uploading your reel..."
+                  : "Upload the main reel video"}
+              </p>
+
+              <p className="mt-2 max-w-md text-xs leading-5 text-slate-500">
+                A 9:16 vertical video is recommended for
+                the best experience in the seller reels
+                feed.
+              </p>
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border bg-white">
+        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between xl:items-start">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Custom Thumbnail
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Optional JPG, PNG, WebP or AVIF image.
+              Maximum size: 10 MB.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              disabled ||
+              busy ||
+              !media.videoPublicId
+            }
+            onClick={onSelectThumbnail}
+          >
+            {thumbnailUploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ImageIcon className="mr-2 h-4 w-4" />
+            )}
+
+            {media.thumbnailPublicId
+              ? "Replace"
+              : "Upload"}
+          </Button>
+        </div>
+
+        <div className="p-4">
+          {media.thumbnailUrl ? (
+            <div className="relative mx-auto w-full max-w-64 overflow-hidden rounded-2xl bg-slate-100">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={media.thumbnailUrl}
+                alt="Reel thumbnail preview"
+                className="aspect-[9/16] w-full object-cover"
+              />
+
+              {onRemoveThumbnail &&
+              media.thumbnailPublicId ? (
+                <button
+                  type="button"
+                  title="Remove custom thumbnail"
+                  aria-label="Remove custom thumbnail"
+                  disabled={
+                    disabled || thumbnailUploading
+                  }
+                  onClick={onRemoveThumbnail}
+                  className="absolute right-3 top-3 rounded-full bg-white/95 p-2 text-red-600 shadow-lg transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : null}
+
+              {thumbnailUploading ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/65 text-white">
+                  <Loader2 className="h-7 w-7 animate-spin" />
+
+                  <p className="mt-3 text-xs font-medium">
+                    Uploading thumbnail...
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={
+                disabled ||
+                busy ||
+                !media.videoPublicId
+              }
+              onClick={onSelectThumbnail}
+              className="flex min-h-72 w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50 px-5 text-center transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {thumbnailUploading ? (
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+              ) : (
+                <div className="rounded-full bg-white p-4 shadow-sm">
+                  <ImageIcon className="h-7 w-7 text-slate-400" />
+                </div>
+              )}
+
+              <p className="mt-4 text-sm font-semibold text-slate-800">
+                {thumbnailUploading
+                  ? "Uploading thumbnail..."
+                  : "No custom thumbnail"}
+              </p>
+
+              <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
+                The thumbnail generated from the main
+                video will be used automatically when no
+                custom thumbnail is uploaded.
+              </p>
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function VideoMetadata({
+  media,
+}: {
+  media: ReelMainMediaState;
+}) {
+  const values: string[] = [];
+
+  if (media.videoFormat) {
+    values.push(media.videoFormat.toUpperCase());
+  }
+
+  if (
+    media.videoDuration !== null &&
+    media.videoDuration !== undefined
+  ) {
+    values.push(formatDuration(media.videoDuration));
+  }
+
+  if (
+    media.videoWidth !== null &&
+    media.videoHeight !== null
+  ) {
+    values.push(
+      `${media.videoWidth} × ${media.videoHeight}`
+    );
+  }
+
+  if (
+    media.videoBytes !== null &&
+    media.videoBytes !== undefined
+  ) {
+    values.push(formatBytes(media.videoBytes));
+  }
+
+  if (!values.length) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map((value) => (
+        <span
+          key={value}
+          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+        >
+          {value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+
+  const unitIndex = Math.min(
+    Math.floor(
+      Math.log(bytes) / Math.log(1024)
+    ),
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, unitIndex);
+
+  return `${value.toFixed(
+    unitIndex === 0 ? 0 : 1
+  )} ${units[unitIndex]}`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0:00";
+  }
+
+  const wholeSeconds = Math.floor(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+
+  return `${minutes}:${String(
+    remainingSeconds
+  ).padStart(2, "0")}`;
+}

@@ -1,0 +1,1122 @@
+
+============================================================
+
+FILE: prisma/schema.prisma
+
+============================================================
+
+model ReelCategory {
+  id   String @id @default(uuid())
+  name String @unique
+
+  sourceId String
+  source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  pageId String
+  page   Page   @relation(fields: [pageId], references: [id], onDelete: Restrict)
+
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reelProducts ReelProduct[]
+
+  @@index([sourceId])
+  @@index([pageId])
+  @@index([status])
+}
+
+model Integration {
+  id            String              @id @default(uuid())
+  name          String
+  slug          String              @unique
+  platform      IntegrationPlatform
+  sourceId      String
+  source        OrderSource         @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  apiKey        String              @unique
+  webhookSecret String?
+  status        Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  orders Order[]
+
+  @@index([platform])
+  @@index([sourceId])
+}
+
+model ProductParent {
+  id        String   @id @default(uuid())
+  sku       String   @unique
+  name      String
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products     Product[]
+  adsCostItems AdsCostItem[]
+}
+
+model Courier {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id       String        @id @default(uuid())
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  sku           String   @unique
+  name          String
+  quantity      Int      @default(1)
+  purchasePrice Decimal  @db.Decimal(10, 2)
+  sellingPrice  Decimal  @db.Decimal(10, 2)
+  status        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orderItems     OrderItem[]
+  purchaseOrders PurchaseOrder[]
+  reelProducts   ReelProduct[]
+}
+
+model Order {
+model Product {
+  id       String        @id @default(uuid())
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  sku           String   @unique
+  name          String
+  quantity      Int      @default(1)
+  purchasePrice Decimal  @db.Decimal(10, 2)
+  sellingPrice  Decimal  @db.Decimal(10, 2)
+  status        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orderItems     OrderItem[]
+  purchaseOrders PurchaseOrder[]
+  reelProducts   ReelProduct[]
+}
+
+model Order {
+  id        String  @id @default(uuid())
+  orderId   String? @unique
+  invoiceId String? @unique
+
+  integrationId   String?
+  integration     Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  externalOrderId String?
+
+  sourceId String
+  source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  pageId String?
+  page   Page?   @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  customerName String
+  address      String
+  phone        String
+
+  subtotal       Decimal @db.Decimal(10, 2)
+  discount       Decimal @default(0) @db.Decimal(10, 2)
+  advance        Decimal @default(0) @db.Decimal(10, 2)
+  deliveryCharge Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal @db.Decimal(10, 2)
+
+  orderStatus OrderStatus @default(PENDING_CONFIRMATION)
+  courier     String?
+
+  note           String?   @db.Text
+  calledByUserId String?
+  calledByUser   User?     @relation("CalledOrders", fields: [calledByUserId], references: [id], onDelete: SetNull)
+  calledAt       DateTime?
+
+  invoiceDownloaded Boolean @default(false)
+  csvDownloaded     Boolean @default(false)
+
+  readyToShipAt DateTime @default(now())
+
+  invoiceBatchItems InvoiceBatchItem[]
+  csvBatchItems     CsvBatchItem[]
+  items             OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([integrationId, externalOrderId])
+  @@index([integrationId])
+  @@index([externalOrderId])
+  @@index([sourceId])
+  @@index([pageId])
+  @@index([orderStatus])
+  @@index([calledByUserId])
+}
+
+model AdsCostUpload {
+  id          String   @id @default(uuid())
+  uploadDate  DateTime
+  fileName    String?
+  totalAmount Decimal  @db.Decimal(10, 2)
+
+  items AdsCostItem[]
+
+model ReelProduct {
+  id String @id @default(uuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  categoryId String
+  category   ReelCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  title           String
+  caption         String? @db.Text
+  descriptionHtml String? @db.LongText
+
+  displayOrder Int @default(0)
+
+  videoUrl      String @db.Text
+  videoPublicId String @unique
+
+  thumbnailUrl      String? @db.Text
+  thumbnailPublicId String? @unique
+
+  videoDuration Decimal? @db.Decimal(10, 2)
+  videoWidth    Int?
+  videoHeight   Int?
+  videoFormat   String?
+  videoBytes    Int?
+
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gallery ReelProductMedia[]
+
+  @@unique([productId, categoryId])
+  @@index([productId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([displayOrder])
+  @@index([createdAt])
+}
+
+model ReelProductMedia {
+  id String @id @default(uuid())
+
+  reelProductId String
+  reelProduct   ReelProduct @relation(fields: [reelProductId], references: [id], onDelete: Cascade)
+
+  mediaType ReelProductMediaType
+
+  url      String @db.Text
+  publicId String @unique
+
+  resourceType String
+  format       String?
+
+  width    Int?
+  height   Int?
+  duration Decimal? @db.Decimal(10, 2)
+  bytes    Int?
+
+  altText String? @db.Text
+
+  displayOrder Int     @default(0)
+  isPrimary    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reelProductId])
+  @@index([mediaType])
+  @@index([displayOrder])
+  @@index([isPrimary])
+  @@index([createdAt])
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/actions.ts
+
+============================================================
+
+"use server";
+
+import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
+
+type ActionState = {
+  success: boolean;
+  message: string;
+};
+
+type ReelProductMediaInput = {
+  videoUrl: string;
+  videoPublicId: string;
+  thumbnailUrl: string | null;
+  thumbnailPublicId: string | null;
+  videoDuration: number | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
+  videoFormat: string | null;
+  videoBytes: number | null;
+};
+
+async function requireAdmin() {
+  const { authOptions } = await import("@/lib/auth");
+  const session = await getServerSession(authOptions);
+
+  return Boolean(session && session.user.role === "ADMIN");
+}
+
+async function getPrisma() {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma;
+}
+
+function readRequired(formData: FormData, key: string) {
+  return String(formData.get(key) || "").trim();
+}
+
+function readOptional(formData: FormData, key: string) {
+  const value = String(formData.get(key) || "").trim();
+
+  return value || null;
+}
+
+function readOptionalNumber(
+  formData: FormData,
+  key: string
+): number | null {
+  const rawValue = String(formData.get(key) || "").trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const value = Number(rawValue);
+
+  return Number.isFinite(value) ? value : null;
+}
+
+function readDisplayOrder(formData: FormData) {
+  const rawValue = String(formData.get("displayOrder") || "0").trim();
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value < 0) {
+    return null;
+  }
+
+  return value;
+}
+
+function readMedia(formData: FormData): ReelProductMediaInput {
+  return {
+    videoUrl: readRequired(formData, "videoUrl"),
+    videoPublicId: readRequired(formData, "videoPublicId"),
+    thumbnailUrl: readOptional(formData, "thumbnailUrl"),
+    thumbnailPublicId: readOptional(formData, "thumbnailPublicId"),
+    videoDuration: readOptionalNumber(formData, "videoDuration"),
+    videoWidth: readOptionalNumber(formData, "videoWidth"),
+    videoHeight: readOptionalNumber(formData, "videoHeight"),
+    videoFormat: readOptional(formData, "videoFormat"),
+    videoBytes: readOptionalNumber(formData, "videoBytes"),
+  };
+}
+
+function refreshReelProductPages() {
+  revalidatePath("/dashboard/reel-products");
+  revalidatePath("/reels");
+}
+
+async function safelyDeleteCloudinaryAsset(input: {
+  publicId: string | null | undefined;
+  resourceType: "image" | "video";
+}) {
+  const publicId = input.publicId?.trim();
+
+  if (!publicId) {
+    return;
+  }
+
+  try {
+    const {
+      deleteCloudinaryAsset,
+      isReelCloudinaryPublicId,
+    } = await import("@/lib/cloudinary");
+
+    if (!isReelCloudinaryPublicId(publicId)) {
+      console.warn(
+        `Skipped Cloudinary deletion outside the Reel Products folder: ${publicId}`
+      );
+      return;
+    }
+
+    const result = await deleteCloudinaryAsset({
+      publicId,
+      resourceType: input.resourceType,
+    });
+
+    if (
+      result.result !== "ok" &&
+      result.result !== "not found"
+    ) {
+      console.error(
+        "Unexpected Cloudinary deletion response:",
+        result
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Failed to delete Cloudinary ${input.resourceType} asset:`,
+      error
+    );
+  }
+}
+
+async function validateProductAndCategory(
+  productId: string,
+  categoryId: string
+) {
+  const prisma = await getPrisma();
+
+  const [product, category] = await Promise.all([
+    prisma.product.findUnique({
+      where: {
+        id: productId,
+      },
+      select: {
+        id: true,
+      },
+    }),
+    prisma.reelCategory.findUnique({
+      where: {
+        id: categoryId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    }),
+  ]);
+
+  if (!product) {
+    return {
+      success: false as const,
+      message: "Selected product was not found.",
+    };
+  }
+
+  if (!category) {
+    return {
+      success: false as const,
+      message: "Selected reel category was not found.",
+    };
+  }
+
+  return {
+    success: true as const,
+    category,
+  };
+}
+
+export async function createReelProduct(
+  _previousState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  if (!(await requireAdmin())) {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  const productId = readRequired(formData, "productId");
+  const categoryId = readRequired(formData, "categoryId");
+  const title = readRequired(formData, "title");
+  const caption = readOptional(formData, "caption");
+  const displayOrder = readDisplayOrder(formData);
+  const status = formData.get("status") === "true";
+  const media = readMedia(formData);
+
+  if (!productId || !categoryId || !title) {
+    return {
+      success: false,
+      message: "Product, reel category and title are required.",
+    };
+  }
+
+  if (!media.videoUrl || !media.videoPublicId) {
+    return {
+      success: false,
+      message: "A reel video must be uploaded before saving.",
+    };
+  }
+
+  if (displayOrder === null) {
+    return {
+      success: false,
+      message: "Display order must be a whole number of zero or greater.",
+    };
+  }
+
+  const validation = await validateProductAndCategory(
+    productId,
+    categoryId
+  );
+
+  if (!validation.success) {
+    return validation;
+  }
+
+  const prisma = await getPrisma();
+
+  const duplicate = await prisma.reelProduct.findFirst({
+    where: {
+      productId,
+      categoryId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (duplicate) {
+    return {
+      success: false,
+      message:
+        "This product is already connected to the selected reel category.",
+    };
+  }
+
+  try {
+    await prisma.reelProduct.create({
+      data: {
+        productId,
+        categoryId,
+        title,
+        caption,
+        displayOrder,
+        status,
+        videoUrl: media.videoUrl,
+        videoPublicId: media.videoPublicId,
+        thumbnailUrl: media.thumbnailUrl,
+        thumbnailPublicId: media.thumbnailPublicId,
+        videoDuration: media.videoDuration,
+        videoWidth: media.videoWidth,
+        videoHeight: media.videoHeight,
+        videoFormat: media.videoFormat,
+        videoBytes: media.videoBytes,
+      },
+    });
+
+    refreshReelProductPages();
+
+    return {
+      success: true,
+      message: "Reel product created successfully.",
+    };
+  } catch (error) {
+    console.error("Failed to create reel product:", error);
+
+    return {
+      success: false,
+      message: "The reel product could not be created.",
+    };
+  }
+}
+
+export async function updateReelProduct(
+  formData: FormData
+): Promise<ActionState> {
+  if (!(await requireAdmin())) {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  const id = readRequired(formData, "id");
+  const productId = readRequired(formData, "productId");
+  const categoryId = readRequired(formData, "categoryId");
+  const title = readRequired(formData, "title");
+  const caption = readOptional(formData, "caption");
+  const displayOrder = readDisplayOrder(formData);
+  const status = formData.get("status") === "true";
+  const media = readMedia(formData);
+
+  if (!id || !productId || !categoryId || !title) {
+    return {
+      success: false,
+      message: "All required reel product fields must be completed.",
+    };
+  }
+
+  if (!media.videoUrl || !media.videoPublicId) {
+    return {
+      success: false,
+      message: "A reel video is required.",
+    };
+  }
+
+  if (displayOrder === null) {
+    return {
+      success: false,
+      message: "Display order must be a whole number of zero or greater.",
+    };
+  }
+
+  const validation = await validateProductAndCategory(
+    productId,
+    categoryId
+  );
+
+  if (!validation.success) {
+    return validation;
+  }
+
+  const prisma = await getPrisma();
+
+  const [existingReelProduct, duplicate] = await Promise.all([
+    prisma.reelProduct.findUnique({
+      where: {
+        id,
+      },
+      select: {
+        id: true,
+        videoPublicId: true,
+        thumbnailPublicId: true,
+      },
+    }),
+    prisma.reelProduct.findFirst({
+      where: {
+        productId,
+        categoryId,
+        NOT: {
+          id,
+        },
+      },
+      select: {
+        id: true,
+      },
+    }),
+  ]);
+
+  if (!existingReelProduct) {
+    return {
+      success: false,
+      message: "Reel product was not found.",
+    };
+  }
+
+  if (duplicate) {
+    return {
+      success: false,
+      message:
+        "This product is already connected to the selected reel category.",
+    };
+  }
+
+  const previousVideoPublicId =
+    existingReelProduct.videoPublicId;
+  const previousThumbnailPublicId =
+    existingReelProduct.thumbnailPublicId;
+
+  try {
+    await prisma.reelProduct.update({
+      where: {
+        id,
+      },
+      data: {
+        productId,
+        categoryId,
+        title,
+        caption,
+        displayOrder,
+        status,
+        videoUrl: media.videoUrl,
+        videoPublicId: media.videoPublicId,
+        thumbnailUrl: media.thumbnailUrl,
+        thumbnailPublicId: media.thumbnailPublicId,
+        videoDuration: media.videoDuration,
+        videoWidth: media.videoWidth,
+        videoHeight: media.videoHeight,
+        videoFormat: media.videoFormat,
+        videoBytes: media.videoBytes,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to update reel product:", error);
+
+    return {
+      success: false,
+      message: "The reel product could not be updated.",
+    };
+  }
+
+  if (
+    previousVideoPublicId &&
+    previousVideoPublicId !== media.videoPublicId
+  ) {
+    await safelyDeleteCloudinaryAsset({
+      publicId: previousVideoPublicId,
+      resourceType: "video",
+    });
+  }
+
+  if (
+    previousThumbnailPublicId &&
+    previousThumbnailPublicId !== media.thumbnailPublicId &&
+    previousThumbnailPublicId !== previousVideoPublicId
+  ) {
+    await safelyDeleteCloudinaryAsset({
+      publicId: previousThumbnailPublicId,
+      resourceType: "image",
+    });
+  }
+
+  refreshReelProductPages();
+
+  return {
+    success: true,
+    message: "Reel product updated successfully.",
+  };
+}
+
+export async function toggleReelProduct(
+  id: string,
+  status: boolean
+): Promise<ActionState> {
+  if (!(await requireAdmin())) {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  const reelProductId = id.trim();
+
+  if (!reelProductId) {
+    return {
+      success: false,
+      message: "Reel product ID is required.",
+    };
+  }
+
+  const prisma = await getPrisma();
+
+  const reelProduct = await prisma.reelProduct.findUnique({
+    where: {
+      id: reelProductId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!reelProduct) {
+    return {
+      success: false,
+      message: "Reel product was not found.",
+    };
+  }
+
+  await prisma.reelProduct.update({
+    where: {
+      id: reelProductId,
+    },
+    data: {
+      status,
+    },
+  });
+
+  refreshReelProductPages();
+
+  return {
+    success: true,
+    message: status
+      ? "Reel product activated."
+      : "Reel product deactivated.",
+  };
+}
+
+export async function deleteReelProduct(
+  id: string
+): Promise<ActionState> {
+  if (!(await requireAdmin())) {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  const reelProductId = id.trim();
+
+  if (!reelProductId) {
+    return {
+      success: false,
+      message: "Reel product ID is required.",
+    };
+  }
+
+  const prisma = await getPrisma();
+
+  const reelProduct = await prisma.reelProduct.findUnique({
+    where: {
+      id: reelProductId,
+    },
+    select: {
+      id: true,
+      videoPublicId: true,
+      thumbnailPublicId: true,
+    },
+  });
+
+  if (!reelProduct) {
+    return {
+      success: false,
+      message: "Reel product was not found.",
+    };
+  }
+
+  try {
+    await prisma.reelProduct.delete({
+      where: {
+        id: reelProductId,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to delete reel product:", error);
+
+    return {
+      success: false,
+      message: "The reel product could not be deleted.",
+    };
+  }
+
+  await safelyDeleteCloudinaryAsset({
+    publicId: reelProduct.videoPublicId,
+    resourceType: "video",
+  });
+
+  if (
+    reelProduct.thumbnailPublicId &&
+    reelProduct.thumbnailPublicId !== reelProduct.videoPublicId
+  ) {
+    await safelyDeleteCloudinaryAsset({
+      publicId: reelProduct.thumbnailPublicId,
+      resourceType: "image",
+    });
+  }
+
+  refreshReelProductPages();
+
+  return {
+    success: true,
+    message: "Reel product deleted successfully.",
+  };
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/page.tsx
+
+============================================================
+
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import ReelProductManager from "./reel-product-manager";
+
+export const dynamic = "force-dynamic";
+
+async function getPrisma() {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma;
+}
+
+export default async function ReelProductsPage() {
+  const { authOptions } = await import("@/lib/auth");
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  if (session.user.role !== "ADMIN") {
+    redirect("/dashboard");
+  }
+
+  const prisma = await getPrisma();
+
+  const [products, categories, reelProducts] = await Promise.all([
+    prisma.product.findMany({
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        sellingPrice: true,
+        status: true,
+        parent: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          name: "asc",
+        },
+        {
+          sku: "asc",
+        },
+      ],
+    }),
+
+    prisma.reelCategory.findMany({
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        source: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+        page: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: {
+        name: "asc",
+      },
+    }),
+
+    prisma.reelProduct.findMany({
+      select: {
+        id: true,
+        productId: true,
+        categoryId: true,
+        title: true,
+        caption: true,
+        displayOrder: true,
+        videoUrl: true,
+        videoPublicId: true,
+        thumbnailUrl: true,
+        thumbnailPublicId: true,
+        videoDuration: true,
+        videoWidth: true,
+        videoHeight: true,
+        videoFormat: true,
+        videoBytes: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            sellingPrice: true,
+            status: true,
+            parent: {
+              select: {
+                id: true,
+                sku: true,
+                name: true,
+                status: true,
+              },
+            },
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            source: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            page: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        {
+          displayOrder: "asc",
+        },
+        {
+          createdAt: "desc",
+        },
+      ],
+    }),
+  ]);
+
+  const serialisedProducts = products.map((product) => ({
+    id: product.id,
+    sku: product.sku,
+    name: product.name,
+    sellingPrice: Number(product.sellingPrice),
+    status: product.status,
+    parent: {
+      id: product.parent.id,
+      sku: product.parent.sku,
+      name: product.parent.name,
+      status: product.parent.status,
+    },
+  }));
+
+  const serialisedCategories = categories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    status: category.status,
+    source: {
+      id: category.source.id,
+      name: category.source.name,
+      status: category.source.status,
+    },
+    page: {
+      id: category.page.id,
+      name: category.page.name,
+      status: category.page.status,
+    },
+  }));
+
+  const serialisedReelProducts = reelProducts.map((reelProduct) => ({
+    id: reelProduct.id,
+    productId: reelProduct.productId,
+    categoryId: reelProduct.categoryId,
+    title: reelProduct.title,
+    caption: reelProduct.caption,
+    displayOrder: reelProduct.displayOrder,
+    videoUrl: reelProduct.videoUrl,
+    videoPublicId: reelProduct.videoPublicId,
+    thumbnailUrl: reelProduct.thumbnailUrl,
+    thumbnailPublicId: reelProduct.thumbnailPublicId,
+    videoDuration:
+      reelProduct.videoDuration === null
+        ? null
+        : Number(reelProduct.videoDuration),
+    videoWidth: reelProduct.videoWidth,
+    videoHeight: reelProduct.videoHeight,
+    videoFormat: reelProduct.videoFormat,
+    videoBytes: reelProduct.videoBytes,
+    status: reelProduct.status,
+    createdAt: reelProduct.createdAt.toISOString(),
+    updatedAt: reelProduct.updatedAt.toISOString(),
+    product: {
+      id: reelProduct.product.id,
+      sku: reelProduct.product.sku,
+      name: reelProduct.product.name,
+      sellingPrice: Number(reelProduct.product.sellingPrice),
+      status: reelProduct.product.status,
+      parent: {
+        id: reelProduct.product.parent.id,
+        sku: reelProduct.product.parent.sku,
+        name: reelProduct.product.parent.name,
+        status: reelProduct.product.parent.status,
+      },
+    },
+    category: {
+      id: reelProduct.category.id,
+      name: reelProduct.category.name,
+      status: reelProduct.category.status,
+      source: {
+        id: reelProduct.category.source.id,
+        name: reelProduct.category.source.name,
+      },
+      page: {
+        id: reelProduct.category.page.id,
+        name: reelProduct.category.page.name,
+      },
+    },
+  }));
+
+  return (
+    <ReelProductManager
+      products={serialisedProducts}
+      categories={serialisedCategories}
+      reelProducts={serialisedReelProducts}
+    />
+  );
+}
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/product-selector.tsx
+
+============================================================
+
+FILE NOT FOUND
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/category-selector.tsx
+
+============================================================
+
+FILE NOT FOUND
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/rich-text-editor.tsx
+
+============================================================
+
+FILE NOT FOUND
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/gallery-uploader.tsx
+
+============================================================
+
+FILE NOT FOUND
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/reel-media-uploader.tsx
+
+============================================================
+
+FILE NOT FOUND
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/reel-product-table.tsx
+
+============================================================
+
+FILE NOT FOUND
+
+============================================================
+
+FILE: src/app/dashboard/reel-products/reel-product-modal.tsx
+
+============================================================
+
+FILE NOT FOUND

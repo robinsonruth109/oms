@@ -18,12 +18,70 @@ function requiredEnvironmentVariable(name: string): string {
   return value;
 }
 
+function encodeCloudinaryPublicId(publicId: string): string {
+  return publicId
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function normaliseVersion(version?: number): string {
+  if (
+    version === undefined ||
+    !Number.isInteger(version) ||
+    version <= 0
+  ) {
+    return "";
+  }
+
+  return `/v${version}`;
+}
+
+function buildCloudinaryDeliveryUrl(input: {
+  publicId: string;
+  resourceType: "image" | "video";
+  transformation: string;
+  version?: number;
+  extension?: string;
+}): string {
+  const cloudName = requiredEnvironmentVariable(
+    "CLOUDINARY_CLOUD_NAME"
+  );
+
+  const encodedPublicId = encodeCloudinaryPublicId(
+    input.publicId
+  );
+
+  const versionPath = normaliseVersion(input.version);
+
+  const extension = input.extension
+    ? `.${input.extension.replace(/^\./, "")}`
+    : "";
+
+  return (
+    [
+      "https://res.cloudinary.com",
+      encodeURIComponent(cloudName),
+      input.resourceType,
+      "upload",
+      input.transformation,
+    ].join("/") +
+    `${versionPath}/${encodedPublicId}${extension}`
+  );
+}
+
 export function getCloudinary() {
   if (!isConfigured) {
     cloudinary.config({
-      cloud_name: requiredEnvironmentVariable("CLOUDINARY_CLOUD_NAME"),
-      api_key: requiredEnvironmentVariable("CLOUDINARY_API_KEY"),
-      api_secret: requiredEnvironmentVariable("CLOUDINARY_API_SECRET"),
+      cloud_name: requiredEnvironmentVariable(
+        "CLOUDINARY_CLOUD_NAME"
+      ),
+      api_key: requiredEnvironmentVariable(
+        "CLOUDINARY_API_KEY"
+      ),
+      api_secret: requiredEnvironmentVariable(
+        "CLOUDINARY_API_SECRET"
+      ),
       secure: true,
     });
 
@@ -34,7 +92,8 @@ export function getCloudinary() {
 }
 
 export function getReelFolder(): string {
-  const configuredFolder = process.env.CLOUDINARY_REEL_FOLDER?.trim();
+  const configuredFolder =
+    process.env.CLOUDINARY_REEL_FOLDER?.trim();
 
   return configuredFolder || DEFAULT_REEL_FOLDER;
 }
@@ -55,7 +114,11 @@ export function uploadBufferToCloudinary(
         }
 
         if (!result) {
-          reject(new Error("Cloudinary returned an empty upload response."));
+          reject(
+            new Error(
+              "Cloudinary returned an empty upload response."
+            )
+          );
           return;
         }
 
@@ -80,8 +143,13 @@ export async function deleteCloudinaryAsset(input: {
   });
 }
 
-export function isReelCloudinaryPublicId(publicId: string): boolean {
-  const folder = getReelFolder().replace(/^\/+|\/+$/g, "");
+export function isReelCloudinaryPublicId(
+  publicId: string
+): boolean {
+  const folder = getReelFolder().replace(
+    /^\/+|\/+$/g,
+    ""
+  );
 
   return (
     publicId === folder ||
@@ -89,24 +157,17 @@ export function isReelCloudinaryPublicId(publicId: string): boolean {
   );
 }
 
-export function createOptimisedReelVideoUrl(publicId: string): string {
-  const client = getCloudinary();
-
-  return client.url(publicId, {
-    secure: true,
-    resource_type: "video",
-    type: "upload",
-    transformation: [
-      {
-        width: 1080,
-        height: 1920,
-        crop: "limit",
-      },
-      {
-        quality: "auto",
-        fetch_format: "auto",
-      },
-    ],
+export function createOptimisedReelVideoUrl(
+  publicId: string,
+  version?: number
+): string {
+  return buildCloudinaryDeliveryUrl({
+    publicId,
+    resourceType: "video",
+    version,
+    extension: "mp4",
+    transformation:
+      "c_limit,w_1080,h_1920,q_auto,f_auto",
   });
 }
 
@@ -114,28 +175,12 @@ export function createReelThumbnailUrl(
   publicId: string,
   version?: number
 ): string {
-  const client = getCloudinary();
-
-  return client.url(publicId, {
-    secure: true,
-    resource_type: "video",
-    type: "upload",
+  return buildCloudinaryDeliveryUrl({
+    publicId,
+    resourceType: "video",
     version,
-    format: "jpg",
-    transformation: [
-      {
-        start_offset: "0",
-      },
-      {
-        width: 720,
-        height: 1280,
-        crop: "fill",
-        gravity: "auto",
-      },
-      {
-        quality: "auto",
-        fetch_format: "auto",
-      },
-    ],
+    extension: "jpg",
+    transformation:
+      "so_0,c_fill,g_auto,w_720,h_1280,q_auto,f_auto",
   });
 }

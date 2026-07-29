@@ -147,6 +147,12 @@ export default async function DashboardLayout({
                     </Button>
                   </Link>
 
+                  <Link href="/dashboard/reel-products">
+                      <Button variant="outline" size="sm">
+                        Reel Products
+                      </Button>
+                    </Link>
+
                   <Link href="/dashboard/shop-settings">
                     <Button variant="outline" size="sm">
                       Shop Settings
@@ -376,6 +382,12 @@ export default async function DashboardLayout({
                     href="/dashboard/reel-categories"
                     icon={<Clapperboard className="h-4 w-4" />}
                     label="Reel Categories"
+                  />
+
+                  <NavLink
+                    href="/dashboard/reel-products"
+                    icon={<Package className="h-4 w-4" />}
+                    label="Reel Products"
                   />
 
                   <NavLink

@@ -31,11 +31,7 @@ import {
 
 declare global {
   interface Window {
-    fbq?: (
-      action: string,
-      eventName: string,
-      parameters?: Record<string, unknown>
-    ) => void;
+    fbq?: (...args: unknown[]) => void;
 
     _fbq?: unknown;
   }
@@ -209,17 +205,29 @@ function getPrimaryProductImage(
 
 function trackMetaEvent(
   eventName: string,
-  parameters?: Record<string, unknown>
+  parameters?: Record<string, unknown>,
+  eventId?: string
 ) {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.fbq?.(
-    "track",
-    eventName,
-    parameters
-  );
+  if (eventId) {
+    window.fbq?.("track", eventName, parameters ?? {}, { eventID: eventId });
+    return;
+  }
+
+  window.fbq?.("track", eventName, parameters);
+}
+
+function createMetaEventId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getBrowserCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const entry = document.cookie.split("; ").find((item) => item.startsWith(`${name}=`));
+  return entry ? decodeURIComponent(entry.split("=").slice(1).join("=")) : null;
 }
 
 function MetaPixel({
@@ -1065,7 +1073,7 @@ function ProductModal({
                   className="aspect-square w-full object-contain"
                 />
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img
                   src={
                     currentMedia.url
@@ -1078,7 +1086,7 @@ function ProductModal({
                 />
               )
             ) : reel.thumbnailUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
+               
               <img
                 src={
                   reel.thumbnailUrl
@@ -1130,7 +1138,7 @@ function ProductModal({
                         className="pointer-events-none h-full w-full object-cover"
                       />
                     ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img
                         src={
                           item.url
@@ -1453,6 +1461,7 @@ function CheckoutModal({
     }
 
     setIsSubmitting(true);
+    const purchaseEventId = createMetaEventId("purchase");
 
     try {
       const response = await fetch(
@@ -1486,6 +1495,10 @@ function CheckoutModal({
               form.customerNote.trim(),
             website:
               form.website,
+            eventId: purchaseEventId,
+            eventSourceUrl: window.location.href,
+            fbp: getBrowserCookie("_fbp"),
+            fbc: getBrowserCookie("_fbc"),
           }),
         }
       );
@@ -1549,7 +1562,8 @@ function CheckoutModal({
             result.order
               .orderId ??
             result.order.id,
-        }
+        },
+        purchaseEventId
       );
     } catch (error) {
       setGeneralError(
@@ -1677,7 +1691,7 @@ function CheckoutModal({
             <div className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">
                 {productImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img
                     src={productImage}
                     alt={

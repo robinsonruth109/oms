@@ -1,12 +1,28 @@
-export default function HomePage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight">OMS Project Started</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Order Management System
-        </p>
-      </div>
-    </main>
-  );
+import type { Metadata } from "next";
+
+import StorefrontClient from "@/components/storefront/storefront-client";
+import { siteConfig } from "@/lib/site-config";
+import { getStorefrontData } from "@/lib/storefront";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export const metadata: Metadata = {
+  title: {
+    absolute: siteConfig.name,
+  },
+  description: siteConfig.description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: siteConfig.name,
+    description: siteConfig.description,
+    url: "/",
+  },
+};
+
+export default async function HomePage() {
+  const data = await getStorefrontData();
+  return <StorefrontClient products={data.products} settings={data.settings} />;
 }

@@ -26,6 +26,10 @@ type CreateReelOrderBody = {
   deliveryArea?: unknown;
   customerNote?: unknown;
   website?: unknown;
+  eventId?: unknown;
+  eventSourceUrl?: unknown;
+  fbp?: unknown;
+  fbc?: unknown;
 };
 
 type ValidationSuccess = {
@@ -39,6 +43,10 @@ type ValidationSuccess = {
     quantity: number;
     deliveryArea: DeliveryArea;
     customerNote: string | null;
+    eventId: string;
+    eventSourceUrl: string;
+    fbp: string | null;
+    fbc: string | null;
   };
 };
 
@@ -201,6 +209,11 @@ function validateBody(
     };
   }
 
+  const eventId = normalizeText(body.eventId) || `purchase_${randomUUID()}`;
+  const eventSourceUrl = normalizeText(body.eventSourceUrl) || "";
+  const fbp = normalizeText(body.fbp) || null;
+  const fbc = normalizeText(body.fbc) || null;
+
   return {
     success: true,
     data: {
@@ -212,6 +225,10 @@ function validateBody(
       quantity,
       deliveryArea,
       customerNote,
+      eventId,
+      eventSourceUrl,
+      fbp,
+      fbc,
     },
   };
 }
@@ -335,6 +352,10 @@ export async function POST(request: Request) {
       quantity,
       deliveryArea,
       customerNote,
+      eventId,
+      eventSourceUrl,
+      fbp,
+      fbc,
     } = validation.data;
 
     const result = await prisma.$transaction(
@@ -413,6 +434,12 @@ export async function POST(request: Request) {
             select: {
               insideDhakaDeliveryCharge: true,
               outsideDhakaDeliveryCharge: true,
+              metaPixelId: true,
+              metaConversionsApiEnabled: true,
+              metaTestEventCode: true,
+              metaConversionsAccessTokenEncrypted: true,
+              metaConversionsAccessTokenIv: true,
+              metaConversionsAccessTokenTag: true,
             },
           }),
         ]);
@@ -590,6 +617,18 @@ export async function POST(request: Request) {
           createdAt:
             order.createdAt.toISOString(),
 
+          meta: {
+            pixelId: shopSetting.metaPixelId,
+            enabled: shopSetting.metaConversionsApiEnabled,
+            testEventCode: shopSetting.metaTestEventCode,
+            metaConversionsAccessTokenEncrypted: shopSetting.metaConversionsAccessTokenEncrypted,
+            metaConversionsAccessTokenIv: shopSetting.metaConversionsAccessTokenIv,
+            metaConversionsAccessTokenTag: shopSetting.metaConversionsAccessTokenTag,
+            productId: reel.product.id,
+            productName: reel.product.name,
+            quantity,
+          },
+
           items: order.items.map((item) => ({
             id: item.id,
             productId: item.productId,
@@ -609,12 +648,66 @@ export async function POST(request: Request) {
       }
     );
 
+    let accessToken = process.env.META_CONVERSIONS_ACCESS_TOKEN?.trim() || "";
+
+    if (
+      result.meta.metaConversionsAccessTokenEncrypted &&
+      result.meta.metaConversionsAccessTokenIv &&
+      result.meta.metaConversionsAccessTokenTag
+    ) {
+      try {
+        const { decryptSecret } = await import("@/lib/shop-settings-crypto");
+        accessToken = decryptSecret({
+          encrypted: result.meta.metaConversionsAccessTokenEncrypted,
+          iv: result.meta.metaConversionsAccessTokenIv,
+          tag: result.meta.metaConversionsAccessTokenTag,
+        });
+      } catch (tokenError) {
+        console.error("Failed to decrypt Meta CAPI access token:", tokenError);
+      }
+    }
+
+    if (result.meta.enabled && result.meta.pixelId && accessToken) {
+      const forwardedFor = request.headers.get("x-forwarded-for");
+      const clientIpAddress = forwardedFor?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
+      const clientUserAgent = request.headers.get("user-agent");
+      const sourceUrl = eventSourceUrl || request.headers.get("referer") || "";
+
+      try {
+        const { sendMetaPurchase } = await import("@/lib/meta-conversions");
+        await sendMetaPurchase({
+          pixelId: result.meta.pixelId,
+          accessToken,
+          testEventCode: process.env.META_TEST_EVENT_CODE || result.meta.testEventCode,
+          eventId,
+          eventSourceUrl: sourceUrl,
+          customerName,
+          phone,
+          clientIpAddress,
+          clientUserAgent,
+          fbp,
+          fbc,
+          value: Number(result.totalAmount),
+          productId: result.meta.productId,
+          productName: result.meta.productName,
+          quantity: result.meta.quantity,
+          orderId: result.orderId || result.id,
+        });
+      } catch (metaError) {
+        console.error("Meta Conversions API Purchase failed:", metaError);
+      }
+    }
+
+    const publicResult = Object.fromEntries(
+      Object.entries(result).filter(([key]) => key !== "meta")
+    );
+
     return NextResponse.json(
       {
         success: true,
         message:
           "আপনার অর্ডারটি সফলভাবে গ্রহণ করা হয়েছে।",
-        order: result,
+        order: publicResult,
       },
       {
         status: 201,

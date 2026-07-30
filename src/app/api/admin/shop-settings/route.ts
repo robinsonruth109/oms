@@ -1,375 +1,257 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { decryptSecret, encryptSecret, maskSecret } from "@/lib/shop-settings-crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const SHOP_SETTING_ID = "default";
-
-const DEFAULT_INSIDE_DHAKA_DELIVERY_CHARGE = 70;
-const DEFAULT_OUTSIDE_DHAKA_DELIVERY_CHARGE = 150;
-
 const MAX_DELIVERY_CHARGE = 100_000;
 
-type UpdateShopSettingBody = {
+type Body = {
   insideDhakaDeliveryCharge?: unknown;
   outsideDhakaDeliveryCharge?: unknown;
   metaPixelId?: unknown;
   metaPixelEnabled?: unknown;
+  metaConversionsApiEnabled?: unknown;
+  metaTestEventCode?: unknown;
+  metaConversionsAccessToken?: unknown;
+  removeMetaConversionsAccessToken?: unknown;
+  action?: unknown;
 };
-
-type ValidationSuccess = {
-  success: true;
-  data: {
-    insideDhakaDeliveryCharge: number;
-    outsideDhakaDeliveryCharge: number;
-    metaPixelId: string | null;
-    metaPixelEnabled: boolean;
-  };
-};
-
-type ValidationFailure = {
-  success: false;
-  field?: string;
-  message: string;
-};
-
-type ValidationResult = ValidationSuccess | ValidationFailure;
 
 async function getCurrentUserRole() {
   const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
-
-  const role =
+  return (
     (session?.user as { role?: string } | undefined)?.role ||
-    (session as { role?: string } | null)?.role;
-
-  return role || null;
+    (session as { role?: string } | null)?.role ||
+    null
+  );
 }
 
 function isAdminRole(role: string | null) {
   return role === "ADMIN" || role === "SUPER_ADMIN";
 }
 
-function normalizeText(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return value.trim();
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeBoolean(value: unknown): boolean | null {
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  if (value === "true") {
-    return true;
-  }
-
-  if (value === "false") {
-    return false;
-  }
-
+function bool(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
   return null;
 }
 
-function normalizeMoney(value: unknown): number {
-  if (typeof value !== "number" && typeof value !== "string") {
+function money(value: unknown) {
+  if ((typeof value !== "number" && typeof value !== "string") || value === "") {
     return Number.NaN;
   }
-
-  if (typeof value === "string" && value.trim() === "") {
-    return Number.NaN;
-  }
-
-  const amount = Number(value);
-
-  if (!Number.isFinite(amount)) {
-    return Number.NaN;
-  }
-
-  return Math.round(amount * 100) / 100;
+  return Math.round(Number(value) * 100) / 100;
 }
 
-function isValidMetaPixelId(value: string): boolean {
-  return /^\d{5,30}$/.test(value);
-}
-
-function validateBody(body: UpdateShopSettingBody): ValidationResult {
-  const insideDhakaDeliveryCharge = normalizeMoney(
-    body.insideDhakaDeliveryCharge
+function tokenConfigured(setting: {
+  metaConversionsAccessTokenEncrypted: string | null;
+  metaConversionsAccessTokenIv: string | null;
+  metaConversionsAccessTokenTag: string | null;
+}) {
+  return Boolean(
+    setting.metaConversionsAccessTokenEncrypted &&
+      setting.metaConversionsAccessTokenIv &&
+      setting.metaConversionsAccessTokenTag
   );
-
-  if (!Number.isFinite(insideDhakaDeliveryCharge)) {
-    return {
-      success: false,
-      field: "insideDhakaDeliveryCharge",
-      message: "Inside Dhaka delivery charge সঠিকভাবে লিখুন।",
-    };
-  }
-
-  if (insideDhakaDeliveryCharge < 0) {
-    return {
-      success: false,
-      field: "insideDhakaDeliveryCharge",
-      message: "Inside Dhaka delivery charge ঋণাত্মক হতে পারবে না।",
-    };
-  }
-
-  if (insideDhakaDeliveryCharge > MAX_DELIVERY_CHARGE) {
-    return {
-      success: false,
-      field: "insideDhakaDeliveryCharge",
-      message: "Inside Dhaka delivery charge অনেক বেশি হয়েছে।",
-    };
-  }
-
-  const outsideDhakaDeliveryCharge = normalizeMoney(
-    body.outsideDhakaDeliveryCharge
-  );
-
-  if (!Number.isFinite(outsideDhakaDeliveryCharge)) {
-    return {
-      success: false,
-      field: "outsideDhakaDeliveryCharge",
-      message: "Outside Dhaka delivery charge সঠিকভাবে লিখুন।",
-    };
-  }
-
-  if (outsideDhakaDeliveryCharge < 0) {
-    return {
-      success: false,
-      field: "outsideDhakaDeliveryCharge",
-      message: "Outside Dhaka delivery charge ঋণাত্মক হতে পারবে না।",
-    };
-  }
-
-  if (outsideDhakaDeliveryCharge > MAX_DELIVERY_CHARGE) {
-    return {
-      success: false,
-      field: "outsideDhakaDeliveryCharge",
-      message: "Outside Dhaka delivery charge অনেক বেশি হয়েছে।",
-    };
-  }
-
-  const metaPixelEnabled = normalizeBoolean(body.metaPixelEnabled);
-
-  if (metaPixelEnabled === null) {
-    return {
-      success: false,
-      field: "metaPixelEnabled",
-      message: "Meta Pixel status সঠিক নয়।",
-    };
-  }
-
-  const normalizedMetaPixelId = normalizeText(body.metaPixelId);
-  const metaPixelId = normalizedMetaPixelId || null;
-
-  if (metaPixelId && !isValidMetaPixelId(metaPixelId)) {
-    return {
-      success: false,
-      field: "metaPixelId",
-      message:
-        "সঠিক Meta Pixel ID লিখুন। Pixel ID-তে শুধুমাত্র সংখ্যা থাকবে।",
-    };
-  }
-
-  if (metaPixelEnabled && !metaPixelId) {
-    return {
-      success: false,
-      field: "metaPixelId",
-      message: "Meta Pixel চালু করতে Pixel ID লিখুন।",
-    };
-  }
-
-  return {
-    success: true,
-    data: {
-      insideDhakaDeliveryCharge,
-      outsideDhakaDeliveryCharge,
-      metaPixelId,
-      metaPixelEnabled,
-    },
-  };
 }
 
-function serializeShopSetting(setting: {
+function serialize(setting: {
   id: string;
-  insideDhakaDeliveryCharge: {
-    toString(): string;
-  };
-  outsideDhakaDeliveryCharge: {
-    toString(): string;
-  };
+  insideDhakaDeliveryCharge: { toString(): string };
+  outsideDhakaDeliveryCharge: { toString(): string };
   metaPixelId: string | null;
   metaPixelEnabled: boolean;
+  metaConversionsApiEnabled: boolean;
+  metaTestEventCode: string | null;
+  metaConversionsAccessTokenEncrypted: string | null;
+  metaConversionsAccessTokenIv: string | null;
+  metaConversionsAccessTokenTag: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
+  let maskedToken: string | null = null;
+  if (tokenConfigured(setting)) {
+    try {
+      maskedToken = maskSecret(
+        decryptSecret({
+          encrypted: setting.metaConversionsAccessTokenEncrypted!,
+          iv: setting.metaConversionsAccessTokenIv!,
+          tag: setting.metaConversionsAccessTokenTag!,
+        })
+      );
+    } catch {
+      maskedToken = "Configured (unable to decrypt with current key)";
+    }
+  }
+
   return {
     id: setting.id,
-    insideDhakaDeliveryCharge:
-      setting.insideDhakaDeliveryCharge.toString(),
-    outsideDhakaDeliveryCharge:
-      setting.outsideDhakaDeliveryCharge.toString(),
+    insideDhakaDeliveryCharge: setting.insideDhakaDeliveryCharge.toString(),
+    outsideDhakaDeliveryCharge: setting.outsideDhakaDeliveryCharge.toString(),
     metaPixelId: setting.metaPixelId,
     metaPixelEnabled: setting.metaPixelEnabled,
+    metaConversionsApiEnabled: setting.metaConversionsApiEnabled,
+    metaTestEventCode: setting.metaTestEventCode,
+    metaConversionsAccessTokenConfigured: tokenConfigured(setting),
+    metaConversionsAccessTokenMasked: maskedToken,
     createdAt: setting.createdAt.toISOString(),
     updatedAt: setting.updatedAt.toISOString(),
   };
 }
 
+async function ensureSetting() {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma.shopSetting.upsert({
+    where: { id: SHOP_SETTING_ID },
+    update: {},
+    create: {
+      id: SHOP_SETTING_ID,
+      insideDhakaDeliveryCharge: 70,
+      outsideDhakaDeliveryCharge: 150,
+      metaPixelId: null,
+      metaPixelEnabled: false,
+      metaConversionsApiEnabled: false,
+      metaTestEventCode: null,
+    },
+  });
+}
+
 export async function GET() {
   try {
-    const role = await getCurrentUserRole();
-
-    if (!isAdminRole(role)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Forbidden",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (!isAdminRole(await getCurrentUserRole())) {
+      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
-
-    const { prisma } = await import("@/lib/prisma");
-
-    const setting = await prisma.shopSetting.upsert({
-      where: {
-        id: SHOP_SETTING_ID,
-      },
-      update: {},
-      create: {
-        id: SHOP_SETTING_ID,
-        insideDhakaDeliveryCharge:
-          DEFAULT_INSIDE_DHAKA_DELIVERY_CHARGE,
-        outsideDhakaDeliveryCharge:
-          DEFAULT_OUTSIDE_DHAKA_DELIVERY_CHARGE,
-        metaPixelId: null,
-        metaPixelEnabled: false,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      setting: serializeShopSetting(setting),
-    });
+    return NextResponse.json({ success: true, setting: serialize(await ensureSetting()) });
   } catch (error) {
     console.error("Failed to load shop settings:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Shop settings লোড করা যায়নি।",
-      },
-      {
-        status: 500,
-      }
-    );
+    return NextResponse.json({ success: false, message: "Shop settings লোড করা যায়নি।" }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const role = await getCurrentUserRole();
-
-    if (!isAdminRole(role)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Forbidden",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (!isAdminRole(await getCurrentUserRole())) {
+      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
 
-    let body: UpdateShopSettingBody;
+    const body = (await request.json()) as Body;
+    const inside = money(body.insideDhakaDeliveryCharge);
+    const outside = money(body.outsideDhakaDeliveryCharge);
+    const pixelEnabled = bool(body.metaPixelEnabled);
+    const capiEnabled = bool(body.metaConversionsApiEnabled);
+    const removeToken = bool(body.removeMetaConversionsAccessToken) === true;
+    const pixelId = text(body.metaPixelId) || null;
+    const testEventCode = text(body.metaTestEventCode) || null;
+    const newToken = text(body.metaConversionsAccessToken);
 
-    try {
-      body = (await request.json()) as UpdateShopSettingBody;
-    } catch {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "সঠিক settings data পাওয়া যায়নি।",
-        },
-        {
-          status: 400,
-        }
-      );
+    if (!Number.isFinite(inside) || inside < 0 || inside > MAX_DELIVERY_CHARGE) {
+      return NextResponse.json({ success: false, field: "insideDhakaDeliveryCharge", message: "Inside Dhaka delivery charge সঠিক নয়।" }, { status: 400 });
+    }
+    if (!Number.isFinite(outside) || outside < 0 || outside > MAX_DELIVERY_CHARGE) {
+      return NextResponse.json({ success: false, field: "outsideDhakaDeliveryCharge", message: "Outside Dhaka delivery charge সঠিক নয়।" }, { status: 400 });
+    }
+    if (pixelEnabled === null || capiEnabled === null) {
+      return NextResponse.json({ success: false, message: "Meta status সঠিক নয়।" }, { status: 400 });
+    }
+    if (pixelId && !/^\d{5,30}$/.test(pixelId)) {
+      return NextResponse.json({ success: false, field: "metaPixelId", message: "Meta Pixel ID-তে শুধু সংখ্যা থাকতে পারবে।" }, { status: 400 });
+    }
+    if ((pixelEnabled || capiEnabled) && !pixelId) {
+      return NextResponse.json({ success: false, field: "metaPixelId", message: "Meta Pixel অথবা CAPI চালু করতে Pixel ID লিখুন।" }, { status: 400 });
     }
 
-    const validation = validateBody(body);
-
-    if (!validation.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          field: validation.field,
-          message: validation.message,
-        },
-        {
-          status: 400,
-        }
-      );
+    const existing = await ensureSetting();
+    const alreadyHasToken = tokenConfigured(existing);
+    if (capiEnabled && !newToken && !alreadyHasToken && !process.env.META_CONVERSIONS_ACCESS_TOKEN) {
+      return NextResponse.json({ success: false, field: "metaConversionsAccessToken", message: "Conversions API চালু করতে Access Token লিখুন।" }, { status: 400 });
     }
 
-    const {
-      insideDhakaDeliveryCharge,
-      outsideDhakaDeliveryCharge,
-      metaPixelId,
-      metaPixelEnabled,
-    } = validation.data;
+    const tokenUpdate: {
+      metaConversionsAccessTokenEncrypted?: string | null;
+      metaConversionsAccessTokenIv?: string | null;
+      metaConversionsAccessTokenTag?: string | null;
+    } = {};
+
+    if (removeToken) {
+      tokenUpdate.metaConversionsAccessTokenEncrypted = null;
+      tokenUpdate.metaConversionsAccessTokenIv = null;
+      tokenUpdate.metaConversionsAccessTokenTag = null;
+    } else if (newToken) {
+      const encrypted = encryptSecret(newToken);
+      tokenUpdate.metaConversionsAccessTokenEncrypted = encrypted.encrypted;
+      tokenUpdate.metaConversionsAccessTokenIv = encrypted.iv;
+      tokenUpdate.metaConversionsAccessTokenTag = encrypted.tag;
+    }
 
     const { prisma } = await import("@/lib/prisma");
-
-    const setting = await prisma.shopSetting.upsert({
-      where: {
-        id: SHOP_SETTING_ID,
-      },
-      update: {
-        insideDhakaDeliveryCharge:
-          insideDhakaDeliveryCharge.toFixed(2),
-        outsideDhakaDeliveryCharge:
-          outsideDhakaDeliveryCharge.toFixed(2),
-        metaPixelId,
-        metaPixelEnabled,
-      },
-      create: {
-        id: SHOP_SETTING_ID,
-        insideDhakaDeliveryCharge:
-          insideDhakaDeliveryCharge.toFixed(2),
-        outsideDhakaDeliveryCharge:
-          outsideDhakaDeliveryCharge.toFixed(2),
-        metaPixelId,
-        metaPixelEnabled,
+    const setting = await prisma.shopSetting.update({
+      where: { id: SHOP_SETTING_ID },
+      data: {
+        insideDhakaDeliveryCharge: inside.toFixed(2),
+        outsideDhakaDeliveryCharge: outside.toFixed(2),
+        metaPixelId: pixelId,
+        metaPixelEnabled: pixelEnabled,
+        metaConversionsApiEnabled: capiEnabled,
+        metaTestEventCode: testEventCode,
+        ...tokenUpdate,
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      message: "Shop settings সফলভাবে সংরক্ষণ করা হয়েছে।",
-      setting: serializeShopSetting(setting),
-    });
+    return NextResponse.json({ success: true, message: "Shop settings সফলভাবে সংরক্ষণ করা হয়েছে।", setting: serialize(setting) });
   } catch (error) {
     console.error("Failed to update shop settings:", error);
+    const message = error instanceof Error && error.message.includes("SHOP_SETTINGS_ENCRYPTION_KEY")
+      ? "SHOP_SETTINGS_ENCRYPTION_KEY configure না করলে Access Token save করা যাবে না।"
+      : "Shop settings সংরক্ষণ করা যায়নি।";
+    return NextResponse.json({ success: false, message }, { status: 500 });
+  }
+}
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Shop settings সংরক্ষণ করা যায়নি।",
-      },
-      {
-        status: 500,
-      }
+export async function POST(request: NextRequest) {
+  try {
+    if (!isAdminRole(await getCurrentUserRole())) {
+      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+    }
+    const body = (await request.json()) as Body;
+    if (body.action !== "testMetaConnection") {
+      return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
+    }
+
+    const setting = await ensureSetting();
+    const pixelId = setting.metaPixelId;
+    let accessToken = process.env.META_CONVERSIONS_ACCESS_TOKEN?.trim() || "";
+    if (tokenConfigured(setting)) {
+      accessToken = decryptSecret({
+        encrypted: setting.metaConversionsAccessTokenEncrypted!,
+        iv: setting.metaConversionsAccessTokenIv!,
+        tag: setting.metaConversionsAccessTokenTag!,
+      });
+    }
+    if (!pixelId || !accessToken) {
+      return NextResponse.json({ success: false, message: "Pixel ID এবং Access Token আগে save করুন।" }, { status: 400 });
+    }
+
+    const response = await fetch(
+      `https://graph.facebook.com/v23.0/${encodeURIComponent(pixelId)}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`,
+      { cache: "no-store" }
     );
+    const data = (await response.json()) as { id?: string; name?: string; error?: { message?: string } };
+    if (!response.ok || data.error) {
+      return NextResponse.json({ success: false, message: data.error?.message || "Meta connection test failed." }, { status: 400 });
+    }
+    return NextResponse.json({ success: true, message: `Meta connection successful${data.name ? ` — ${data.name}` : ""}.` });
+  } catch (error) {
+    console.error("Meta connection test failed:", error);
+    return NextResponse.json({ success: false, message: "Meta connection test করা যায়নি।" }, { status: 500 });
   }
 }

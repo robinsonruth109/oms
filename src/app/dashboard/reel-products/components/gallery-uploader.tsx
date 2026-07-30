@@ -439,14 +439,14 @@ function GalleryCard({
     <article className="group overflow-hidden rounded-2xl border bg-white shadow-sm">
       <div className="relative aspect-square overflow-hidden bg-slate-100">
         {item.mediaType === "IMAGE" ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img
             src={item.url}
             alt={`Gallery item ${index + 1}`}
             className="h-full w-full object-cover"
           />
         ) : item.thumbnailUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img
             src={item.thumbnailUrl}
             alt={`Video thumbnail ${index + 1}`}

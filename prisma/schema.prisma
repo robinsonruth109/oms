@@ -602,8 +602,13 @@ model ShopSetting {
   insideDhakaDeliveryCharge  Decimal @default(70) @db.Decimal(10, 2)
   outsideDhakaDeliveryCharge Decimal @default(150) @db.Decimal(10, 2)
 
-  metaPixelId      String?
-  metaPixelEnabled Boolean @default(false)
+  metaPixelId                 String?
+  metaPixelEnabled            Boolean @default(false)
+  metaConversionsApiEnabled   Boolean @default(false)
+  metaTestEventCode           String?
+  metaConversionsAccessTokenEncrypted String? @db.Text
+  metaConversionsAccessTokenIv        String?
+  metaConversionsAccessTokenTag       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

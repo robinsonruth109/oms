@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { directCancelCallingOrder, saveCallingOrder } from "./actions";
-import { Page } from "@prisma/client";
 
 type CallingOrderItem = {
   id: string;

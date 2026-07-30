@@ -190,7 +190,7 @@ export default function ReelMediaUploader({
         <div className="p-4">
           {media.thumbnailUrl ? (
             <div className="relative mx-auto w-full max-w-64 overflow-hidden rounded-2xl bg-slate-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={media.thumbnailUrl}
                 alt="Reel thumbnail preview"

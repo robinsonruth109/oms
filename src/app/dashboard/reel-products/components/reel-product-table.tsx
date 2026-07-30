@@ -444,7 +444,7 @@ function ReelThumbnail({
       className={`relative shrink-0 overflow-hidden rounded-xl bg-slate-100 ${sizeClass}`}
     >
       {item.thumbnailUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img
           src={item.thumbnailUrl}
           alt={item.product.name}

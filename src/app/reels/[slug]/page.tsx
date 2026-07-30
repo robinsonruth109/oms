@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+
+import { siteConfig } from "@/lib/site-config";
 
 import ReelFeed, {
   type PublicReelItem,
@@ -17,6 +20,89 @@ type PageProps = {
     slug: string;
   }>;
 };
+
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const normalizedSlug = decodeURIComponent(slug).trim().toLowerCase();
+
+  if (!normalizedSlug) {
+    return {
+      title: "Reels not found",
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const { prisma } = await import("@/lib/prisma");
+  const category = await prisma.reelCategory.findFirst({
+    where: {
+      slug: normalizedSlug,
+      status: true,
+      source: { status: true },
+      page: { status: true },
+    },
+    select: {
+      name: true,
+      slug: true,
+      reelProducts: {
+        where: { status: true, product: { status: true } },
+        orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
+        take: 1,
+        select: {
+          title: true,
+          caption: true,
+          thumbnailUrl: true,
+          gallery: {
+            where: { mediaType: "IMAGE" },
+            orderBy: [
+              { isPrimary: "desc" },
+              { displayOrder: "asc" },
+              { createdAt: "asc" },
+            ],
+            take: 1,
+            select: { url: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!category?.slug) {
+    return {
+      title: "Reels not found",
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const firstReel = category.reelProducts[0];
+  const title = category.name;
+  const description =
+    firstReel?.caption?.trim() ||
+    `Watch ${category.name} product videos and order from ${siteConfig.name}.`;
+  const image =
+    firstReel?.thumbnailUrl || firstReel?.gallery[0]?.url || undefined;
+  const canonicalPath = `/reels/${encodeURIComponent(category.slug)}`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: canonicalPath },
+    openGraph: {
+      title,
+      description,
+      url: canonicalPath,
+      siteName: siteConfig.name,
+      images: image ? [{ url: image, alt: title }] : undefined,
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      title,
+      description,
+      images: image ? [image] : undefined,
+    },
+  };
+}
 
 function normalizeMoney(
   value: {

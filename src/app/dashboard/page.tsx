@@ -18,7 +18,6 @@ import {
   CircleAlert,
   Clock3,
   TrendingUp,
-  Store,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";

@@ -121,6 +121,7 @@ function Toggle({
 
 export default function DashboardShopSettingsPage() {
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  const [savedForm, setSavedForm] = useState<FormState>(DEFAULT_FORM);
   const [tokenConfigured, setTokenConfigured] = useState(false);
   const [maskedToken, setMaskedToken] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -133,7 +134,7 @@ export default function DashboardShopSettingsPage() {
   const [showToken, setShowToken] = useState(false);
 
   const applySetting = useCallback((setting: ShopSetting) => {
-    setForm({
+    const nextForm: FormState = {
       insideDhakaDeliveryCharge: setting.insideDhakaDeliveryCharge,
       outsideDhakaDeliveryCharge: setting.outsideDhakaDeliveryCharge,
       metaPixelId: setting.metaPixelId || "",
@@ -142,16 +143,21 @@ export default function DashboardShopSettingsPage() {
       metaTestEventCode: setting.metaTestEventCode || "",
       metaConversionsAccessToken: "",
       removeMetaConversionsAccessToken: false,
-    });
+    };
+    setForm(nextForm);
+    setSavedForm(nextForm);
     setTokenConfigured(setting.metaConversionsAccessTokenConfigured);
     setMaskedToken(setting.metaConversionsAccessTokenMasked);
     setLastUpdatedAt(setting.updatedAt);
   }, []);
 
-  const refresh = useCallback(async () => {
-    const setting = await loadSettings();
-    applySetting(setting);
-  }, [applySetting]);
+  function handleReset() {
+    setForm({ ...savedForm });
+    setFieldErrors({});
+    setShowToken(false);
+    setErrorMessage("");
+    setSuccessMessage("Unsaved changes reset করা হয়েছে।");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -256,8 +262,10 @@ export default function DashboardShopSettingsPage() {
         body: JSON.stringify({ action: "testMetaConnection" }),
       });
       const result = (await response.json()) as ApiResponse;
-      if (!response.ok || !result.success) throw new Error(result.message || "Meta test failed.");
-      setSuccessMessage(result.message || "Meta connection successful.");
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Meta test event পাঠানো যায়নি।");
+      }
+      setSuccessMessage(result.message || "Meta test event সফলভাবে পাঠানো হয়েছে।");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Meta test failed.");
     } finally {
@@ -395,7 +403,7 @@ export default function DashboardShopSettingsPage() {
                   disabled={isSaving}
                   className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 outline-none focus:border-orange-500"
                 />
-                <p className="mt-2 text-xs text-slate-500">Meta Events Manager testing শেষ হলে এটি খালি করুন।</p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">Meta Events Manager → Test events থেকে code নিয়ে এখানে দিন। Code থাকলে Test Meta Connection একটি আসল server-side PageView test event পাঠাবে। Testing শেষ হলে code খালি করুন।</p>
               </div>
 
               <button
@@ -404,7 +412,7 @@ export default function DashboardShopSettingsPage() {
                 disabled={isTesting || isSaving || !tokenConfigured}
                 className="h-11 rounded-xl border border-blue-300 bg-blue-50 px-5 text-sm font-bold text-blue-700 disabled:opacity-50"
               >
-                {isTesting ? "Testing..." : "Test Meta Connection"}
+                {isTesting ? "Sending test event..." : "Send Meta Test Event"}
               </button>
             </div>
           </section>
@@ -413,7 +421,7 @@ export default function DashboardShopSettingsPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-slate-600">Token save করার আগে server-এ SHOP_SETTINGS_ENCRYPTION_KEY configure করতে হবে।</p>
               <div className="flex gap-3">
-                <button type="button" onClick={() => void refresh()} disabled={isSaving} className="h-11 rounded-xl border border-slate-300 px-5 text-sm font-semibold">Reset</button>
+                <button type="button" onClick={handleReset} disabled={isSaving || isTesting} className="h-11 rounded-xl border border-slate-300 px-5 text-sm font-semibold disabled:opacity-50">Reset</button>
                 <button type="submit" disabled={isSaving} className="h-11 min-w-36 rounded-xl bg-orange-600 px-6 text-sm font-bold text-white disabled:bg-slate-400">
                   {isSaving ? "Saving..." : "Save Settings"}
                 </button>

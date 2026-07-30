@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { createHash, randomUUID } from "node:crypto";
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/shop-settings-crypto";
 
 export const runtime = "nodejs";
@@ -222,6 +223,7 @@ export async function POST(request: NextRequest) {
     if (!isAdminRole(await getCurrentUserRole())) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
+
     const body = (await request.json()) as Body;
     if (body.action !== "testMetaConnection") {
       return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
@@ -230,6 +232,7 @@ export async function POST(request: NextRequest) {
     const setting = await ensureSetting();
     const pixelId = setting.metaPixelId;
     let accessToken = process.env.META_CONVERSIONS_ACCESS_TOKEN?.trim() || "";
+
     if (tokenConfigured(setting)) {
       accessToken = decryptSecret({
         encrypted: setting.metaConversionsAccessTokenEncrypted!,
@@ -237,21 +240,103 @@ export async function POST(request: NextRequest) {
         tag: setting.metaConversionsAccessTokenTag!,
       });
     }
+
     if (!pixelId || !accessToken) {
-      return NextResponse.json({ success: false, message: "Pixel ID এবং Access Token আগে save করুন।" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "Pixel ID এবং Access Token আগে save করুন।" },
+        { status: 400 }
+      );
+    }
+
+    const forwardedFor = request.headers.get("x-forwarded-for");
+    const clientIpAddress = forwardedFor?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || undefined;
+    const clientUserAgent = request.headers.get("user-agent") || "OMS Meta CAPI Test";
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin).replace(/\/$/, "");
+    const eventSourceUrl = `${siteUrl}/dashboard/shop-settings`;
+    const eventId = `oms_meta_test_${Date.now()}_${randomUUID()}`;
+    const externalId = createHash("sha256").update("oms-meta-capi-connection-test").digest("hex");
+
+    const userData: Record<string, unknown> = {
+      client_user_agent: clientUserAgent,
+      external_id: [externalId],
+    };
+    if (clientIpAddress) userData.client_ip_address = clientIpAddress;
+
+    const payload: Record<string, unknown> = {
+      data: [
+        {
+          event_name: "PageView",
+          event_time: Math.floor(Date.now() / 1000),
+          event_id: eventId,
+          event_source_url: eventSourceUrl,
+          action_source: "website",
+          user_data: userData,
+          custom_data: {
+            integration_test: true,
+            source: "oms_shop_settings",
+          },
+        },
+      ],
+    };
+
+    if (setting.metaTestEventCode?.trim()) {
+      payload.test_event_code = setting.metaTestEventCode.trim();
     }
 
     const response = await fetch(
-      `https://graph.facebook.com/v23.0/${encodeURIComponent(pixelId)}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`,
-      { cache: "no-store" }
+      `https://graph.facebook.com/v23.0/${encodeURIComponent(pixelId)}/events?access_token=${encodeURIComponent(accessToken)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      }
     );
-    const data = (await response.json()) as { id?: string; name?: string; error?: { message?: string } };
-    if (!response.ok || data.error) {
-      return NextResponse.json({ success: false, message: data.error?.message || "Meta connection test failed." }, { status: 400 });
+
+    const data = (await response.json()) as {
+      events_received?: number;
+      messages?: string[];
+      fbtrace_id?: string;
+      error?: {
+        message?: string;
+        type?: string;
+        code?: number;
+        error_subcode?: number;
+        error_user_title?: string;
+        error_user_msg?: string;
+      };
+    };
+
+    if (!response.ok || data.error || !data.events_received) {
+      const metaMessage =
+        data.error?.error_user_msg ||
+        data.error?.message ||
+        data.messages?.join(" ") ||
+        "Meta test event গ্রহণ করেনি।";
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Meta test failed: ${metaMessage}`,
+        },
+        { status: 400 }
+      );
     }
-    return NextResponse.json({ success: true, message: `Meta connection successful${data.name ? ` — ${data.name}` : ""}.` });
+
+    const testModeMessage = setting.metaTestEventCode?.trim()
+      ? "Meta Events Manager-এর Test events tab-এ eventটি দেখুন।"
+      : "Test Event Code দেওয়া ছিল না, তাই eventটি সাধারণ server event হিসেবে পাঠানো হয়েছে।";
+
+    return NextResponse.json({
+      success: true,
+      message: `Meta CAPI connected — ${data.events_received}টি PageView event গ্রহণ করেছে। ${testModeMessage}`,
+    });
   } catch (error) {
-    console.error("Meta connection test failed:", error);
-    return NextResponse.json({ success: false, message: "Meta connection test করা যায়নি।" }, { status: 500 });
+    console.error("Meta test event failed:", error);
+    const message =
+      error instanceof Error && error.message.includes("SHOP_SETTINGS_ENCRYPTION_KEY")
+        ? "Saved token decrypt করা যায়নি। Railway-এর SHOP_SETTINGS_ENCRYPTION_KEY যাচাই করুন।"
+        : "Meta test event পাঠানো যায়নি।";
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
 }

@@ -354,6 +354,44 @@ export default function ReelFeed({
   const [checkoutReel, setCheckoutReel] =
     useState<PublicReelItem | null>(null);
 
+  const [showSwipeHint, setShowSwipeHint] =
+    useState(false);
+
+  useEffect(() => {
+    if (reels.length < 2) {
+      return;
+    }
+
+    const storageKey = `reel-swipe-hint:${categorySlug}`;
+
+    try {
+      if (window.sessionStorage.getItem(storageKey) === "seen") {
+        return;
+      }
+
+      window.sessionStorage.setItem(storageKey, "seen");
+    } catch {
+      // Continue showing the hint when sessionStorage is unavailable.
+    }
+
+    const showTimer = window.setTimeout(() => {
+      setShowSwipeHint(true);
+    }, 450);
+
+    const hideTimer = window.setTimeout(() => {
+      setShowSwipeHint(false);
+    }, 4200);
+
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
+  }, [categorySlug, reels.length]);
+
+  const dismissSwipeHint = useCallback(() => {
+    setShowSwipeHint(false);
+  }, []);
+
   const playActiveVideo = useCallback(
     async (index: number) => {
       const activeReel = reels[index];
@@ -696,6 +734,9 @@ export default function ReelFeed({
 
         <div
           ref={containerRef}
+          onScroll={dismissSwipeHint}
+          onTouchStart={dismissSwipeHint}
+          onWheel={dismissSwipeHint}
           className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {reels.map(
@@ -893,7 +934,7 @@ export default function ReelFeed({
                         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/30 bg-black/30 px-4 text-sm font-semibold backdrop-blur transition hover:bg-black/50"
                       >
                         <Eye className="h-4 w-4" />
-                        View
+                        বিস্তারিত
                       </button>
 
                       <button
@@ -914,8 +955,8 @@ export default function ReelFeed({
 
                         {reel.product
                           .quantity > 0
-                          ? "Buy Now"
-                          : "Out of Stock"}
+                          ? "অর্ডার করুন"
+                          : "স্টক শেষ"}
                       </button>
                     </div>
                   </div>
@@ -960,6 +1001,27 @@ export default function ReelFeed({
           {activeIndex + 1}/
           {reels.length}
         </div>
+
+        {showSwipeHint ? (
+          <button
+            type="button"
+            onClick={dismissSwipeHint}
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 text-white backdrop-blur-[1px]"
+            aria-label="Swipe instruction বন্ধ করুন"
+          >
+            <span className="flex flex-col items-center rounded-3xl bg-black/65 px-7 py-5 shadow-2xl backdrop-blur">
+              <span className="reel-swipe-hand text-5xl" aria-hidden="true">
+                ☝️
+              </span>
+              <span className="mt-3 text-base font-bold">
+                উপরে সোয়াইপ করুন
+              </span>
+              <span className="mt-1 text-xs text-white/75">
+                পরের পণ্য দেখতে
+              </span>
+            </span>
+          </button>
+        ) : null}
       </div>
 
       {selectedReel ? (
@@ -975,6 +1037,30 @@ export default function ReelFeed({
           }}
         />
       ) : null}
+
+      <style jsx>{`
+        @keyframes reelSwipeUp {
+          0%,
+          100% {
+            transform: translateY(18px);
+            opacity: 0.55;
+          }
+          50% {
+            transform: translateY(-22px);
+            opacity: 1;
+          }
+        }
+
+        .reel-swipe-hand {
+          animation: reelSwipeUp 1.25s ease-in-out infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .reel-swipe-hand {
+            animation: none;
+          }
+        }
+      `}</style>
 
       {checkoutReel ? (
         <CheckoutModal
@@ -1232,8 +1318,8 @@ function ProductModal({
 
             {reel.product
               .quantity > 0
-              ? "Buy Now"
-              : "Out of Stock"}
+              ? "অর্ডার করুন"
+              : "স্টক শেষ"}
           </button>
         </div>
       </div>

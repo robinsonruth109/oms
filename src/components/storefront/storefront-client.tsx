@@ -1,19 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronRight,
   Loader2,
+  Maximize2,
   Minus,
   PackageCheck,
   Play,
   Plus,
   Share2,
   ShieldCheck,
+  Star,
   ShoppingBag,
   Truck,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { MetaPixel, createMetaEventId, trackMetaEvent } from "@/components/meta/meta-pixel";
@@ -287,6 +291,118 @@ export default function StorefrontClient({ products, settings, singleProduct = f
   const [success, setSuccess] = useState<string | null>(null);
   const checkoutRequestIdRef = useRef<string | null>(null);
 
+  const mobileFeedRef = useRef<HTMLDivElement | null>(null);
+  const mobileVideoRefs = useRef(new Map<string, HTMLVideoElement>());
+  const mobileCardRefs = useRef(new Map<string, HTMLElement>());
+  const [activeMobileIndex, setActiveMobileIndex] = useState(0);
+  const [mobileMuted, setMobileMuted] = useState(true);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [loadedMobileVideos, setLoadedMobileVideos] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const savedSoundPreference = window.localStorage.getItem("storefront-mobile-muted");
+    if (savedSoundPreference === "false") {
+      window.requestAnimationFrame(() => setMobileMuted(false));
+    }
+
+    const hasSeenSwipeHint = window.localStorage.getItem("storefront-mobile-swipe-hint-v2");
+    if (!hasSeenSwipeHint && products.length > 1) {
+      window.requestAnimationFrame(() => setShowSwipeHint(true));
+      const timer = window.setTimeout(() => {
+        setShowSwipeHint(false);
+        window.localStorage.setItem("storefront-mobile-swipe-hint-v2", "1");
+      }, 4200);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [products.length]);
+
+  useEffect(() => {
+    const feed = mobileFeedRef.current;
+    if (!feed) return;
+
+    const sections = Array.from(feed.querySelectorAll<HTMLElement>("[data-mobile-reel-index]"));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntry = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+        if (!visibleEntry) return;
+        const nextIndex = Number((visibleEntry.target as HTMLElement).dataset.mobileReelIndex ?? 0);
+        setActiveMobileIndex(nextIndex);
+      },
+      { root: feed, threshold: [0.55, 0.7, 0.85] },
+    );
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [products.length]);
+
+  useEffect(() => {
+    mobileVideoRefs.current.forEach((video, reelId) => {
+      const index = products.findIndex((product) => product.reelId === reelId);
+      video.muted = mobileMuted;
+
+      if (index === activeMobileIndex) {
+        void video.play().catch(() => undefined);
+      } else {
+        video.pause();
+      }
+    });
+  }, [activeMobileIndex, mobileMuted, products]);
+
+  const dismissSwipeHint = () => {
+    if (!showSwipeHint) return;
+    setShowSwipeHint(false);
+    window.localStorage.setItem("storefront-mobile-swipe-hint-v2", "1");
+  };
+
+  const toggleMobileSound = () => {
+    setMobileMuted((current) => {
+      const next = !current;
+      window.localStorage.setItem("storefront-mobile-muted", String(next));
+      return next;
+    });
+  };
+
+  const shareMobileProduct = async (item: StorefrontProduct) => {
+    const url = `${window.location.origin}/product/${item.reelId}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: item.title, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+      }
+    } catch {
+      // Sharing was cancelled or unavailable.
+    }
+  };
+
+  const enterMobileFullscreen = async (
+    card: HTMLElement | undefined,
+    video: HTMLVideoElement | undefined,
+  ) => {
+    if (!card && !video) return;
+
+    try {
+      if (card?.requestFullscreen) {
+        await card.requestFullscreen();
+        return;
+      }
+
+      // iOS Safari does not support element fullscreen consistently, so use
+      // native video fullscreen only as a fallback there.
+      const iosVideo = video as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | undefined;
+      iosVideo?.webkitEnterFullscreen?.();
+    } catch {
+      // Fullscreen is unavailable or the customer cancelled the request.
+    }
+  };
+
   const openCheckout = (product: StorefrontProduct, initialQty = 1) => {
     const safeQuantity = Math.max(1, Math.min(initialQty, Math.max(1, product.product.quantity)));
     setSelected(product);
@@ -499,40 +615,167 @@ export default function StorefrontClient({ products, settings, singleProduct = f
         <>
           <div className="hidden md:block">{productCards}</div>
           <div className="md:hidden">
-            <div className="h-[100svh] snap-y snap-mandatory overflow-y-auto bg-black">
-              {products.map((item) => (
-                <section key={item.reelId} className="relative h-[100svh] snap-start overflow-hidden bg-black">
-                  <video
-                    src={item.videoUrl}
-                    poster={getImage(item) ?? undefined}
-                    className="h-full w-full object-cover"
-                    muted
-                    loop
-                    autoPlay
-                    playsInline
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-black/20" />
-                  <div className="absolute inset-x-0 bottom-0 p-5 pb-8 text-white">
-                    <h2 className="text-2xl font-black">{item.title}</h2>
-                    <p className="mt-2 text-2xl font-black text-orange-400">{money(item.product.sellingPrice)}</p>
-                    {item.caption && <p className="mt-2 line-clamp-2 text-sm text-white/80">{item.caption}</p>}
-                    <div className="mt-5 flex gap-3">
-                      <button
-                        onClick={() => openCheckout(item)}
-                        className="flex-1 rounded-xl bg-orange-600 px-4 py-3 font-bold"
-                      >
-                        অর্ডার করুন
-                      </button>
-                      <Link
-                        href={`/product/${item.reelId}`}
-                        className="flex-1 rounded-xl border border-white/50 bg-black/20 px-4 py-3 text-center font-bold backdrop-blur"
-                      >
-                        বিস্তারিত
-                      </Link>
+            <div
+              ref={mobileFeedRef}
+              onScroll={dismissSwipeHint}
+              onTouchStart={dismissSwipeHint}
+              onWheel={dismissSwipeHint}
+              className="relative h-[100svh] snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {products.map((item, index) => {
+                const inStock = item.product.quantity > 0;
+                const isLoaded = loadedMobileVideos.has(item.reelId);
+                const isActive = index === activeMobileIndex;
+
+                return (
+                  <section
+                    key={item.reelId}
+                    ref={(node) => {
+                      if (node) mobileCardRefs.current.set(item.reelId, node);
+                      else mobileCardRefs.current.delete(item.reelId);
+                    }}
+                    data-mobile-reel-index={index}
+                    className="relative h-[100svh] snap-start snap-always overflow-hidden bg-slate-950"
+                  >
+                    {!isLoaded && (
+                      <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950" />
+                    )}
+
+                    <video
+                      ref={(node) => {
+                        if (node) {
+                          mobileVideoRefs.current.set(item.reelId, node);
+                        } else {
+                          mobileVideoRefs.current.delete(item.reelId);
+                        }
+                      }}
+                      src={item.videoUrl}
+                      poster={getImage(item) ?? undefined}
+                      preload={isActive ? "auto" : index === activeMobileIndex + 1 ? "metadata" : "none"}
+                      className={`h-full w-full object-cover transition-opacity duration-500 ${isLoaded ? "opacity-100" : "opacity-0"}`}
+                      muted={mobileMuted}
+                      loop
+                      autoPlay={isActive}
+                      playsInline
+                      onLoadedData={() =>
+                        setLoadedMobileVideos((current) => {
+                          if (current.has(item.reelId)) return current;
+                          const next = new Set(current);
+                          next.add(item.reelId);
+                          return next;
+                        })
+                      }
+                    />
+
+                    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.03)_34%,rgba(0,0,0,0.08)_48%,rgba(0,0,0,0.94)_100%)]" />
+
+                    <div className="absolute left-1/2 top-[max(0.9rem,env(safe-area-inset-top))] z-20 -translate-x-1/2 rounded-full border border-white/15 bg-black/35 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-md">
+                      {index + 1} / {products.length}
                     </div>
-                  </div>
-                </section>
-              ))}
+
+                    <div className="absolute right-3 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-3">
+                      <button
+                        type="button"
+                        onClick={toggleMobileSound}
+                        className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-lg backdrop-blur-md transition active:scale-95"
+                        aria-label={mobileMuted ? "Turn sound on" : "Mute video"}
+                      >
+                        {mobileMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void shareMobileProduct(item)}
+                        className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-lg backdrop-blur-md transition active:scale-95"
+                        aria-label="Share product"
+                      >
+                        <Share2 className="h-5 w-5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void enterMobileFullscreen(
+                            mobileCardRefs.current.get(item.reelId),
+                            mobileVideoRefs.current.get(item.reelId),
+                          )
+                        }
+                        className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-lg backdrop-blur-md transition active:scale-95"
+                        aria-label="Open fullscreen video"
+                      >
+                        <Maximize2 className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <div className="absolute inset-x-0 bottom-0 z-10 px-4 pb-[max(1.35rem,env(safe-area-inset-bottom))] text-white">
+                      <div className="pr-12">
+                        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-orange-400">Gloss & Glows</p>
+                        <h2 className="mt-2 line-clamp-2 text-[1.45rem] font-black leading-[1.18] drop-shadow-lg">
+                          {item.title}
+                        </h2>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex items-center gap-0.5 text-amber-400" aria-label="Five star rated">
+                            {Array.from({ length: 5 }).map((_, starIndex) => (
+                              <Star key={starIndex} className="h-3.5 w-3.5 fill-current" />
+                            ))}
+                          </div>
+                          <span className="text-xs font-semibold text-white/75">জনপ্রিয় পণ্য</span>
+                        </div>
+
+                        <p className="mt-2 text-[1.7rem] font-black leading-none text-orange-400 drop-shadow-lg">
+                          🔥 মাত্র {money(item.product.sellingPrice)}
+                        </p>
+
+                        {item.caption && (
+                          <p className="mt-2 line-clamp-2 text-sm leading-5 text-white/85 drop-shadow">{item.caption}</p>
+                        )}
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/30 p-2 text-center text-[10px] font-bold text-white/90 backdrop-blur-md">
+                        <span className="rounded-xl bg-white/5 px-1 py-2">🚚 সারাদেশে ডেলিভারি</span>
+                        <span className="rounded-xl bg-white/5 px-1 py-2">💵 ক্যাশ অন ডেলিভারি</span>
+                        <span className="rounded-xl bg-white/5 px-1 py-2">🔒 নিরাপদ অর্ডার</span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-[1.2fr_1fr] gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openCheckout(item)}
+                          disabled={!inStock}
+                          className="inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3.5 text-base font-black text-white shadow-[0_10px_30px_rgba(234,88,12,0.4)] transition active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-slate-500 disabled:shadow-none"
+                        >
+                          <ShoppingBag className="h-5 w-5" />
+                          {inStock ? "অর্ডার করুন" : "স্টক শেষ"}
+                        </button>
+
+                        <Link
+                          href={`/product/${item.reelId}`}
+                          className="inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-2xl border border-white/35 bg-white/10 px-4 py-3.5 text-center text-base font-black text-white shadow-lg backdrop-blur-md transition active:scale-[0.97]"
+                        >
+                          বিস্তারিত
+                          <ChevronRight className="h-5 w-5" />
+                        </Link>
+                      </div>
+                    </div>
+                  </section>
+                );
+              })}
+
+              {showSwipeHint && (
+                <button
+                  type="button"
+                  onClick={dismissSwipeHint}
+                  className="fixed inset-0 z-40 flex items-center justify-center bg-black/28 text-white backdrop-blur-[1px]"
+                  aria-label="Dismiss swipe instruction"
+                >
+                  <span className="flex flex-col items-center rounded-3xl border border-white/20 bg-black/55 px-7 py-6 text-center shadow-2xl backdrop-blur-xl">
+                    <span className="animate-[bounce_1.15s_ease-in-out_infinite] text-5xl">☝️</span>
+                    <strong className="mt-3 text-xl font-black">⬆️ উপরে সোয়াইপ করুন</strong>
+                    <span className="mt-1 text-sm font-semibold text-white/75">আরও পণ্য দেখতে</span>
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </>

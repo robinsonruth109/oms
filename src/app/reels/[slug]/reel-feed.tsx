@@ -114,6 +114,7 @@ type CreatedOrder = {
   subtotal: string;
   deliveryCharge: string;
   totalAmount: string;
+  metaEventId: string;
 };
 
 type CheckoutResponse = {
@@ -1340,6 +1341,10 @@ function CheckoutModal({
   outsideDhakaDeliveryCharge: string;
   onClose: () => void;
 }) {
+  const checkoutRequestIdRef = useRef(
+    createMetaEventId("checkout")
+  );
+
   const [form, setForm] =
     useState<CheckoutForm>({
       customerName: "",
@@ -1547,7 +1552,6 @@ function CheckoutModal({
     }
 
     setIsSubmitting(true);
-    const purchaseEventId = createMetaEventId("purchase");
 
     try {
       const response = await fetch(
@@ -1581,7 +1585,7 @@ function CheckoutModal({
               form.customerNote.trim(),
             website:
               form.website,
-            eventId: purchaseEventId,
+            checkoutRequestId: checkoutRequestIdRef.current,
             eventSourceUrl: window.location.href,
             fbp: getBrowserCookie("_fbp"),
             fbc: getBrowserCookie("_fbc"),
@@ -1644,12 +1648,12 @@ function CheckoutModal({
             form.quantity,
           order_id:
             result.order
-              .invoiceId ??
-            result.order
               .orderId ??
+            result.order
+              .invoiceId ??
             result.order.id,
         },
-        purchaseEventId
+        result.order.metaEventId
       );
     } catch (error) {
       setGeneralError(

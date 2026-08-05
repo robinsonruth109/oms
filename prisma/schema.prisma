@@ -171,6 +171,14 @@ model Order {
 
   readyToShipAt DateTime @default(now())
 
+  // Public checkout idempotency and Meta Purchase delivery audit.
+  checkoutRequestId   String?   @unique
+  metaPurchaseEventId String?   @unique
+  metaPurchaseSentAt  DateTime?
+  metaPurchaseStatus  String?
+  metaPurchaseError   String?   @db.Text
+  metaPurchaseResponse String?  @db.Text
+
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
   items             OrderItem[]

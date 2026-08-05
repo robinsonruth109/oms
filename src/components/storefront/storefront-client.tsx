@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronRight,
@@ -285,6 +285,7 @@ export default function StorefrontClient({ products, settings, singleProduct = f
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const checkoutRequestIdRef = useRef<string | null>(null);
 
   const openCheckout = (product: StorefrontProduct, initialQty = 1) => {
     const safeQuantity = Math.max(1, Math.min(initialQty, Math.max(1, product.product.quantity)));
@@ -292,6 +293,7 @@ export default function StorefrontClient({ products, settings, singleProduct = f
     setQuantity(safeQuantity);
     setError("");
     setSuccess(null);
+    checkoutRequestIdRef.current = createMetaEventId("checkout");
     const eventId = createMetaEventId("initiate_checkout");
     trackMetaEvent(
       "InitiateCheckout",
@@ -323,7 +325,9 @@ export default function StorefrontClient({ products, settings, singleProduct = f
     if (!/^01[3-9]\d{8}$/.test(phone.replace(/\D/g, ""))) return setError("সঠিক ১১ সংখ্যার মোবাইল নম্বর লিখুন।");
     if (!address.trim()) return setError("সম্পূর্ণ ঠিকানা লিখুন।");
 
-    const eventId = createMetaEventId("purchase");
+    const checkoutRequestId =
+      checkoutRequestIdRef.current ?? createMetaEventId("checkout");
+    checkoutRequestIdRef.current = checkoutRequestId;
     setSubmitting(true);
     try {
       const response = await fetch("/api/reels/orders", {
@@ -339,7 +343,7 @@ export default function StorefrontClient({ products, settings, singleProduct = f
           deliveryArea,
           customerNote: note,
           website,
-          eventId,
+          checkoutRequestId,
           eventSourceUrl: window.location.href,
           fbp: getCookie("_fbp"),
           fbc: getCookie("_fbc"),
@@ -348,7 +352,12 @@ export default function StorefrontClient({ products, settings, singleProduct = f
       const result = (await response.json()) as {
         success: boolean;
         message?: string;
-        order?: { orderId?: string | null; totalAmount?: string };
+        order?: {
+          orderId?: string | null;
+          invoiceId?: string | null;
+          totalAmount?: string;
+          metaEventId?: string;
+        };
       };
       if (!response.ok || !result.success) throw new Error(result.message || "অর্ডার গ্রহণ করা যায়নি।");
       trackMetaEvent(
@@ -359,8 +368,12 @@ export default function StorefrontClient({ products, settings, singleProduct = f
           value: Number(result.order?.totalAmount ?? total),
           currency: "BDT",
           num_items: quantity,
+          order_id:
+            result.order?.orderId ??
+            result.order?.invoiceId ??
+            checkoutRequestId,
         },
-        eventId,
+        result.order?.metaEventId ?? `purchase_${checkoutRequestId}`,
       );
       setSuccess(result.order?.orderId || "SUCCESS");
     } catch (caughtError) {

@@ -24,5 +24,13 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const data = await getStorefrontData();
-  return <StorefrontClient products={data.products} settings={data.settings} />;
+
+  return (
+    <StorefrontClient
+      products={data.products}
+      settings={data.settings}
+      initialNextCursor={data.nextCursor}
+      initialHasMore={data.hasMore}
+    />
+  );
 }

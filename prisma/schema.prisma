@@ -568,6 +568,7 @@ model ReelProduct {
   @@index([status])
   @@index([displayOrder])
   @@index([createdAt])
+  @@index([status, displayOrder, createdAt, id])
 }
 
 model ReelProductMedia {

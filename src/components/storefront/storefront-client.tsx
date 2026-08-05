@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronRight,
@@ -30,6 +30,8 @@ type Props = {
   products: StorefrontProduct[];
   settings: StorefrontSettings;
   singleProduct?: boolean;
+  initialNextCursor?: string | null;
+  initialHasMore?: boolean;
 };
 
 function money(value: string | number) {
@@ -277,7 +279,22 @@ function ProductDetailView({
   );
 }
 
-export default function StorefrontClient({ products, settings, singleProduct = false }: Props) {
+export default function StorefrontClient({
+  products,
+  settings,
+  singleProduct = false,
+  initialNextCursor = null,
+  initialHasMore = false,
+}: Props) {
+  const [feedProducts, setFeedProducts] = useState(products);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const visibleProducts = singleProduct ? products : feedProducts;
+
   const [selected, setSelected] = useState<StorefrontProduct | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [deliveryArea, setDeliveryArea] = useState<DeliveryArea>("INSIDE_DHAKA");
@@ -300,13 +317,114 @@ export default function StorefrontClient({ products, settings, singleProduct = f
   const [loadedMobileVideos, setLoadedMobileVideos] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    setFeedProducts(products);
+    setNextCursor(initialNextCursor);
+    setHasMore(initialHasMore);
+    setLoadMoreError("");
+  }, [products, initialNextCursor, initialHasMore]);
+
+  const loadMoreProducts = useCallback(async () => {
+    if (
+      singleProduct ||
+      !hasMore ||
+      !nextCursor ||
+      loadingMoreRef.current
+    ) {
+      return;
+    }
+
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError("");
+
+    try {
+      const response = await fetch(
+        `/api/storefront/reels?cursor=${encodeURIComponent(nextCursor)}&limit=12`,
+        { cache: "no-store" }
+      );
+      const result = (await response.json()) as {
+        success: boolean;
+        message?: string;
+        products?: StorefrontProduct[];
+        nextCursor?: string | null;
+        hasMore?: boolean;
+      };
+
+      if (!response.ok || !result.success || !result.products) {
+        throw new Error(
+          result.message || "আরও পণ্য লোড করা যায়নি।"
+        );
+      }
+
+      setFeedProducts((current) => {
+        const knownIds = new Set(current.map((item) => item.reelId));
+        const freshItems = result.products!.filter(
+          (item) => !knownIds.has(item.reelId)
+        );
+        return [...current, ...freshItems];
+      });
+      setNextCursor(result.nextCursor ?? null);
+      setHasMore(Boolean(result.hasMore));
+    } catch (caughtError) {
+      setLoadMoreError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "আরও পণ্য লোড করা যায়নি।"
+      );
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [hasMore, nextCursor, singleProduct]);
+
+  useEffect(() => {
+    if (singleProduct || !hasMore) {
+      return;
+    }
+
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMoreProducts();
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMoreProducts, singleProduct]);
+
+  useEffect(() => {
+    if (
+      !singleProduct &&
+      hasMore &&
+      visibleProducts.length > 0 &&
+      activeMobileIndex >= visibleProducts.length - 4
+    ) {
+      void loadMoreProducts();
+    }
+  }, [
+    activeMobileIndex,
+    hasMore,
+    loadMoreProducts,
+    singleProduct,
+    visibleProducts.length,
+  ]);
+
+  useEffect(() => {
     const savedSoundPreference = window.localStorage.getItem("storefront-mobile-muted");
     if (savedSoundPreference === "false") {
       window.requestAnimationFrame(() => setMobileMuted(false));
     }
 
     const hasSeenSwipeHint = window.localStorage.getItem("storefront-mobile-swipe-hint-v2");
-    if (!hasSeenSwipeHint && products.length > 1) {
+    if (!hasSeenSwipeHint && visibleProducts.length > 1) {
       window.requestAnimationFrame(() => setShowSwipeHint(true));
       const timer = window.setTimeout(() => {
         setShowSwipeHint(false);
@@ -317,7 +435,7 @@ export default function StorefrontClient({ products, settings, singleProduct = f
     }
 
     return undefined;
-  }, [products.length]);
+  }, [visibleProducts.length]);
 
   useEffect(() => {
     const feed = mobileFeedRef.current;
@@ -339,11 +457,11 @@ export default function StorefrontClient({ products, settings, singleProduct = f
 
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
-  }, [products.length]);
+  }, [visibleProducts.length]);
 
   useEffect(() => {
     mobileVideoRefs.current.forEach((video, reelId) => {
-      const index = products.findIndex((product) => product.reelId === reelId);
+      const index = visibleProducts.findIndex((product) => product.reelId === reelId);
       video.muted = mobileMuted;
 
       if (index === activeMobileIndex) {
@@ -352,7 +470,7 @@ export default function StorefrontClient({ products, settings, singleProduct = f
         video.pause();
       }
     });
-  }, [activeMobileIndex, mobileMuted, products]);
+  }, [activeMobileIndex, mobileMuted, visibleProducts]);
 
   const dismissSwipeHint = () => {
     if (!showSwipeHint) return;
@@ -510,7 +628,7 @@ export default function StorefrontClient({ products, settings, singleProduct = f
       </div>
 
       <div className="grid justify-center gap-8 [grid-template-columns:repeat(auto-fit,minmax(300px,370px))]">
-        {products.map((item) => {
+        {visibleProducts.map((item) => {
           const image = getImage(item);
           const inStock = item.product.quantity > 0;
 
@@ -521,19 +639,12 @@ export default function StorefrontClient({ products, settings, singleProduct = f
             >
               <Link href={`/product/${item.reelId}`} className="relative block overflow-hidden bg-slate-100">
                 <div className="aspect-[4/4.35] overflow-hidden">
-                  {item.videoUrl ? (
-                    <video
-                      className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-                      src={item.videoUrl}
-                      poster={image ?? undefined}
-                      muted
-                      loop
-                      playsInline
-                    />
-                  ) : image ? (
+                  {image ? (
                     <img
                       src={image}
                       alt={item.title}
+                      loading="lazy"
+                      decoding="async"
                       className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                     />
                   ) : (
@@ -597,6 +708,47 @@ export default function StorefrontClient({ products, settings, singleProduct = f
           );
         })}
       </div>
+
+      {!singleProduct && (
+        <div
+          ref={loadMoreSentinelRef}
+          className="mt-10 flex min-h-20 flex-col items-center justify-center gap-3 text-center"
+        >
+          {loadingMore ? (
+            <>
+              <Loader2 className="h-6 w-6 animate-spin text-orange-600" />
+              <p className="text-sm font-semibold text-slate-500">
+                আরও পণ্য লোড হচ্ছে...
+              </p>
+            </>
+          ) : loadMoreError ? (
+            <>
+              <p className="text-sm font-semibold text-red-600">
+                {loadMoreError}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadMoreProducts()}
+                className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white"
+              >
+                আবার চেষ্টা করুন
+              </button>
+            </>
+          ) : hasMore ? (
+            <button
+              type="button"
+              onClick={() => void loadMoreProducts()}
+              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm"
+            >
+              আরও পণ্য দেখুন
+            </button>
+          ) : visibleProducts.length > 0 ? (
+            <p className="text-sm font-semibold text-slate-400">
+              সব পণ্য দেখানো হয়েছে
+            </p>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 
@@ -622,10 +774,13 @@ export default function StorefrontClient({ products, settings, singleProduct = f
               onWheel={dismissSwipeHint}
               className="relative h-[100svh] snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
-              {products.map((item, index) => {
+              {visibleProducts.map((item, index) => {
                 const inStock = item.product.quantity > 0;
                 const isLoaded = loadedMobileVideos.has(item.reelId);
                 const isActive = index === activeMobileIndex;
+                const shouldMountVideo =
+                  Math.abs(index - activeMobileIndex) <= 2;
+                const fallbackImage = getImage(item);
 
                 return (
                   <section
@@ -641,36 +796,56 @@ export default function StorefrontClient({ products, settings, singleProduct = f
                       <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950" />
                     )}
 
-                    <video
-                      ref={(node) => {
-                        if (node) {
-                          mobileVideoRefs.current.set(item.reelId, node);
-                        } else {
-                          mobileVideoRefs.current.delete(item.reelId);
+                    {shouldMountVideo ? (
+                      <video
+                        ref={(node) => {
+                          if (node) {
+                            mobileVideoRefs.current.set(item.reelId, node);
+                          } else {
+                            mobileVideoRefs.current.delete(item.reelId);
+                          }
+                        }}
+                        src={item.videoUrl}
+                        poster={fallbackImage ?? undefined}
+                        preload={
+                          isActive
+                            ? "auto"
+                            : index === activeMobileIndex + 1
+                              ? "metadata"
+                              : "none"
                         }
-                      }}
-                      src={item.videoUrl}
-                      poster={getImage(item) ?? undefined}
-                      preload={isActive ? "auto" : index === activeMobileIndex + 1 ? "metadata" : "none"}
-                      className={`h-full w-full object-cover transition-opacity duration-500 ${isLoaded ? "opacity-100" : "opacity-0"}`}
-                      muted={mobileMuted}
-                      loop
-                      autoPlay={isActive}
-                      playsInline
-                      onLoadedData={() =>
-                        setLoadedMobileVideos((current) => {
-                          if (current.has(item.reelId)) return current;
-                          const next = new Set(current);
-                          next.add(item.reelId);
-                          return next;
-                        })
-                      }
-                    />
+                        className={`h-full w-full object-cover transition-opacity duration-500 ${
+                          isLoaded ? "opacity-100" : "opacity-0"
+                        }`}
+                        muted={mobileMuted}
+                        loop
+                        autoPlay={isActive}
+                        playsInline
+                        onLoadedData={() =>
+                          setLoadedMobileVideos((current) => {
+                            if (current.has(item.reelId)) return current;
+                            const next = new Set(current);
+                            next.add(item.reelId);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : fallbackImage ? (
+                      <img
+                        src={fallbackImage}
+                        alt={item.title}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-slate-950" />
+                    )}
 
                     <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.03)_34%,rgba(0,0,0,0.08)_48%,rgba(0,0,0,0.94)_100%)]" />
 
                     <div className="absolute left-1/2 top-[max(0.9rem,env(safe-area-inset-top))] z-20 -translate-x-1/2 rounded-full border border-white/15 bg-black/35 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-md">
-                      {index + 1} / {products.length}
+                      {index + 1} / {visibleProducts.length}{hasMore ? "+" : ""}
                     </div>
 
                     <div className="absolute right-3 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-3">
@@ -761,6 +936,25 @@ export default function StorefrontClient({ products, settings, singleProduct = f
                   </section>
                 );
               })}
+
+              {(hasMore || loadingMore || loadMoreError) && (
+                <section className="flex h-28 snap-start items-center justify-center bg-black px-6 text-center text-white">
+                  {loadingMore ? (
+                    <div className="flex items-center gap-3 text-sm font-bold text-white/80">
+                      <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+                      আরও পণ্য লোড হচ্ছে...
+                    </div>
+                  ) : loadMoreError ? (
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreProducts()}
+                      className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black backdrop-blur"
+                    >
+                      আবার চেষ্টা করুন
+                    </button>
+                  ) : null}
+                </section>
+              )}
 
               {showSwipeHint && (
                 <button

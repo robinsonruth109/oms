@@ -6,12 +6,30 @@ export type StorefrontProduct = {
   descriptionHtml: string | null;
   videoUrl: string;
   thumbnailUrl: string | null;
-  product: { id: string; name: string; sku: string; quantity: number; sellingPrice: string };
-  gallery: Array<{ id: string; mediaType: string; url: string; altText: string | null; isPrimary: boolean }>;
+  product: {
+    id: string;
+    name: string;
+    sku: string;
+    quantity: number;
+    sellingPrice: string;
+  };
+  gallery: Array<{
+    id: string;
+    mediaType: string;
+    url: string;
+    altText: string | null;
+    isPrimary: boolean;
+  }>;
 };
 
 export type StorefrontSettings = {
   insideDhakaDeliveryCharge: string;
   outsideDhakaDeliveryCharge: string;
   metaPixelId: string | null;
+};
+
+export type StorefrontPage = {
+  products: StorefrontProduct[];
+  nextCursor: string | null;
+  hasMore: boolean;
 };

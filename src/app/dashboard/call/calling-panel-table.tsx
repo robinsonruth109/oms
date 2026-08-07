@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { directCancelCallingOrder, saveCallingOrder } from "./actions";
+import CourierRiskPanel from "./courier-risk-panel";
 
 type CallingOrderItem = {
   id: string;
@@ -831,13 +832,17 @@ export default function CallingPanelTable({
                 </div>
               ) : null}
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm text-slate-500">
-                  <p>Subtotal: {formatMoney(currentSubtotal)}</p>
-                  <p>Advance: {formatMoney(order.advance)}</p>
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+                <div className="space-y-3">
+                  <div className="text-sm text-slate-500">
+                    <p>Subtotal: {formatMoney(currentSubtotal)}</p>
+                    <p>Advance: {formatMoney(order.advance)}</p>
+                  </div>
+
+                  <CourierRiskPanel phone={row.phone} />
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 xl:justify-end">
                   <Button
                     type="button"
                     variant="outline"

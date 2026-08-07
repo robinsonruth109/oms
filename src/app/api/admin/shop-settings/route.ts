@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { createHash, randomUUID } from "node:crypto";
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/shop-settings-crypto";
+import { withDatabaseRetry } from "@/lib/database-retry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,21 +111,28 @@ function serialize(setting: {
   };
 }
 
-async function ensureSetting() {
+async function findSetting() {
   const { prisma } = await import("@/lib/prisma");
-  return prisma.shopSetting.upsert({
-    where: { id: SHOP_SETTING_ID },
-    update: {},
-    create: {
-      id: SHOP_SETTING_ID,
-      insideDhakaDeliveryCharge: 70,
-      outsideDhakaDeliveryCharge: 150,
-      metaPixelId: null,
-      metaPixelEnabled: false,
-      metaConversionsApiEnabled: false,
-      metaTestEventCode: null,
-    },
-  });
+  return withDatabaseRetry(() =>
+    prisma.shopSetting.findUnique({ where: { id: SHOP_SETTING_ID } })
+  );
+}
+
+function serializeDefaults() {
+  const now = new Date().toISOString();
+  return {
+    id: SHOP_SETTING_ID,
+    insideDhakaDeliveryCharge: "70.00",
+    outsideDhakaDeliveryCharge: "150.00",
+    metaPixelId: null,
+    metaPixelEnabled: false,
+    metaConversionsApiEnabled: false,
+    metaTestEventCode: null,
+    metaConversionsAccessTokenConfigured: false,
+    metaConversionsAccessTokenMasked: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 export async function GET() {
@@ -132,7 +140,11 @@ export async function GET() {
     if (!isAdminRole(await getCurrentUserRole())) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
-    return NextResponse.json({ success: true, setting: serialize(await ensureSetting()) });
+    const setting = await findSetting();
+    return NextResponse.json({
+      success: true,
+      setting: setting ? serialize(setting) : serializeDefaults(),
+    });
   } catch (error) {
     console.error("Failed to load shop settings:", error);
     return NextResponse.json({ success: false, message: "Shop settings লোড করা যায়নি।" }, { status: 500 });
@@ -171,8 +183,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, field: "metaPixelId", message: "Meta Pixel অথবা CAPI চালু করতে Pixel ID লিখুন।" }, { status: 400 });
     }
 
-    const existing = await ensureSetting();
-    const alreadyHasToken = tokenConfigured(existing);
+    const existing = await findSetting();
+    const alreadyHasToken = existing ? tokenConfigured(existing) : false;
     if (capiEnabled && !newToken && !alreadyHasToken && !process.env.META_CONVERSIONS_ACCESS_TOKEN) {
       return NextResponse.json({ success: false, field: "metaConversionsAccessToken", message: "Conversions API চালু করতে Access Token লিখুন।" }, { status: 400 });
     }
@@ -195,18 +207,30 @@ export async function PUT(request: NextRequest) {
     }
 
     const { prisma } = await import("@/lib/prisma");
-    const setting = await prisma.shopSetting.update({
-      where: { id: SHOP_SETTING_ID },
-      data: {
-        insideDhakaDeliveryCharge: inside.toFixed(2),
-        outsideDhakaDeliveryCharge: outside.toFixed(2),
-        metaPixelId: pixelId,
-        metaPixelEnabled: pixelEnabled,
-        metaConversionsApiEnabled: capiEnabled,
-        metaTestEventCode: testEventCode,
-        ...tokenUpdate,
-      },
-    });
+    const setting = await withDatabaseRetry(() =>
+      prisma.shopSetting.upsert({
+        where: { id: SHOP_SETTING_ID },
+        create: {
+          id: SHOP_SETTING_ID,
+          insideDhakaDeliveryCharge: inside.toFixed(2),
+          outsideDhakaDeliveryCharge: outside.toFixed(2),
+          metaPixelId: pixelId,
+          metaPixelEnabled: pixelEnabled,
+          metaConversionsApiEnabled: capiEnabled,
+          metaTestEventCode: testEventCode,
+          ...tokenUpdate,
+        },
+        update: {
+          insideDhakaDeliveryCharge: inside.toFixed(2),
+          outsideDhakaDeliveryCharge: outside.toFixed(2),
+          metaPixelId: pixelId,
+          metaPixelEnabled: pixelEnabled,
+          metaConversionsApiEnabled: capiEnabled,
+          metaTestEventCode: testEventCode,
+          ...tokenUpdate,
+        },
+      })
+    );
 
     return NextResponse.json({ success: true, message: "Shop settings সফলভাবে সংরক্ষণ করা হয়েছে।", setting: serialize(setting) });
   } catch (error) {
@@ -229,7 +253,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
     }
 
-    const setting = await ensureSetting();
+    const setting = await findSetting();
+    if (!setting) {
+      return NextResponse.json(
+        { success: false, message: "Shop settings আগে save করুন।" },
+        { status: 400 }
+      );
+    }
+
     const pixelId = setting.metaPixelId;
     let accessToken = process.env.META_CONVERSIONS_ACCESS_TOKEN?.trim() || "";
 

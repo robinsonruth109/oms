@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
+import CourierIntegrations from "./courier-integrations";
+
 type ShopSetting = {
   id: string;
   insideDhakaDeliveryCharge: string;
@@ -416,6 +418,8 @@ export default function DashboardShopSettingsPage() {
               </button>
             </div>
           </section>
+
+          <CourierIntegrations />
 
           <div className="sticky bottom-4 z-10 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

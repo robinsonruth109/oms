@@ -622,3 +622,65 @@ model ShopSetting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+enum CourierProvider {
+  PATHAO
+  STEADFAST
+  REDX
+}
+
+enum CourierRiskLevel {
+  NEW_CUSTOMER
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model CourierCredential {
+  id       String          @id @default(uuid())
+  provider CourierProvider @unique
+  enabled  Boolean         @default(false)
+
+  usernameEncrypted String? @db.Text
+  usernameIv        String?
+  usernameTag       String?
+
+  passwordEncrypted String? @db.Text
+  passwordIv        String?
+  passwordTag       String?
+
+  lastTestedAt    DateTime?
+  lastTestSuccess Boolean?
+  lastTestMessage String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([lastTestedAt])
+}
+
+model CustomerCourierScore {
+  id    String @id @default(cuid())
+  phone String @unique
+
+  totalOrders Int @default(0)
+  delivered   Int @default(0)
+  returned    Int @default(0)
+
+  successRate Decimal          @default(0) @db.Decimal(5, 2)
+  riskLevel  CourierRiskLevel @default(NEW_CUSTOMER)
+
+  courierData Json
+  errors      Json?
+
+  checkedAt DateTime @default(now())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@index([riskLevel])
+  @@index([checkedAt])
+}
+

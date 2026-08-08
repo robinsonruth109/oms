@@ -23,6 +23,7 @@
     "cloudinary": "^2.10.0",
     "clsx": "^2.1.1",
     "csv-parse": "^6.2.1",
+    "firebase-admin": "^14.2.0",
     "lucide-react": "^1.8.0",
     "mysql2": "^3.11.3",
     "next": "16.2.3",

@@ -3,6 +3,8 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
+import { publishNewProductNotification } from "@/lib/mobile-product-notifications";
+
 export type ReelProductActionState = {
   success: boolean;
   message: string;
@@ -307,6 +309,28 @@ function refreshReelProductPages() {
   revalidatePath("/seller/reels");
 }
 
+async function safelyPublishNewProductNotification(
+  reelProductId: string
+) {
+  try {
+    return await publishNewProductNotification(reelProductId);
+  } catch (error) {
+    console.error(
+      `Unexpected mobile notification failure for reel product ${reelProductId}:`,
+      error
+    );
+
+    return {
+      ok: false as const,
+      status: "FAILED" as const,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unexpected mobile notification failure.",
+    };
+  }
+}
+
 async function safelyDeleteCloudinaryAsset(input: {
   publicId: string | null | undefined;
   resourceType: "image" | "video";
@@ -494,59 +518,76 @@ export async function createReelProduct(
   }
 
   try {
-    await prisma.$transaction(async (transaction) => {
-      const aggregate = await transaction.reelProduct.aggregate({
-        _max: {
-          displayOrder: true,
-        },
-      });
-
-      const nextDisplayOrder =
-        (aggregate._max.displayOrder ?? -1) + 1;
-
-      await transaction.reelProduct.create({
-        data: {
-          productId,
-          categoryId,
-          title: validation.product.name,
-          caption,
-          descriptionHtml,
-          displayOrder: nextDisplayOrder,
-          status,
-          videoUrl: media.videoUrl,
-          videoPublicId: media.videoPublicId,
-          thumbnailUrl: media.thumbnailUrl,
-          thumbnailPublicId: media.thumbnailPublicId,
-          videoDuration: media.videoDuration,
-          videoWidth: media.videoWidth,
-          videoHeight: media.videoHeight,
-          videoFormat: media.videoFormat,
-          videoBytes: media.videoBytes,
-          gallery: {
-            create: galleryResult.gallery.map((item) => ({
-              mediaType: item.mediaType,
-              url: item.url,
-              publicId: item.publicId,
-              resourceType: item.resourceType,
-              format: item.format,
-              width: item.width,
-              height: item.height,
-              duration: item.duration,
-              bytes: item.bytes,
-              altText: item.altText,
-              displayOrder: item.displayOrder,
-              isPrimary: item.displayOrder === 0,
-            })),
+    const createdReelProduct = await prisma.$transaction(
+      async (transaction) => {
+        const aggregate = await transaction.reelProduct.aggregate({
+          _max: {
+            displayOrder: true,
           },
-        },
-      });
-    });
+        });
+
+        const nextDisplayOrder =
+          (aggregate._max.displayOrder ?? -1) + 1;
+
+        return transaction.reelProduct.create({
+          data: {
+            productId,
+            categoryId,
+            title: validation.product.name,
+            caption,
+            descriptionHtml,
+            displayOrder: nextDisplayOrder,
+            status,
+            videoUrl: media.videoUrl,
+            videoPublicId: media.videoPublicId,
+            thumbnailUrl: media.thumbnailUrl,
+            thumbnailPublicId: media.thumbnailPublicId,
+            videoDuration: media.videoDuration,
+            videoWidth: media.videoWidth,
+            videoHeight: media.videoHeight,
+            videoFormat: media.videoFormat,
+            videoBytes: media.videoBytes,
+            gallery: {
+              create: galleryResult.gallery.map((item) => ({
+                mediaType: item.mediaType,
+                url: item.url,
+                publicId: item.publicId,
+                resourceType: item.resourceType,
+                format: item.format,
+                width: item.width,
+                height: item.height,
+                duration: item.duration,
+                bytes: item.bytes,
+                altText: item.altText,
+                displayOrder: item.displayOrder,
+                isPrimary: item.displayOrder === 0,
+              })),
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+      }
+    );
+
+    let notificationWarning = "";
+
+    if (status) {
+      const notificationResult =
+        await safelyPublishNewProductNotification(createdReelProduct.id);
+
+      if (!notificationResult.ok) {
+        notificationWarning =
+          " Product was saved, but its mobile push notification could not be sent.";
+      }
+    }
 
     refreshReelProductPages();
 
     return {
       success: true,
-      message: "Reel product created successfully.",
+      message: `Reel product created successfully.${notificationWarning}`,
     };
   } catch (error) {
     console.error("Failed to create reel product:", error);
@@ -620,6 +661,7 @@ export async function updateReelProduct(
       },
       select: {
         id: true,
+        status: true,
         videoPublicId: true,
         thumbnailPublicId: true,
         gallery: {
@@ -809,11 +851,22 @@ export async function updateReelProduct(
 
   await deleteCloudinaryAssets(removedGalleryAssets);
 
+  let notificationWarning = "";
+
+  if (status && !existingReelProduct.status) {
+    const notificationResult = await safelyPublishNewProductNotification(id);
+
+    if (!notificationResult.ok) {
+      notificationWarning =
+        " Product was activated, but its mobile push notification could not be sent.";
+    }
+  }
+
   refreshReelProductPages();
 
   return {
     success: true,
-    message: "Reel product updated successfully.",
+    message: `Reel product updated successfully.${notificationWarning}`,
   };
 }
 
@@ -845,6 +898,7 @@ export async function toggleReelProduct(
     },
     select: {
       id: true,
+      status: true,
     },
   });
 
@@ -865,12 +919,24 @@ export async function toggleReelProduct(
       },
     });
 
+    let notificationWarning = "";
+
+    if (status && !reelProduct.status) {
+      const notificationResult =
+        await safelyPublishNewProductNotification(reelProductId);
+
+      if (!notificationResult.ok) {
+        notificationWarning =
+          " Product was activated, but its mobile push notification could not be sent.";
+      }
+    }
+
     refreshReelProductPages();
 
     return {
       success: true,
       message: status
-        ? "Reel product activated."
+        ? `Reel product activated.${notificationWarning}`
         : "Reel product deactivated.",
     };
   } catch (error) {

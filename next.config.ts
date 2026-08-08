@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     "@prisma/client",
     "@prisma/adapter-mariadb",
+    "firebase-admin",
     "mariadb",
   ],
 };

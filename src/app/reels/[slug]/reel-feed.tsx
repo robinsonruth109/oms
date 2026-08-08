@@ -168,7 +168,7 @@ function formatMoney(
 
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
-    currency: "BDT",
+    currency: META_CURRENCY,
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -204,6 +204,38 @@ function getPrimaryProductImage(
   );
 }
 
+const META_CURRENCY = "BDT" as const;
+
+function normalizeMetaEventParameters(
+  parameters?: Record<string, unknown>
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...(parameters ?? {}) };
+
+  if ("currency" in normalized) {
+    const currency = String(normalized.currency ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (/^[A-Z]{3}$/.test(currency)) {
+      normalized.currency = currency;
+    } else {
+      delete normalized.currency;
+    }
+  }
+
+  if ("value" in normalized) {
+    const value = Number(normalized.value);
+
+    if (Number.isFinite(value) && value >= 0) {
+      normalized.value = Math.round(value * 100) / 100;
+    } else {
+      delete normalized.value;
+    }
+  }
+
+  return normalized;
+}
+
 function trackMetaEvent(
   eventName: string,
   parameters?: Record<string, unknown>,
@@ -213,12 +245,14 @@ function trackMetaEvent(
     return;
   }
 
+  const normalizedParameters = normalizeMetaEventParameters(parameters);
+
   if (eventId) {
-    window.fbq?.("track", eventName, parameters ?? {}, { eventID: eventId });
+    window.fbq?.("track", eventName, normalizedParameters, { eventID: eventId });
     return;
   }
 
-  window.fbq?.("track", eventName, parameters);
+  window.fbq?.("track", eventName, normalizedParameters);
 }
 
 function createMetaEventId(prefix: string): string {
@@ -644,7 +678,7 @@ export default function ReelFeed({
         content_name:
           reel.product.name,
         content_type: "product",
-        currency: "BDT",
+        currency: META_CURRENCY,
         value: parseMoney(
           reel.product.sellingPrice
         ),
@@ -679,7 +713,7 @@ export default function ReelFeed({
         content_name:
           reel.product.name,
         content_type: "product",
-        currency: "BDT",
+        currency: META_CURRENCY,
         value: parseMoney(
           reel.product.sellingPrice
         ),
@@ -996,7 +1030,19 @@ export default function ReelFeed({
           >
             <ChevronRight className="h-5 w-5" />
           </button>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              window.location.assign("/");
+            }}
+            className="absolute right-3 top-[62%] z-30 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/20 bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-black/30 backdrop-blur transition hover:bg-emerald-600 active:scale-95"
+            aria-label="View more products on home page"
+          >
+            View More
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        )}
 
         <div className="absolute right-3 top-4 z-40 rounded-full bg-black/45 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
           {activeIndex + 1}/
@@ -1639,7 +1685,7 @@ function CheckoutModal({
             reel.product.name,
           content_type:
             "product",
-          currency: "BDT",
+          currency: META_CURRENCY,
           value: Number(
             result.order
               .totalAmount
@@ -1736,7 +1782,9 @@ function CheckoutModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              window.location.assign("/");
+            }}
             className="mt-6 min-h-13 w-full rounded-xl bg-emerald-600 px-4 text-base font-bold text-white transition hover:bg-emerald-700"
           >
             সম্পন্ন

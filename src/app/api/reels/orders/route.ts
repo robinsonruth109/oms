@@ -778,6 +778,7 @@ export async function POST(request: Request) {
           fbp,
           fbc,
           value: Number(result.totalAmount),
+          currency: "BDT",
           productId: result.meta.productId,
           productName: result.meta.productName,
           quantity: result.meta.quantity,

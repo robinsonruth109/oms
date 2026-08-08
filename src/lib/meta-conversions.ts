@@ -9,6 +9,19 @@ function normalizePhone(phone: string) {
   return digits.startsWith("880") ? digits : `88${digits}`;
 }
 
+function normalizeCurrency(currency?: string) {
+  const normalized = (currency ?? "BDT").trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(normalized) ? normalized : "BDT";
+}
+
+function normalizeMoney(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Meta Purchase value must be a finite, non-negative number.");
+  }
+
+  return Math.round(value * 100) / 100;
+}
+
 export type MetaPurchaseInput = {
   pixelId: string;
   accessToken: string;
@@ -30,6 +43,9 @@ export type MetaPurchaseInput = {
 };
 
 export async function sendMetaPurchase(input: MetaPurchaseInput) {
+  const value = normalizeMoney(input.value);
+  const currency = normalizeCurrency(input.currency);
+  const quantity = Math.max(1, Math.trunc(input.quantity));
   const nameParts = input.customerName.trim().split(/\s+/);
   const userData: Record<string, unknown> = {
     ph: [sha256(normalizePhone(input.phone))],
@@ -50,11 +66,11 @@ export async function sendMetaPurchase(input: MetaPurchaseInput) {
       action_source: "website",
       user_data: userData,
       custom_data: {
-        value: input.value,
-        currency: input.currency ?? "BDT",
+        value,
+        currency,
         content_type: "product",
         content_ids: [input.productId],
-        contents: [{ id: input.productId, quantity: input.quantity, item_price: input.value / input.quantity }],
+        contents: [{ id: input.productId, quantity, item_price: Math.round((value / quantity) * 100) / 100 }],
         content_name: input.productName,
         order_id: input.orderId,
       },

@@ -23,17 +23,51 @@ export function createMetaEventId(prefix: string) {
   return `${prefix}_${Date.now()}_${random}`;
 }
 
+function normalizeMetaEventParameters(
+  parameters?: Record<string, unknown>
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...(parameters ?? {}) };
+
+  if ("currency" in normalized) {
+    const currency = String(normalized.currency ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (/^[A-Z]{3}$/.test(currency)) {
+      normalized.currency = currency;
+    } else {
+      delete normalized.currency;
+    }
+  }
+
+  if ("value" in normalized) {
+    const value = Number(normalized.value);
+
+    if (Number.isFinite(value) && value >= 0) {
+      normalized.value = Math.round(value * 100) / 100;
+    } else {
+      delete normalized.value;
+    }
+  }
+
+  return normalized;
+}
+
 export function trackMetaEvent(
   eventName: string,
   parameters?: Record<string, unknown>,
   eventId?: string
 ) {
   if (typeof window === "undefined" || !window.fbq) return;
+
+  const normalizedParameters = normalizeMetaEventParameters(parameters);
+
   if (eventId) {
-    window.fbq("track", eventName, parameters ?? {}, { eventID: eventId });
+    window.fbq("track", eventName, normalizedParameters, { eventID: eventId });
     return;
   }
-  window.fbq("track", eventName, parameters ?? {});
+
+  window.fbq("track", eventName, normalizedParameters);
 }
 
 export function MetaPixel({ pixelId }: { pixelId: string | null }) {

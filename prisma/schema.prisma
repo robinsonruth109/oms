@@ -459,6 +459,16 @@ enum ReelProductMediaType {
   VIDEO
 }
 
+enum MobileNotificationType {
+  NEW_PRODUCT
+}
+
+enum MobileNotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model Attendance {
   id String @id @default(cuid())
 
@@ -560,7 +570,8 @@ model ReelProduct {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  gallery ReelProductMedia[]
+  gallery             ReelProductMedia[]
+  mobileNotifications MobileNotification[]
 
   @@unique([productId, categoryId])
   @@index([productId])
@@ -569,6 +580,38 @@ model ReelProduct {
   @@index([displayOrder])
   @@index([createdAt])
   @@index([status, displayOrder, createdAt, id])
+}
+
+model MobileNotification {
+  id String @id @default(uuid())
+
+  type   MobileNotificationType
+  status MobileNotificationStatus @default(PENDING)
+
+  reelProductId String
+  reelProduct   ReelProduct @relation(fields: [reelProductId], references: [id], onDelete: Cascade)
+
+  title    String
+  body     String  @db.Text
+  imageUrl String? @db.Text
+  deeplink String  @db.Text
+
+  topic String @default("new-products")
+
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime?
+  sentAt        DateTime?
+
+  providerMessageId String?
+  errorMessage      String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, reelProductId])
+  @@index([reelProductId])
+  @@index([status, createdAt])
+  @@index([sentAt])
 }
 
 model ReelProductMedia {

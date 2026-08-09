@@ -1,17 +1,20 @@
-import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 
-import { authOptions } from "@/lib/auth";
-import {
-  getFirebaseAdminApp,
-  verifyFirebaseAdminCredentials,
-} from "@/lib/firebase-admin";
-import { getFirebaseConfigurationStatus } from "@/lib/firebase-server-config";
-
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+async function getAdminSession() {
+  const [{ getServerSession }, { authOptions }] = await Promise.all([
+    import("next-auth"),
+    import("@/lib/auth"),
+  ]);
+
+  return getServerSession(authOptions);
+}
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getAdminSession();
 
   if (session?.user?.role !== "ADMIN") {
     return NextResponse.json(
@@ -22,6 +25,17 @@ export async function GET(request: NextRequest) {
       { status: 401 }
     );
   }
+
+  const [
+    {
+      getFirebaseAdminApp,
+      verifyFirebaseAdminCredentials,
+    },
+    { getFirebaseConfigurationStatus },
+  ] = await Promise.all([
+    import("@/lib/firebase-admin"),
+    import("@/lib/firebase-server-config"),
+  ]);
 
   const status = getFirebaseConfigurationStatus();
 

@@ -87,24 +87,33 @@ export async function sendMobileTopicPush(
     throw new Error("Push deeplink is required.");
   }
 
+  /*
+   * IMPORTANT:
+   * Do not add a top-level `notification` payload here.
+   *
+   * Android background notification payloads are displayed directly by FCM
+   * and bypass FirebaseMessagingService.onMessageReceived(). Gloss & Glows
+   * needs onMessageReceived() to enforce the customer's local notification
+   * preference before displaying anything.
+   *
+   * Android therefore receives a high-priority DATA-ONLY message.
+   *
+   * Apple can still receive a visible alert later through the APNs-specific
+   * aps.alert payload without turning the Android message into a notification
+   * payload.
+   */
   const message: Message = {
     topic,
-    notification: {
-      title,
-      body,
-      ...(imageUrl ? { imageUrl } : {}),
-    },
     data: {
       ...normaliseData(input.data),
+      title,
+      body,
       deeplink,
       url: deeplink,
+      ...(imageUrl ? { imageUrl } : {}),
     },
     android: {
       priority: "high",
-      notification: {
-        channelId: NEW_PRODUCTS_ANDROID_CHANNEL_ID,
-        sound: "default",
-      },
     },
     apns: {
       headers: {
@@ -112,9 +121,20 @@ export async function sendMobileTopicPush(
       },
       payload: {
         aps: {
+          alert: {
+            title,
+            body,
+          },
           sound: "default",
         },
       },
+      ...(imageUrl
+        ? {
+            fcmOptions: {
+              imageUrl,
+            },
+          }
+        : {}),
     },
   };
 

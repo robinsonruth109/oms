@@ -5,7 +5,7 @@
     ],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.glossandglows.app",
+      "package_name": "com.trendydealbd.glossandglows",
       "sha256_cert_fingerprints": [
         "53:4A:E3:31:73:92:BA:30:61:93:1B:03:73:C1:B0:BD:9F:3F:81:9B:A1:D2:87:52:E0:EA:E9:B0:48:7D:39:6C",
         "D0:3C:E3:89:4C:BF:A5:CB:F7:7B:37:A6:49:3B:26:F8:CF:C5:9C:D0:83:9B:06:06:07:E4:A6:B8:F2:A3:E2:F2"

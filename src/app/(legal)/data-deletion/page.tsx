@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 
 import { siteConfig } from "@/lib/site-config";
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LAST_UPDATED = "August 8, 2026";
+const LAST_UPDATED = "August 9, 2026";
 
 function PolicySection({
   title,
@@ -109,9 +109,11 @@ export default function DataDeletionPage() {
         </p>
 
         <p>
-          We are implementing and maintaining technical processes
-          intended to support this retention period across the Gloss &
-          Glows commerce system.
+          We maintain administrative and technical controls intended to
+          support this retention period across the Gloss & Glows
+          commerce system. Eligible records are periodically reviewed
+          and anonymized from the OMS by an authorized administrator,
+          rather than by an unattended automatic deletion job.
         </p>
 
         <p>
@@ -388,8 +390,8 @@ export default function DataDeletionPage() {
         </p>
 
         <p>
-          The latest version will be published here and the “Last
-          updated” date will be revised when appropriate.
+          The latest version will be published here and the â€œLast
+          updatedâ€ date will be revised when appropriate.
         </p>
       </PolicySection>
 

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 
 import { siteConfig } from "@/lib/site-config";
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LAST_UPDATED = "August 8, 2026";
+const LAST_UPDATED = "August 9, 2026";
 
 function PolicySection({
   title,
@@ -373,11 +373,13 @@ export default function PrivacyPolicyPage() {
 
       <PolicySection title="10. Data Retention">
         <p>
-          Gloss & Glows is designed to automatically delete or
-          anonymize customer and order-related personal information
-          after approximately three months, or within approximately
-          90 days, in accordance with our operational retention
-          process.
+          Gloss & Glows uses an administrative retention process designed
+          to delete or anonymize eligible customer and order-related
+          personal information after approximately three months, or
+          within approximately 90 days. An authorized administrator
+          periodically performs this cleanup from the OMS after
+          reviewing and, where appropriate, exporting the affected
+          records.
         </p>
 
         <p>
@@ -403,8 +405,8 @@ export default function PrivacyPolicyPage() {
 
         <p>
           Customer and order-related personal information is also
-          subject to our automatic approximately three-month
-          retention process described above.
+          subject to our approximately three-month retention
+          process described above.
         </p>
 
         <p>
@@ -540,7 +542,7 @@ export default function PrivacyPolicyPage() {
 
         <p>
           The latest version will be published at this page and the
-          “Last updated” date will be revised when appropriate.
+          â€œLast updatedâ€ date will be revised when appropriate.
         </p>
 
         <p>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -166,6 +166,12 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/shop-settings">
                     <Button variant="outline" size="sm">
                       Shop Settings
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/customer-data-retention">
+                    <Button variant="outline" size="sm">
+                      Customer Data
                     </Button>
                   </Link>
 
@@ -404,6 +410,12 @@ export default async function DashboardLayout({
                     href="/dashboard/shop-settings"
                     icon={<Settings className="h-4 w-4" />}
                     label="Shop Settings"
+                  />
+
+                  <NavLink
+                    href="/dashboard/customer-data-retention"
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    label="Customer Data"
                   />
 
                   <NavLink

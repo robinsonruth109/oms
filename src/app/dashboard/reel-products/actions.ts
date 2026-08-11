@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
 import { publishNewProductNotification } from "@/lib/mobile-product-notifications";
+import { invalidateStorefrontFeedCache } from "@/lib/storefront";
 
 export type ReelProductActionState = {
   success: boolean;
@@ -304,6 +305,8 @@ function parseGallery(formData: FormData):
 }
 
 function refreshReelProductPages() {
+  invalidateStorefrontFeedCache();
+  revalidatePath("/");
   revalidatePath("/dashboard/reel-products");
   revalidatePath("/reels");
   revalidatePath("/seller/reels");

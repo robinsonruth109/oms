@@ -580,6 +580,7 @@ model ReelProduct {
   @@index([displayOrder])
   @@index([createdAt])
   @@index([status, displayOrder, createdAt, id])
+  @@index([status, updatedAt, createdAt, id])
 }
 
 model MobileNotification {

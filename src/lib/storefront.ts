@@ -28,6 +28,11 @@ let firstPageCacheAt = 0;
 let settingsCache: StorefrontSettings | null = null;
 let settingsCacheAt = 0;
 
+export function invalidateStorefrontFeedCache() {
+  firstPageCache = null;
+  firstPageCacheAt = 0;
+}
+
 function money(
   value: { toString(): string } | null | undefined,
   fallback: number
@@ -248,9 +253,9 @@ export async function loadStorefrontPage({
           },
         },
         orderBy: [
-          { displayOrder: "asc" },
+          { updatedAt: "desc" },
           { createdAt: "desc" },
-          { id: "asc" },
+          { id: "desc" },
         ],
         ...(cursor && !reelId
           ? {

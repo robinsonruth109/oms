@@ -11,6 +11,10 @@ type ActionState = {
   message: string;
 };
 
+function buildProductSlug(sku: string) {
+  return sku.trim().toLowerCase();
+}
+
 function toMoney(value: unknown) {
   const raw = String(value ?? "")
     .replace(/,/g, "")
@@ -115,6 +119,7 @@ export async function createProduct(
         data: {
           parentId: parent.id,
           sku,
+          slug: buildProductSlug(sku),
           name: name || sku,
           quantity,
           purchasePrice,
@@ -211,6 +216,7 @@ export async function updateProduct(
         data: {
           parentId: parent.id,
           sku,
+          slug: buildProductSlug(sku),
           name: name || sku,
           quantity,
           purchasePrice,
@@ -340,6 +346,7 @@ export async function importProductsCsv(
             },
             data: {
               parentId: parent.id,
+              slug: buildProductSlug(sku),
               name: existingProduct.name || sku,
               purchasePrice,
               sellingPrice,
@@ -354,6 +361,7 @@ export async function importProductsCsv(
             data: {
               parentId: parent.id,
               sku,
+              slug: buildProductSlug(sku),
               name: sku,
               purchasePrice,
               sellingPrice,

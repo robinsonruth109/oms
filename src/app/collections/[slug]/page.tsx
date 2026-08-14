@@ -101,8 +101,64 @@ export default async function CollectionPage({ params }: PageProps) {
 
   if (!category?.slug) notFound();
 
+  const groupedProducts = new Map<string, typeof page.products>();
+  for (const product of page.products) {
+    const current = groupedProducts.get(product.product.parentSku) ?? [];
+    current.push(product);
+    groupedProducts.set(product.product.parentSku, current);
+  }
+
+  const productSchema = Array.from(groupedProducts.entries()).map(([parentSku, products]) => {
+    const variants = products.map((item) => {
+      const image =
+        item.thumbnailUrl ||
+        item.gallery.find((media) => media.mediaType.toUpperCase() === "IMAGE")?.url ||
+        undefined;
+      const price = Number(item.product.sellingPrice);
+
+      return {
+        "@type": "Product",
+        name: item.product.name,
+        sku: item.product.sku,
+        productID: item.product.sku,
+        mpn: item.product.sku,
+        image,
+        url: `${siteConfig.url}/product/${encodeURIComponent(item.product.sku)}`,
+        offers: {
+          "@type": "Offer",
+          price: Number.isFinite(price) ? price : 0,
+          priceCurrency: "BDT",
+          availability:
+            item.product.quantity > 0
+              ? "https://schema.org/InStock"
+              : "https://schema.org/OutOfStock",
+        },
+      };
+    });
+
+    if (variants.length > 1) {
+      return {
+        "@type": "ProductGroup",
+        name: products[0]?.product.parentName || category.name,
+        productGroupID: parentSku,
+        hasVariant: variants,
+      };
+    }
+
+    return variants[0];
+  }).filter(Boolean);
+
+  const collectionJsonLd = {
+    "@context": "https://schema.org/",
+    "@graph": productSchema,
+  };
+
   return (
     <main className="min-h-screen bg-[#f6f8fb] text-slate-950">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+      />
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16 sm:px-6">
           <Link

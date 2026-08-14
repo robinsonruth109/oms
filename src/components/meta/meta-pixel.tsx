@@ -6,6 +6,8 @@ declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void;
     _fbq?: unknown;
+    __glossMetaPixelId?: string;
+    __glossMetaPageViewTracked?: boolean;
   }
 }
 
@@ -88,15 +90,24 @@ export function MetaPixel({ pixelId }: { pixelId: string | null }) {
       window._fbq = fbq;
     }
 
-    if (!document.querySelector(`script[data-meta-pixel-id="${pixelId}"]`)) {
+    if (!document.querySelector(`script[data-meta-pixel-id="${pixelId}"]`) && !window.__glossMetaPixelId) {
       const script = document.createElement("script");
       script.async = true;
       script.src = "https://connect.facebook.net/en_US/fbevents.js";
       script.dataset.metaPixelId = pixelId;
       document.head.appendChild(script);
-      win.fbq?.("init", pixelId);
     }
-    trackMetaEvent("PageView");
+
+    if (window.__glossMetaPixelId !== pixelId) {
+      win.fbq?.("init", pixelId);
+      window.__glossMetaPixelId = pixelId;
+      window.__glossMetaPageViewTracked = false;
+    }
+
+    if (!window.__glossMetaPageViewTracked) {
+      trackMetaEvent("PageView");
+      window.__glossMetaPageViewTracked = true;
+    }
   }, [pixelId]);
 
   return null;

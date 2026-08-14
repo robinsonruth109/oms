@@ -192,6 +192,12 @@ export default async function PublicReelCategoryPage({
                 sku: true,
                 quantity: true,
                 sellingPrice: true,
+                parent: {
+                  select: {
+                    sku: true,
+                    name: true,
+                  },
+                },
               },
             },
 
@@ -269,6 +275,8 @@ export default async function PublicReelCategoryPage({
         id: reel.product.id,
         name: reel.product.name,
         sku: reel.product.sku,
+        parentSku: reel.product.parent.sku,
+        parentName: reel.product.parent.name,
         quantity: reel.product.quantity,
         sellingPrice:
           reel.product.sellingPrice.toString(),
@@ -302,8 +310,43 @@ export default async function PublicReelCategoryPage({
       ? shopSetting.metaPixelId
       : null;
 
+  const itemListJsonLd = {
+    "@context": "https://schema.org/",
+    "@type": "ItemList",
+    name: category.name,
+    itemListElement: reels.slice(0, 10).map((reel, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      item: {
+        "@type": "Product",
+        name: reel.product.name,
+        sku: reel.product.sku,
+        productID: reel.product.sku,
+        url: `${siteConfig.url}/product/${encodeURIComponent(reel.product.sku)}`,
+        image:
+          reel.thumbnailUrl ||
+          reel.gallery.find((media) => media.mediaType.toUpperCase() === "IMAGE")?.url ||
+          undefined,
+        offers: {
+          "@type": "Offer",
+          price: Number(reel.product.sellingPrice),
+          priceCurrency: "BDT",
+          availability:
+            reel.product.quantity > 0
+              ? "https://schema.org/InStock"
+              : "https://schema.org/OutOfStock",
+        },
+      },
+    })),
+  };
+
   return (
-    <ReelFeed
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+      />
+      <ReelFeed
       categoryName={category.name}
       categorySlug={category.slug}
       reels={reels}
@@ -314,6 +357,7 @@ export default async function PublicReelCategoryPage({
         outsideDhakaDeliveryCharge
       }
       metaPixelId={metaPixelId}
-    />
+      />
+    </>
   );
 }

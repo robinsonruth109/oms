@@ -19,5 +19,5 @@ export const siteConfig = {
   description:
     process.env.NEXT_PUBLIC_SITE_DESCRIPTION?.trim() ||
     DEFAULT_SITE_DESCRIPTION,
-  url: normalizeSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
+  url: normalizeSiteUrl(process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL),
 };

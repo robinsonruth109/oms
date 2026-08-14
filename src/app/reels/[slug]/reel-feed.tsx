@@ -34,6 +34,8 @@ declare global {
     fbq?: (...args: unknown[]) => void;
 
     _fbq?: unknown;
+    __glossMetaPixelId?: string;
+    __glossMetaPageViewTracked?: boolean;
   }
 }
 
@@ -59,6 +61,8 @@ export type PublicReelItem = {
     id: string;
     name: string;
     sku: string;
+    parentSku: string;
+    parentName: string;
     quantity: number;
     sellingPrice: string;
   };
@@ -280,8 +284,12 @@ function MetaPixel({
         `script[data-meta-pixel-id="${pixelId}"]`
       );
 
+    if (window.__glossMetaPixelId === pixelId) {
+      return;
+    }
+
     if (existingScript) {
-      trackMetaEvent("PageView");
+      window.__glossMetaPixelId = pixelId;
       return;
     }
 
@@ -344,7 +352,11 @@ function MetaPixel({
     document.head.appendChild(script);
 
     window.fbq?.("init", pixelId);
-    trackMetaEvent("PageView");
+    window.__glossMetaPixelId = pixelId;
+    if (!window.__glossMetaPageViewTracked) {
+      trackMetaEvent("PageView");
+      window.__glossMetaPageViewTracked = true;
+    }
 
     return () => {
       /*
@@ -371,6 +383,9 @@ export default function ReelFeed({
   const videoRefs = useRef<
     Record<string, HTMLVideoElement | null>
   >({});
+
+  const viewContentTrackedRef = useRef<Set<string>>(new Set());
+  const viewContentTimersRef = useRef<Record<string, number>>({});
 
   const [activeIndex, setActiveIndex] =
     useState(0);
@@ -480,6 +495,22 @@ export default function ReelFeed({
     playActiveVideo,
   ]);
 
+  const trackReelViewContent = useCallback((reel: PublicReelItem) => {
+    if (viewContentTrackedRef.current.has(reel.id)) return;
+
+    viewContentTrackedRef.current.add(reel.id);
+    const price = parseMoney(reel.product.sellingPrice);
+    trackMetaEvent("ViewContent", {
+      content_ids: [reel.product.sku],
+      content_type: "product",
+      contents: [{ id: reel.product.sku, quantity: 1, item_price: price }],
+      content_name: reel.product.name,
+      item_group_id: reel.product.parentSku,
+      currency: META_CURRENCY,
+      value: price,
+    });
+  }, []);
+
   useEffect(() => {
     const container =
       containerRef.current;
@@ -496,6 +527,25 @@ export default function ReelFeed({
             | null = null;
 
           for (const entry of entries) {
+            const entryIndex = Number(entry.target.getAttribute("data-index"));
+            const entryReel = Number.isInteger(entryIndex) ? reels[entryIndex] : undefined;
+
+            if (entryReel) {
+              const existingTimer = viewContentTimersRef.current[entryReel.id];
+
+              if (entry.isIntersecting && entry.intersectionRatio >= 0.75) {
+                if (!viewContentTrackedRef.current.has(entryReel.id) && !existingTimer) {
+                  viewContentTimersRef.current[entryReel.id] = window.setTimeout(() => {
+                    delete viewContentTimersRef.current[entryReel.id];
+                    trackReelViewContent(entryReel);
+                  }, 1000);
+                }
+              } else if (existingTimer) {
+                window.clearTimeout(existingTimer);
+                delete viewContentTimersRef.current[entryReel.id];
+              }
+            }
+
             if (
               !entry.isIntersecting ||
               entry.intersectionRatio <
@@ -534,6 +584,7 @@ export default function ReelFeed({
           threshold: [
             0.55,
             0.7,
+            0.75,
             0.85,
           ],
         }
@@ -550,8 +601,12 @@ export default function ReelFeed({
 
     return () => {
       observer.disconnect();
+      Object.values(viewContentTimersRef.current).forEach((timer) => {
+        window.clearTimeout(timer);
+      });
+      viewContentTimersRef.current = {};
     };
-  }, [reels]);
+  }, [reels, trackReelViewContent]);
 
   function scrollToIndex(
     index: number
@@ -669,21 +724,7 @@ export default function ReelFeed({
 
     setSelectedReel(reel);
 
-    trackMetaEvent(
-      "ViewContent",
-      {
-        content_ids: [
-          reel.product.id,
-        ],
-        content_name:
-          reel.product.name,
-        content_type: "product",
-        currency: META_CURRENCY,
-        value: parseMoney(
-          reel.product.sellingPrice
-        ),
-      }
-    );
+    trackReelViewContent(reel);
   }
 
   function closeProductDetails() {
@@ -704,22 +745,28 @@ export default function ReelFeed({
     setSelectedReel(null);
     setCheckoutReel(reel);
 
-    trackMetaEvent(
-      "InitiateCheckout",
-      {
-        content_ids: [
-          reel.product.id,
-        ],
-        content_name:
-          reel.product.name,
-        content_type: "product",
-        currency: META_CURRENCY,
-        value: parseMoney(
-          reel.product.sellingPrice
-        ),
-        num_items: 1,
-      }
-    );
+    const price = parseMoney(reel.product.sellingPrice);
+
+    trackMetaEvent("AddToCart", {
+      content_ids: [reel.product.sku],
+      content_type: "product",
+      contents: [{ id: reel.product.sku, quantity: 1, item_price: price }],
+      content_name: reel.product.name,
+      item_group_id: reel.product.parentSku,
+      currency: META_CURRENCY,
+      value: price,
+    });
+
+    trackMetaEvent("InitiateCheckout", {
+      content_ids: [reel.product.sku],
+      content_type: "product",
+      contents: [{ id: reel.product.sku, quantity: 1, item_price: price }],
+      content_name: reel.product.name,
+      item_group_id: reel.product.parentSku,
+      currency: META_CURRENCY,
+      value: price,
+      num_items: 1,
+    });
   }
 
   function closeCheckout() {
@@ -1679,8 +1726,14 @@ function CheckoutModal({
         "Purchase",
         {
           content_ids: [
-            reel.product.id,
+            reel.product.sku,
           ],
+          contents: [{
+            id: reel.product.sku,
+            quantity: form.quantity,
+            item_price: unitPrice,
+          }],
+          item_group_id: reel.product.parentSku,
           content_name:
             reel.product.name,
           content_type:

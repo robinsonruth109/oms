@@ -10,6 +10,9 @@ export type StorefrontProduct = {
     id: string;
     name: string;
     sku: string;
+    slug: string | null;
+    parentSku: string;
+    parentName: string;
     quantity: number;
     sellingPrice: string;
   };

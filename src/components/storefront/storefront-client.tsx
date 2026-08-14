@@ -495,7 +495,7 @@ export default function StorefrontClient({
   };
 
   const shareMobileProduct = async (item: StorefrontProduct) => {
-    const url = `${window.location.origin}/product/${item.reelId}`;
+    const url = `${window.location.origin}/product/${encodeURIComponent(item.product.sku)}`;
 
     try {
       if (navigator.share) {
@@ -537,12 +537,26 @@ export default function StorefrontClient({
     setSuccess(null);
     checkoutRequestIdRef.current = createMetaEventId("checkout");
     const eventId = createMetaEventId("initiate_checkout");
+    const unitPrice = Number(product.product.sellingPrice);
+    const value = unitPrice * safeQuantity;
+
+    trackMetaEvent("AddToCart", {
+      content_ids: [product.product.sku],
+      content_type: "product",
+      contents: [{ id: product.product.sku, quantity: safeQuantity, item_price: unitPrice }],
+      item_group_id: product.product.parentSku,
+      value,
+      currency: "BDT",
+    });
+
     trackMetaEvent(
       "InitiateCheckout",
       {
-        content_ids: [product.product.id],
+        content_ids: [product.product.sku],
         content_type: "product",
-        value: Number(product.product.sellingPrice) * safeQuantity,
+        contents: [{ id: product.product.sku, quantity: safeQuantity, item_price: unitPrice }],
+        item_group_id: product.product.parentSku,
+        value,
         currency: "BDT",
       },
       eventId,
@@ -605,8 +619,14 @@ export default function StorefrontClient({
       trackMetaEvent(
         "Purchase",
         {
-          content_ids: [selected.product.id],
+          content_ids: [selected.product.sku],
           content_type: "product",
+          contents: [{
+            id: selected.product.sku,
+            quantity,
+            item_price: Number(selected.product.sellingPrice),
+          }],
+          item_group_id: selected.product.parentSku,
           value: Number(result.order?.totalAmount ?? total),
           currency: "BDT",
           num_items: quantity,
@@ -615,7 +635,7 @@ export default function StorefrontClient({
             result.order?.invoiceId ??
             checkoutRequestId,
         },
-        result.order?.metaEventId ?? `purchase_${checkoutRequestId}`,
+        result.order?.metaEventId ?? checkoutRequestId,
       );
       setSuccess(result.order?.orderId || "SUCCESS");
     } catch (caughtError) {
@@ -647,7 +667,7 @@ export default function StorefrontClient({
               key={item.reelId}
               className={`group overflow-hidden border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_22px_50px_rgba(15,23,42,0.14)] ${displayMode === "collection" ? "rounded-[18px]" : "rounded-[28px]"}`}
             >
-              <Link href={`/product/${item.reelId}`} className="relative block overflow-hidden bg-slate-100">
+              <Link href={`/product/${encodeURIComponent(item.product.sku)}`} className="relative block overflow-hidden bg-slate-100">
                 <div className={displayMode === "collection" ? "aspect-square overflow-hidden" : "aspect-[4/4.35] overflow-hidden"}>
                   {image ? (
                     <img
@@ -678,7 +698,7 @@ export default function StorefrontClient({
 
               <div className={displayMode === "collection" ? "p-3 sm:p-4" : "p-6"}>
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-orange-600">Gloss & Glows</p>
-                <Link href={`/product/${item.reelId}`} className="mt-2 block">
+                <Link href={`/product/${encodeURIComponent(item.product.sku)}`} className="mt-2 block">
                   <h2 className={displayMode === "collection" ? "line-clamp-2 min-h-[2.5rem] text-sm font-black leading-5 text-slate-950 transition group-hover:text-orange-600 sm:text-base" : "line-clamp-2 min-h-[3.5rem] text-xl font-black leading-7 text-slate-950 transition group-hover:text-orange-600"}>
                     {item.title}
                   </h2>
@@ -706,7 +726,7 @@ export default function StorefrontClient({
                     {inStock ? "অর্ডার করুন" : "স্টক শেষ"}
                   </button>
                   <Link
-                    href={`/product/${item.reelId}`}
+                    href={`/product/${encodeURIComponent(item.product.sku)}`}
                     className="inline-flex min-h-12 items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-center font-black text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 active:scale-[0.98]"
                   >
                     বিস্তারিত
@@ -937,7 +957,7 @@ export default function StorefrontClient({
                         </button>
 
                         <Link
-                          href={`/product/${item.reelId}`}
+                          href={`/product/${encodeURIComponent(item.product.sku)}`}
                           className="inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-2xl border border-white/35 bg-white/10 px-4 py-3.5 text-center text-base font-black text-white shadow-lg backdrop-blur-md transition active:scale-[0.97]"
                         >
                           বিস্তারিত

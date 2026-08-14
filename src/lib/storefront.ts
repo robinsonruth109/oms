@@ -120,8 +120,10 @@ function serializeProduct(row: {
     id: string;
     name: string;
     sku: string;
+    slug: string | null;
     quantity: number;
     sellingPrice: { toString(): string };
+    parent: { sku: string; name: string };
   };
   gallery: Array<{
     id: string;
@@ -147,6 +149,9 @@ function serializeProduct(row: {
       id: row.product.id,
       name: row.product.name,
       sku: row.product.sku,
+      slug: row.product.slug,
+      parentSku: row.product.parent.sku,
+      parentName: row.product.parent.name,
       quantity: row.product.quantity,
       sellingPrice: row.product.sellingPrice.toString(),
     },
@@ -246,7 +251,15 @@ export async function loadStorefrontPage({
     const rows = await withDatabaseRetry(() =>
       prisma.reelProduct.findMany({
         where: {
-          ...(reelId ? { id: reelId } : {}),
+          ...(reelId
+            ? {
+                OR: [
+                  { id: reelId },
+                  { product: { sku: reelId } },
+                  { product: { slug: reelId } },
+                ],
+              }
+            : {}),
           status: true,
           product: { status: true },
           category: {
@@ -287,8 +300,10 @@ export async function loadStorefrontPage({
               id: true,
               name: true,
               sku: true,
+              slug: true,
               quantity: true,
               sellingPrice: true,
+              parent: { select: { sku: true, name: true } },
             },
           },
           gallery: {

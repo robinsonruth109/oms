@@ -123,6 +123,7 @@ model Product {
   parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
 
   sku           String   @unique
+  slug          String?  @unique
   name          String
   quantity      Int      @default(1)
   purchasePrice Decimal  @db.Decimal(10, 2)

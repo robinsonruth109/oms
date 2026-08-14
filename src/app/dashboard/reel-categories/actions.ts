@@ -90,9 +90,11 @@ function revalidateCategoryPaths(
   );
 
   revalidatePath("/reels");
+  revalidatePath("/collections");
 
   if (slug) {
     revalidatePath(`/reels/${slug}`);
+    revalidatePath(`/collections/${slug}`);
   }
 }
 
@@ -124,6 +126,16 @@ export async function createReelCategory(
 
   const status =
     formData.get("status") === "true";
+
+  const collectionVideoUrl = readRequired(
+    formData,
+    "collectionVideoUrl"
+  );
+
+  const collectionVideoPublicId = readRequired(
+    formData,
+    "collectionVideoPublicId"
+  );
 
   if (!name || !sourceId || !pageId) {
     return {
@@ -193,6 +205,8 @@ export async function createReelCategory(
         slug,
         sourceId,
         pageId,
+        collectionVideoUrl: collectionVideoUrl || null,
+        collectionVideoPublicId: collectionVideoPublicId || null,
         status,
       },
       select: {
@@ -238,6 +252,16 @@ export async function updateReelCategory(
 
   const status =
     formData.get("status") === "true";
+
+  const collectionVideoUrl = readRequired(
+    formData,
+    "collectionVideoUrl"
+  );
+
+  const collectionVideoPublicId = readRequired(
+    formData,
+    "collectionVideoPublicId"
+  );
 
   if (
     !id ||
@@ -338,6 +362,8 @@ export async function updateReelCategory(
       slug,
       sourceId,
       pageId,
+      collectionVideoUrl: collectionVideoUrl || null,
+      collectionVideoPublicId: collectionVideoPublicId || null,
       status,
     },
   });

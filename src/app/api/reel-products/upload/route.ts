@@ -25,7 +25,8 @@ type UploadKind =
   | "video"
   | "thumbnail"
   | "gallery-image"
-  | "gallery-video";
+  | "gallery-video"
+  | "collection-video";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json(
@@ -46,7 +47,8 @@ function readUploadKind(
     value === "video" ||
     value === "thumbnail" ||
     value === "gallery-image" ||
-    value === "gallery-video"
+    value === "gallery-video" ||
+    value === "collection-video"
   ) {
     return value;
   }
@@ -76,7 +78,8 @@ function isVideoUploadKind(
 ): boolean {
   return (
     uploadKind === "video" ||
-    uploadKind === "gallery-video"
+    uploadKind === "gallery-video" ||
+    uploadKind === "collection-video"
   );
 }
 
@@ -105,6 +108,9 @@ function getUploadFolder(
 
     case "gallery-video":
       return `${rootFolder}/gallery/videos`;
+
+    case "collection-video":
+      return `${rootFolder}/collections`;
 
     default:
       return rootFolder;
@@ -136,6 +142,10 @@ function getUploadTags(
 
     case "gallery-video":
       tags.push("reel-gallery-video");
+      break;
+
+    case "collection-video":
+      tags.push("reel-collection-video");
       break;
   }
 
@@ -181,7 +191,7 @@ export async function POST(request: Request) {
 
     if (!uploadKind) {
       return jsonError(
-        'Upload kind must be "video", "thumbnail", "gallery-image" or "gallery-video".',
+        'Upload kind must be "video", "thumbnail", "gallery-image", "gallery-video" or "collection-video".',
         400
       );
     }
@@ -307,14 +317,16 @@ export async function POST(request: Request) {
           upload.version
         );
 
-      const isMainVideo =
-        uploadKind === "video";
+      const isMainVideo = uploadKind === "video";
+      const isCollectionVideo = uploadKind === "collection-video";
 
       return NextResponse.json({
         success: true,
         message: isMainVideo
           ? "Reel video uploaded successfully."
-          : "Gallery video uploaded successfully.",
+          : isCollectionVideo
+            ? "Collection hero video uploaded successfully."
+            : "Gallery video uploaded successfully.",
         media: {
           kind: uploadKind,
           publicId,

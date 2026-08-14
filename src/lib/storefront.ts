@@ -21,6 +21,7 @@ type LoadPageOptions = {
   cursor?: string | null;
   limit?: number;
   reelId?: string;
+  categorySlug?: string;
 };
 
 let firstPageCache: StorefrontPage | null = null;
@@ -224,12 +225,14 @@ export async function loadStorefrontPage({
   cursor = null,
   limit,
   reelId,
+  categorySlug,
 }: LoadPageOptions = {}): Promise<StorefrontPage> {
   const pageSize = reelId ? 1 : clampPageSize(limit);
   const now = Date.now();
 
   if (
     !reelId &&
+    !categorySlug &&
     !cursor &&
     firstPageCache &&
     now - firstPageCacheAt < FIRST_PAGE_CACHE_TTL_MS
@@ -247,16 +250,23 @@ export async function loadStorefrontPage({
           status: true,
           product: { status: true },
           category: {
+            ...(categorySlug ? { slug: categorySlug } : {}),
             status: true,
             source: { status: true },
             page: { status: true },
           },
         },
-        orderBy: [
-          { updatedAt: "desc" },
-          { createdAt: "desc" },
-          { id: "desc" },
-        ],
+        orderBy: categorySlug
+          ? [
+              { displayOrder: "asc" },
+              { createdAt: "desc" },
+              { id: "desc" },
+            ]
+          : [
+              { updatedAt: "desc" },
+              { createdAt: "desc" },
+              { id: "desc" },
+            ],
         ...(cursor && !reelId
           ? {
               cursor: { id: cursor },
@@ -314,14 +324,14 @@ export async function loadStorefrontPage({
       hasMore,
     };
 
-    if (!reelId && !cursor) {
+    if (!reelId && !categorySlug && !cursor) {
       firstPageCache = page;
       firstPageCacheAt = Date.now();
     }
 
     return page;
   } catch (error) {
-    if (!reelId && !cursor && firstPageCache) {
+    if (!reelId && !categorySlug && !cursor && firstPageCache) {
       console.error(
         "Storefront database temporarily unavailable; serving cached first page:",
         error

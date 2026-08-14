@@ -72,6 +72,8 @@ export default async function ReelCategoriesPage() {
         sourceId: category.sourceId,
         pageId: category.pageId,
         status: category.status,
+        collectionVideoUrl: category.collectionVideoUrl,
+        collectionVideoPublicId: category.collectionVideoPublicId,
         createdAt: category.createdAt.toISOString(),
         source: category.source,
         page: category.page,

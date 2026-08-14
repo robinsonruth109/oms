@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 
 import {
   getEligibleCustomerDataWhere,
@@ -9,6 +10,62 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const BATCH_SIZE = 500;
+
+const orderExportSelect = {
+  id: true,
+  orderId: true,
+  invoiceId: true,
+  integrationId: true,
+  externalOrderId: true,
+  sourceId: true,
+  pageId: true,
+  customerName: true,
+  address: true,
+  phone: true,
+  subtotal: true,
+  discount: true,
+  advance: true,
+  deliveryCharge: true,
+  totalAmount: true,
+  orderStatus: true,
+  courier: true,
+  note: true,
+  calledByUserId: true,
+  calledAt: true,
+  invoiceDownloaded: true,
+  csvDownloaded: true,
+  readyToShipAt: true,
+  checkoutRequestId: true,
+  metaPurchaseEventId: true,
+  metaPurchaseSentAt: true,
+  metaPurchaseStatus: true,
+  metaPurchaseError: true,
+  metaPurchaseResponse: true,
+  createdAt: true,
+  updatedAt: true,
+  integration: { select: { name: true } },
+  source: { select: { name: true } },
+  page: { select: { name: true } },
+  calledByUser: { select: { name: true } },
+  items: {
+    orderBy: { createdAt: "asc" as const },
+    select: {
+      id: true,
+      productId: true,
+      productSku: true,
+      productName: true,
+      quantity: true,
+      unitPrice: true,
+      lineTotal: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  },
+} satisfies Prisma.OrderSelect;
+
+type ExportOrder = Prisma.OrderGetPayload<{
+  select: typeof orderExportSelect;
+}>;
 
 function safeCsvText(value: unknown) {
   let text = String(value ?? "");
@@ -113,7 +170,7 @@ export async function GET(request: NextRequest) {
               ? getEligibleCustomerDataWhere()
               : {};
 
-          const orders = await prisma.order.findMany({
+          const orders: ExportOrder[] = await prisma.order.findMany({
             where: {
               ...baseWhere,
               ...(lastId
@@ -128,75 +185,7 @@ export async function GET(request: NextRequest) {
               id: "asc",
             },
             take: BATCH_SIZE,
-            select: {
-              id: true,
-              orderId: true,
-              invoiceId: true,
-              integrationId: true,
-              externalOrderId: true,
-              sourceId: true,
-              pageId: true,
-              customerName: true,
-              address: true,
-              phone: true,
-              subtotal: true,
-              discount: true,
-              advance: true,
-              deliveryCharge: true,
-              totalAmount: true,
-              orderStatus: true,
-              courier: true,
-              note: true,
-              calledByUserId: true,
-              calledAt: true,
-              invoiceDownloaded: true,
-              csvDownloaded: true,
-              readyToShipAt: true,
-              checkoutRequestId: true,
-              metaPurchaseEventId: true,
-              metaPurchaseSentAt: true,
-              metaPurchaseStatus: true,
-              metaPurchaseError: true,
-              metaPurchaseResponse: true,
-              createdAt: true,
-              updatedAt: true,
-              integration: {
-                select: {
-                  name: true,
-                },
-              },
-              source: {
-                select: {
-                  name: true,
-                },
-              },
-              page: {
-                select: {
-                  name: true,
-                },
-              },
-              calledByUser: {
-                select: {
-                  name: true,
-                },
-              },
-              items: {
-                orderBy: {
-                  createdAt: "asc",
-                },
-                select: {
-                  id: true,
-                  productId: true,
-                  productSku: true,
-                  productName: true,
-                  quantity: true,
-                  unitPrice: true,
-                  lineTotal: true,
-                  createdAt: true,
-                  updatedAt: true,
-                },
-              },
-            },
+            select: orderExportSelect,
           });
 
           if (orders.length === 0) {

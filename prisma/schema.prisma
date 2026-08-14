@@ -62,6 +62,9 @@ model ReelCategory {
   pageId String
   page   Page   @relation(fields: [pageId], references: [id], onDelete: Restrict)
 
+  collectionVideoUrl      String? @db.Text
+  collectionVideoPublicId String? @unique
+
   status    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

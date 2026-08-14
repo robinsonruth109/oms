@@ -32,6 +32,10 @@ type Props = {
   singleProduct?: boolean;
   initialNextCursor?: string | null;
   initialHasMore?: boolean;
+  displayMode?: "home" | "collection";
+  collectionTitle?: string;
+  loadMoreEndpoint?: string;
+  hideCollectionHeader?: boolean;
 };
 
 function money(value: string | number) {
@@ -285,6 +289,10 @@ export default function StorefrontClient({
   singleProduct = false,
   initialNextCursor = null,
   initialHasMore = false,
+  displayMode = "home",
+  collectionTitle,
+  loadMoreEndpoint = "/api/storefront/reels",
+  hideCollectionHeader = false,
 }: Props) {
   const [feedProducts, setFeedProducts] = useState(products);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
@@ -339,7 +347,7 @@ export default function StorefrontClient({
 
     try {
       const response = await fetch(
-        `/api/storefront/reels?cursor=${encodeURIComponent(nextCursor)}&limit=12`,
+        `${loadMoreEndpoint}?cursor=${encodeURIComponent(nextCursor)}&limit=12`,
         { cache: "no-store" }
       );
       const result = (await response.json()) as {
@@ -375,7 +383,7 @@ export default function StorefrontClient({
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [hasMore, nextCursor, singleProduct]);
+  }, [hasMore, loadMoreEndpoint, nextCursor, singleProduct]);
 
   useEffect(() => {
     if (singleProduct || !hasMore) {
@@ -618,16 +626,18 @@ export default function StorefrontClient({
   }
 
   const productCards = (
-    <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-      <div className="mb-10 text-center">
-        <p className="text-sm font-bold uppercase tracking-[0.28em] text-orange-600">Gloss & Glows</p>
-        <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950 lg:text-5xl">আমাদের জনপ্রিয় পণ্যসমূহ</h1>
-        <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-600">
-          ভিডিও দেখুন, বিস্তারিত জানুন এবং সহজে অর্ডার করুন
-        </p>
-      </div>
+    <div className={displayMode === "collection" ? "mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-8 lg:py-10" : "mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16"}>
+      {!hideCollectionHeader && (
+        <div className="mb-10 text-center">
+          <p className="text-sm font-bold uppercase tracking-[0.28em] text-orange-600">Gloss & Glows</p>
+          <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950 lg:text-5xl">{collectionTitle || "আমাদের জনপ্রিয় পণ্যসমূহ"}</h1>
+          <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-600">
+            ভিডিও দেখুন, বিস্তারিত জানুন এবং সহজে অর্ডার করুন
+          </p>
+        </div>
+      )}
 
-      <div className="grid justify-center gap-8 [grid-template-columns:repeat(auto-fit,minmax(300px,370px))]">
+      <div className={displayMode === "collection" ? "grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4" : "grid justify-center gap-8 [grid-template-columns:repeat(auto-fit,minmax(300px,370px))]"}>
         {visibleProducts.map((item) => {
           const image = getImage(item);
           const inStock = item.product.quantity > 0;
@@ -635,10 +645,10 @@ export default function StorefrontClient({
           return (
             <article
               key={item.reelId}
-              className="group overflow-hidden rounded-[28px] border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_22px_50px_rgba(15,23,42,0.14)]"
+              className={`group overflow-hidden border border-slate-200/90 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_22px_50px_rgba(15,23,42,0.14)] ${displayMode === "collection" ? "rounded-[18px]" : "rounded-[28px]"}`}
             >
               <Link href={`/product/${item.reelId}`} className="relative block overflow-hidden bg-slate-100">
-                <div className="aspect-[4/4.35] overflow-hidden">
+                <div className={displayMode === "collection" ? "aspect-square overflow-hidden" : "aspect-[4/4.35] overflow-hidden"}>
                   {image ? (
                     <img
                       src={image}
@@ -666,26 +676,26 @@ export default function StorefrontClient({
                 </div>
               </Link>
 
-              <div className="p-6">
+              <div className={displayMode === "collection" ? "p-3 sm:p-4" : "p-6"}>
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-orange-600">Gloss & Glows</p>
                 <Link href={`/product/${item.reelId}`} className="mt-2 block">
-                  <h2 className="line-clamp-2 min-h-[3.5rem] text-xl font-black leading-7 text-slate-950 transition group-hover:text-orange-600">
+                  <h2 className={displayMode === "collection" ? "line-clamp-2 min-h-[2.5rem] text-sm font-black leading-5 text-slate-950 transition group-hover:text-orange-600 sm:text-base" : "line-clamp-2 min-h-[3.5rem] text-xl font-black leading-7 text-slate-950 transition group-hover:text-orange-600"}>
                     {item.title}
                   </h2>
                 </Link>
 
                 <div className="mt-4 flex items-end justify-between gap-3">
-                  <p className="text-3xl font-black tracking-tight text-orange-600">{money(item.product.sellingPrice)}</p>
+                  <p className={displayMode === "collection" ? "text-xl font-black tracking-tight text-orange-600 sm:text-2xl" : "text-3xl font-black tracking-tight text-orange-600"}>{money(item.product.sellingPrice)}</p>
                   <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">
                     Cash on delivery
                   </span>
                 </div>
 
-                {item.caption && (
+                {item.caption && displayMode !== "collection" && (
                   <p className="mt-4 line-clamp-2 min-h-[2.75rem] text-sm leading-6 text-slate-600">{item.caption}</p>
                 )}
 
-                <div className="mt-6 grid grid-cols-[1.2fr_1fr] gap-3">
+                <div className={displayMode === "collection" ? "mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1.2fr_1fr]" : "mt-6 grid grid-cols-[1.2fr_1fr] gap-3"}>
                   <button
                     type="button"
                     onClick={() => openCheckout(item)}
@@ -763,6 +773,8 @@ export default function StorefrontClient({
           setQuantity={setQuantity}
           onOrder={() => openCheckout(products[0], quantity)}
         />
+      ) : displayMode === "collection" ? (
+        productCards
       ) : (
         <>
           <div className="hidden md:block">{productCards}</div>

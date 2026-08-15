@@ -263,6 +263,33 @@ function createMetaEventId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function createMetaSkuEventId(prefix: string, sku: string): string {
+  return `${prefix}_${sku}_${Date.now()}`;
+}
+
+function sendMetaFunnelEventToServer(input: {
+  eventName: "AddToCart" | "InitiateCheckout";
+  eventId: string;
+  sku: string;
+  quantity: number;
+}) {
+  if (typeof window === "undefined") return;
+
+  void fetch("/api/meta/funnel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...input,
+      eventSourceUrl: window.location.href,
+      fbp: getBrowserCookie("_fbp"),
+      fbc: getBrowserCookie("_fbc"),
+    }),
+    keepalive: true,
+  }).catch((error) => {
+    console.error("Meta funnel CAPI request failed:", error);
+  });
+}
+
 function getBrowserCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const entry = document.cookie.split("; ").find((item) => item.startsWith(`${name}=`));
@@ -354,7 +381,14 @@ function MetaPixel({
     window.fbq?.("init", pixelId);
     window.__glossMetaPixelId = pixelId;
     if (!window.__glossMetaPageViewTracked) {
-      trackMetaEvent("PageView");
+      const pathLabel =
+        window.location.pathname === "/"
+          ? "home"
+          : window.location.pathname
+              .replace(/[^a-zA-Z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "") || "page";
+      const pageViewEventId = `page_view_${pathLabel}_${Date.now()}`;
+      trackMetaEvent("PageView", {}, pageViewEventId);
       window.__glossMetaPageViewTracked = true;
     }
 
@@ -500,6 +534,7 @@ export default function ReelFeed({
 
     viewContentTrackedRef.current.add(reel.id);
     const price = parseMoney(reel.product.sellingPrice);
+    const eventId = createMetaSkuEventId("view_content", reel.product.sku);
     trackMetaEvent("ViewContent", {
       content_ids: [reel.product.sku],
       content_type: "product",
@@ -508,7 +543,7 @@ export default function ReelFeed({
       item_group_id: reel.product.parentSku,
       currency: META_CURRENCY,
       value: price,
-    });
+    }, eventId);
   }, []);
 
   useEffect(() => {
@@ -745,28 +780,8 @@ export default function ReelFeed({
     setSelectedReel(null);
     setCheckoutReel(reel);
 
-    const price = parseMoney(reel.product.sellingPrice);
-
-    trackMetaEvent("AddToCart", {
-      content_ids: [reel.product.sku],
-      content_type: "product",
-      contents: [{ id: reel.product.sku, quantity: 1, item_price: price }],
-      content_name: reel.product.name,
-      item_group_id: reel.product.parentSku,
-      currency: META_CURRENCY,
-      value: price,
-    });
-
-    trackMetaEvent("InitiateCheckout", {
-      content_ids: [reel.product.sku],
-      content_type: "product",
-      contents: [{ id: reel.product.sku, quantity: 1, item_price: price }],
-      content_name: reel.product.name,
-      item_group_id: reel.product.parentSku,
-      currency: META_CURRENCY,
-      value: price,
-      num_items: 1,
-    });
+    // AddToCart and InitiateCheckout are fired by CheckoutModal, where the
+    // checkout/cart id is available. That keeps browser and CAPI event IDs identical.
   }
 
   function closeCheckout() {
@@ -1437,6 +1452,59 @@ function CheckoutModal({
   const checkoutRequestIdRef = useRef(
     createMetaEventId("checkout")
   );
+  const funnelTrackedRef = useRef(false);
+
+  useEffect(() => {
+    if (funnelTrackedRef.current) return;
+    funnelTrackedRef.current = true;
+
+    const quantity = 1;
+    const price = parseMoney(reel.product.sellingPrice);
+    const cartId = checkoutRequestIdRef.current;
+    const addToCartEventId = createMetaSkuEventId("add_to_cart", reel.product.sku);
+    const initiateCheckoutEventId = `initiate_checkout_${cartId}_${reel.product.sku}`;
+
+    trackMetaEvent(
+      "AddToCart",
+      {
+        content_ids: [reel.product.sku],
+        content_type: "product",
+        contents: [{ id: reel.product.sku, quantity, item_price: price }],
+        content_name: reel.product.name,
+        item_group_id: reel.product.parentSku,
+        currency: META_CURRENCY,
+        value: price,
+      },
+      addToCartEventId,
+    );
+    sendMetaFunnelEventToServer({
+      eventName: "AddToCart",
+      eventId: addToCartEventId,
+      sku: reel.product.sku,
+      quantity,
+    });
+
+    trackMetaEvent(
+      "InitiateCheckout",
+      {
+        content_ids: [reel.product.sku],
+        content_type: "product",
+        contents: [{ id: reel.product.sku, quantity, item_price: price }],
+        content_name: reel.product.name,
+        item_group_id: reel.product.parentSku,
+        currency: META_CURRENCY,
+        value: price,
+        num_items: quantity,
+      },
+      initiateCheckoutEventId,
+    );
+    sendMetaFunnelEventToServer({
+      eventName: "InitiateCheckout",
+      eventId: initiateCheckoutEventId,
+      sku: reel.product.sku,
+      quantity,
+    });
+  }, [reel]);
 
   const [form, setForm] =
     useState<CheckoutForm>({

@@ -25,6 +25,43 @@ export function createMetaEventId(prefix: string) {
   return `${prefix}_${Date.now()}_${random}`;
 }
 
+export function createMetaSkuEventId(prefix: string, sku: string) {
+  return `${prefix}_${sku}_${Date.now()}`;
+}
+
+export function sendMetaFunnelEventToServer(input: {
+  eventName: "AddToCart" | "InitiateCheckout";
+  eventId: string;
+  sku: string;
+  quantity: number;
+}) {
+  if (typeof window === "undefined") return;
+
+  void fetch("/api/meta/funnel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...input,
+      eventSourceUrl: window.location.href,
+      fbp: document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("_fbp="))
+        ?.split("=")
+        .slice(1)
+        .join("=") ?? null,
+      fbc: document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("_fbc="))
+        ?.split("=")
+        .slice(1)
+        .join("=") ?? null,
+    }),
+    keepalive: true,
+  }).catch((error) => {
+    console.error("Meta funnel CAPI request failed:", error);
+  });
+}
+
 function normalizeMetaEventParameters(
   parameters?: Record<string, unknown>
 ): Record<string, unknown> {
@@ -105,7 +142,14 @@ export function MetaPixel({ pixelId }: { pixelId: string | null }) {
     }
 
     if (!window.__glossMetaPageViewTracked) {
-      trackMetaEvent("PageView");
+      const pathLabel =
+        window.location.pathname === "/"
+          ? "home"
+          : window.location.pathname
+              .replace(/[^a-zA-Z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "") || "page";
+      const eventId = `page_view_${pathLabel}_${Date.now()}`;
+      trackMetaEvent("PageView", {}, eventId);
       window.__glossMetaPageViewTracked = true;
     }
   }, [pixelId]);

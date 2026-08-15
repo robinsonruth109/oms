@@ -20,7 +20,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { MetaPixel, createMetaEventId, trackMetaEvent } from "@/components/meta/meta-pixel";
+import { MetaPixel, createMetaEventId, createMetaSkuEventId, sendMetaFunnelEventToServer, trackMetaEvent } from "@/components/meta/meta-pixel";
 import type { StorefrontProduct, StorefrontSettings } from "./types";
 
 type DeliveryArea = "INSIDE_DHAKA" | "OUTSIDE_DHAKA";
@@ -536,17 +536,29 @@ export default function StorefrontClient({
     setError("");
     setSuccess(null);
     checkoutRequestIdRef.current = createMetaEventId("checkout");
-    const eventId = createMetaEventId("initiate_checkout");
+    const cartId = checkoutRequestIdRef.current;
+    const addToCartEventId = createMetaSkuEventId("add_to_cart", product.product.sku);
+    const initiateCheckoutEventId = `initiate_checkout_${cartId}_${product.product.sku}`;
     const unitPrice = Number(product.product.sellingPrice);
     const value = unitPrice * safeQuantity;
 
-    trackMetaEvent("AddToCart", {
-      content_ids: [product.product.sku],
-      content_type: "product",
-      contents: [{ id: product.product.sku, quantity: safeQuantity, item_price: unitPrice }],
-      item_group_id: product.product.parentSku,
-      value,
-      currency: "BDT",
+    trackMetaEvent(
+      "AddToCart",
+      {
+        content_ids: [product.product.sku],
+        content_type: "product",
+        contents: [{ id: product.product.sku, quantity: safeQuantity, item_price: unitPrice }],
+        item_group_id: product.product.parentSku,
+        value,
+        currency: "BDT",
+      },
+      addToCartEventId,
+    );
+    sendMetaFunnelEventToServer({
+      eventName: "AddToCart",
+      eventId: addToCartEventId,
+      sku: product.product.sku,
+      quantity: safeQuantity,
     });
 
     trackMetaEvent(
@@ -559,8 +571,14 @@ export default function StorefrontClient({
         value,
         currency: "BDT",
       },
-      eventId,
+      initiateCheckoutEventId,
     );
+    sendMetaFunnelEventToServer({
+      eventName: "InitiateCheckout",
+      eventId: initiateCheckoutEventId,
+      sku: product.product.sku,
+      quantity: safeQuantity,
+    });
   };
 
   const subtotal = useMemo(

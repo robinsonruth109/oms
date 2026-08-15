@@ -28,7 +28,8 @@ function plainText(value: string | null | undefined): string {
 export async function GET() {
   const { prisma } = await import("@/lib/prisma");
 
-  const products = await prisma.product.findMany({
+  const [products, activeProductCount] = await Promise.all([
+    prisma.product.findMany({
     where: {
       status: true,
       parent: { status: true },
@@ -82,14 +83,23 @@ export async function GET() {
         },
       },
     },
-  });
+    }),
+    prisma.product.count({
+      where: {
+        status: true,
+        parent: { status: true },
+      },
+    }),
+  ]);
+
+  let feedItemCount = 0;
 
   const items = products
     .map((product) => {
       const reel = product.reelProducts[0];
       if (!reel) return "";
 
-      const image = reel.thumbnailUrl || reel.gallery[0]?.url;
+      const image = reel.gallery[0]?.url || reel.thumbnailUrl;
       if (!image) return "";
 
       const description =
@@ -99,6 +109,8 @@ export async function GET() {
       const price = Number(product.sellingPrice.toString());
       const productUrl = `${siteConfig.url}/product/${encodeURIComponent(product.sku)}`;
       const availability = product.quantity > 0 ? "in stock" : "out of stock";
+
+      feedItemCount += 1;
 
       return [
         "<item>",
@@ -125,6 +137,8 @@ export async function GET() {
       "Content-Type": "application/xml; charset=utf-8",
       "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600",
       "X-Content-Type-Options": "nosniff",
+      "X-OMS-Active-Products": String(activeProductCount),
+      "X-OMS-Feed-Items": String(feedItemCount),
     },
   });
 }

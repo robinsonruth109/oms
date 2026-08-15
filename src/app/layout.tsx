@@ -50,7 +50,7 @@ export default function RootLayout({
       <head>
         {metaPixelId ? (
           <Script id="fb-pixel" strategy="afterInteractive">
-            {`!function(f,b,e,v,n,t,s){if(!f.fbq){n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');if(window.__glossMetaPixelId!==${JSON.stringify(metaPixelId)}){fbq('init',${JSON.stringify(metaPixelId)});window.__glossMetaPixelId=${JSON.stringify(metaPixelId)};window.__glossMetaPageViewTracked=false}if(!window.__glossMetaPageViewTracked){fbq('track','PageView');window.__glossMetaPageViewTracked=true}`}
+            {`!function(f,b,e,v,n,t,s){if(!f.fbq){n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');if(window.__glossMetaPixelId!==${JSON.stringify(metaPixelId)}){fbq('init',${JSON.stringify(metaPixelId)});window.__glossMetaPixelId=${JSON.stringify(metaPixelId)};window.__glossMetaPageViewTracked=false}if(!window.__glossMetaPageViewTracked){var p=window.location.pathname==='/'?'home':window.location.pathname.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'page';var eid='page_view_'+p+'_'+Date.now();fbq('track','PageView',{}, {eventID:eid});window.__glossMetaPageViewTracked=true}`}
           </Script>
         ) : null}
       </head>

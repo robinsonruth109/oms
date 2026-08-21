@@ -1,7 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -28,6 +27,12 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // IMPORTANT:
+        // Load Prisma lazily inside the request handler.
+        // This prevents the MariaDB adapter from being initialized while
+        // Next.js/Railway is collecting route/page data during `next build`.
+        const { prisma } = await import("@/lib/prisma");
+
         const user = await prisma.user.findUnique({
           where: {
             username,
@@ -38,7 +43,10 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const isPasswordValid = await bcrypt.compare(password, user.password);
+        const isPasswordValid = await bcrypt.compare(
+          password,
+          user.password
+        );
 
         if (!isPasswordValid) {
           return null;

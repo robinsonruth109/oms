@@ -17,6 +17,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   calledOrders         Order[]               @relation("CalledOrders")
+  heldOrders           Order[]               @relation("HeldOrders")
   invoiceBatches       InvoiceBatch[]
   csvBatches           CsvBatch[]
   attendances          Attendance[]
@@ -150,7 +151,7 @@ model Order {
   source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
 
   pageId String?
-  page   Page?   @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  page   Page? @relation(fields: [pageId], references: [id], onDelete: SetNull)
 
   customerName String
   address      String
@@ -165,10 +166,16 @@ model Order {
   orderStatus OrderStatus @default(PENDING_CONFIRMATION)
   courier     String?
 
-  note           String?   @db.Text
+  note           String? @db.Text
   calledByUserId String?
-  calledByUser   User?     @relation("CalledOrders", fields: [calledByUserId], references: [id], onDelete: SetNull)
+  calledByUser   User?   @relation("CalledOrders", fields: [calledByUserId], references: [id], onDelete: SetNull)
   calledAt       DateTime?
+
+  // Temporary multi-agent calling lock.
+  holdByUserId String?
+  holdByUser   User?     @relation("HeldOrders", fields: [holdByUserId], references: [id], onDelete: SetNull)
+  holdAt       DateTime?
+  holdUntil    DateTime?
 
   invoiceDownloaded Boolean @default(false)
   csvDownloaded     Boolean @default(false)
@@ -176,12 +183,12 @@ model Order {
   readyToShipAt DateTime @default(now())
 
   // Public checkout idempotency and Meta Purchase delivery audit.
-  checkoutRequestId   String?   @unique
-  metaPurchaseEventId String?   @unique
-  metaPurchaseSentAt  DateTime?
-  metaPurchaseStatus  String?
-  metaPurchaseError   String?   @db.Text
-  metaPurchaseResponse String?  @db.Text
+  checkoutRequestId    String?   @unique
+  metaPurchaseEventId  String?   @unique
+  metaPurchaseSentAt   DateTime?
+  metaPurchaseStatus   String?
+  metaPurchaseError    String?   @db.Text
+  metaPurchaseResponse String?   @db.Text
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
@@ -197,6 +204,8 @@ model Order {
   @@index([pageId])
   @@index([orderStatus])
   @@index([calledByUserId])
+  @@index([holdByUserId])
+  @@index([holdUntil])
 }
 
 model AdsCostUpload {
@@ -659,13 +668,13 @@ model ShopSetting {
   insideDhakaDeliveryCharge  Decimal @default(70) @db.Decimal(10, 2)
   outsideDhakaDeliveryCharge Decimal @default(150) @db.Decimal(10, 2)
 
-  metaPixelId                 String?
-  metaPixelEnabled            Boolean @default(false)
-  metaConversionsApiEnabled   Boolean @default(false)
-  metaTestEventCode           String?
-  metaConversionsAccessTokenEncrypted String? @db.Text
-  metaConversionsAccessTokenIv        String?
-  metaConversionsAccessTokenTag       String?
+  metaPixelId                               String?
+  metaPixelEnabled                          Boolean @default(false)
+  metaConversionsApiEnabled                 Boolean @default(false)
+  metaTestEventCode                         String?
+  metaConversionsAccessTokenEncrypted       String? @db.Text
+  metaConversionsAccessTokenIv              String?
+  metaConversionsAccessTokenTag             String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -731,4 +740,3 @@ model CustomerCourierScore {
   @@index([riskLevel])
   @@index([checkedAt])
 }
-

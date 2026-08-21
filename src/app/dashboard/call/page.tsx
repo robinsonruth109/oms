@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import CallingPanelTable from "./calling-panel-table";
 
 type CallingPanelPageProps = {
@@ -19,6 +21,7 @@ export default async function CallingPanelPage({
   searchParams,
 }: CallingPanelPageProps) {
   const { prisma } = await import("@/lib/prisma");
+  const session = await getServerSession(authOptions);
 
   const params = (await searchParams) || {};
   const source = (params.source || "").trim();
@@ -40,131 +43,137 @@ export default async function CallingPanelPage({
 
   if (importedFrom || importedTo) {
     where.createdAt = {
-      ...(importedFrom ? { gte: new Date(`${importedFrom}T00:00:00`) } : {}),
-      ...(importedTo ? { lte: new Date(`${importedTo}T23:59:59.999`) } : {}),
+      ...(importedFrom
+        ? { gte: new Date(`${importedFrom}T00:00:00`) }
+        : {}),
+      ...(importedTo
+        ? { lte: new Date(`${importedTo}T23:59:59.999`) }
+        : {}),
     };
   }
 
   const [
-  totalOrders,
-  alreadyCalledCount,
-  notCalledCount,
-  singleItemOrderRows,
-  orders,
-  couriers,
-  products,
-  sources,
-  pages,
-] = await Promise.all([
-  prisma.order.count({ where }),
+    totalOrders,
+    alreadyCalledCount,
+    notCalledCount,
+    singleItemOrderRows,
+    orders,
+    couriers,
+    products,
+    sources,
+    pages,
+  ] = await Promise.all([
+    prisma.order.count({ where }),
 
-  prisma.order.count({
-    where: {
-      ...where,
-      calledAt: {
-        not: null,
-      },
-    },
-  }),
-
-  prisma.order.count({
-    where: {
-      ...where,
-      calledAt: null,
-    },
-  }),
-
-  prisma.order.findMany({
-    where,
-    select: {
-      id: true,
-      items: {
-        select: {
-          id: true,
+    prisma.order.count({
+      where: {
+        ...where,
+        calledAt: {
+          not: null,
         },
       },
-    },
-  }),
+    }),
 
-  prisma.order.findMany({
-    where,
-    include: {
-      items: true,
-      source: true,
-      integration: true,
-      calledByUser: true,
-      page: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    skip,
-    take: PAGE_SIZE,
-  }),
+    prisma.order.count({
+      where: {
+        ...where,
+        calledAt: null,
+      },
+    }),
 
-  prisma.courier.findMany({
-    where: {
-      status: true,
-    },
-    orderBy: {
-      name: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-    },
-  }),
+    prisma.order.findMany({
+      where,
+      select: {
+        id: true,
+        items: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    }),
 
-  prisma.product.findMany({
-    where: {
-      status: true,
-    },
-    orderBy: {
-      sku: "asc",
-    },
-    include: {
-      parent: true,
-    },
-  }),
+    prisma.order.findMany({
+      where,
+      include: {
+        items: true,
+        source: true,
+        integration: true,
+        calledByUser: true,
+        holdByUser: true,
+        page: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: PAGE_SIZE,
+    }),
 
-  prisma.orderSource.findMany({
-    where: {
-      status: true,
-    },
-    orderBy: {
-      name: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-      type: true,
-    },
-  }),
+    prisma.courier.findMany({
+      where: {
+        status: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    }),
 
-  prisma.page.findMany({
-    where: {
-      status: true,
-    },
-    orderBy: {
-      name: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-      prefixCode: true,
-    },
-  }),
-]);
+    prisma.product.findMany({
+      where: {
+        status: true,
+      },
+      orderBy: {
+        sku: "asc",
+      },
+      include: {
+        parent: true,
+      },
+    }),
 
-const queueSummary = {
-  total: totalOrders,
-  alreadyCalled: alreadyCalledCount,
-  notCalled: notCalledCount,
-  singleItemOrders: singleItemOrderRows.filter(
-    (order) => order.items.length === 1
-  ).length,
-};
+    prisma.orderSource.findMany({
+      where: {
+        status: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+      },
+    }),
+
+    prisma.page.findMany({
+      where: {
+        status: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        prefixCode: true,
+      },
+    }),
+  ]);
+
+  const queueSummary = {
+    total: totalOrders,
+    alreadyCalled: alreadyCalledCount,
+    notCalled: notCalledCount,
+    singleItemOrders: singleItemOrderRows.filter(
+      (order) => order.items.length === 1
+    ).length,
+  };
+
   const totalPages = Math.max(Math.ceil(totalOrders / PAGE_SIZE), 1);
   const hasNextPage = currentPage < totalPages;
   const hasPrevPage = currentPage > 1;
@@ -201,6 +210,8 @@ const queueSummary = {
     updatedAt: order.updatedAt.toISOString(),
     readyToShipAt: order.readyToShipAt.toISOString().slice(0, 10),
     calledAt: order.calledAt ? order.calledAt.toISOString() : null,
+    holdAt: order.holdAt ? order.holdAt.toISOString() : null,
+    holdUntil: order.holdUntil ? order.holdUntil.toISOString() : null,
     pageId: order.pageId,
     page: order.page
       ? {
@@ -227,6 +238,13 @@ const queueSummary = {
           id: order.calledByUser.id,
           name: order.calledByUser.name,
           username: order.calledByUser.username,
+        }
+      : null,
+    holdByUser: order.holdByUser
+      ? {
+          id: order.holdByUser.id,
+          name: order.holdByUser.name,
+          username: order.holdByUser.username,
         }
       : null,
     items: order.items.map((item) => ({
@@ -277,7 +295,10 @@ const queueSummary = {
           <input type="hidden" name="page" value="1" />
 
           <div className="space-y-2">
-            <label htmlFor="source" className="text-sm font-medium text-slate-700">
+            <label
+              htmlFor="source"
+              className="text-sm font-medium text-slate-700"
+            >
               Source
             </label>
             <select
@@ -296,7 +317,10 @@ const queueSummary = {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="importedFrom" className="text-sm font-medium text-slate-700">
+            <label
+              htmlFor="importedFrom"
+              className="text-sm font-medium text-slate-700"
+            >
               Imported From
             </label>
             <input
@@ -309,7 +333,10 @@ const queueSummary = {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="importedTo" className="text-sm font-medium text-slate-700">
+            <label
+              htmlFor="importedTo"
+              className="text-sm font-medium text-slate-700"
+            >
               Imported To
             </label>
             <input
@@ -345,6 +372,10 @@ const queueSummary = {
         products={productOptions}
         pages={pageOptions}
         queueSummary={queueSummary}
+        currentUser={{
+          id: session?.user?.id || "",
+          name: session?.user?.name || "Agent",
+        }}
       />
 
       <div className="flex flex-wrap items-center justify-center gap-3">

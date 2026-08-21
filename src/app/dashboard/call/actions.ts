@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const CALLING_HOLD_MINUTES = 10;
+
 type SaveCallingOrderInput = {
   orderId: string;
   customerName: string;
@@ -34,6 +36,14 @@ type ActionResult = {
   message: string;
 };
 
+export type ClaimCallingOrderResult = ActionResult & {
+  holder?: {
+    id: string;
+    name: string;
+  } | null;
+  holdUntil?: string | null;
+};
+
 function toMoney(value: unknown) {
   const num = Number(value ?? 0);
   return Number.isNaN(num) ? 0 : num;
@@ -43,12 +53,190 @@ function normalizePhone(value: string) {
   return String(value || "").trim().replace(/\s+/g, "");
 }
 
-export async function saveCallingOrder(
-  payload: SaveCallingOrderInput
-): Promise<ActionResult> {
+function isCallingStatus(status: string) {
+  return ["PENDING_CONFIRMATION", "NO_ANSWER", "PHONE_OFF"].includes(status);
+}
+
+async function getAuthorizedSession() {
   const session = await getServerSession(authOptions);
 
   if (!session || !["ADMIN", "AGENT"].includes(session.user.role)) {
+    return null;
+  }
+
+  return session;
+}
+
+async function acquireCallingHold(
+  orderId: string,
+  userId: string,
+  userName: string
+): Promise<ClaimCallingOrderResult> {
+  const id = String(orderId || "").trim();
+
+  if (!id) {
+    return {
+      success: false,
+      message: "Order id is required.",
+    };
+  }
+
+  const now = new Date();
+  const holdUntil = new Date(
+    now.getTime() + CALLING_HOLD_MINUTES * 60 * 1000
+  );
+
+  const claimed = await prisma.order.updateMany({
+    where: {
+      id,
+      orderStatus: {
+        in: ["PENDING_CONFIRMATION", "NO_ANSWER", "PHONE_OFF"],
+      },
+      OR: [
+        {
+          holdByUserId: null,
+        },
+        {
+          holdUntil: {
+            lte: now,
+          },
+        },
+        {
+          holdByUserId: userId,
+        },
+      ],
+    },
+    data: {
+      holdByUserId: userId,
+      holdAt: now,
+      holdUntil,
+    },
+  });
+
+  if (claimed.count === 1) {
+    return {
+      success: true,
+      message: "Order held successfully.",
+      holder: {
+        id: userId,
+        name: userName || "Agent",
+      },
+      holdUntil: holdUntil.toISOString(),
+    };
+  }
+
+  const order = await prisma.order.findUnique({
+    where: {
+      id,
+    },
+    select: {
+      orderStatus: true,
+      holdByUserId: true,
+      holdUntil: true,
+      holdByUser: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    return {
+      success: false,
+      message: "Order not found.",
+    };
+  }
+
+  if (!isCallingStatus(order.orderStatus)) {
+    return {
+      success: false,
+      message: "This order is no longer available in the calling queue.",
+    };
+  }
+
+  const holderName = order.holdByUser?.name || "Another agent";
+
+  return {
+    success: false,
+    message: `${holderName} is calling this order. Try another one.`,
+    holder: order.holdByUser
+      ? {
+          id: order.holdByUser.id,
+          name: holderName,
+        }
+      : null,
+    holdUntil: order.holdUntil?.toISOString() || null,
+  };
+}
+
+export async function claimCallingOrder(
+  orderId: string
+): Promise<ClaimCallingOrderResult> {
+  const session = await getAuthorizedSession();
+
+  if (!session) {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  return acquireCallingHold(
+    orderId,
+    session.user.id,
+    session.user.name || "Agent"
+  );
+}
+
+export async function releaseCallingOrder(
+  orderId: string
+): Promise<ActionResult> {
+  const session = await getAuthorizedSession();
+
+  if (!session) {
+    return {
+      success: false,
+      message: "Unauthorized action.",
+    };
+  }
+
+  const id = String(orderId || "").trim();
+
+  if (!id) {
+    return {
+      success: false,
+      message: "Order id is required.",
+    };
+  }
+
+  await prisma.order.updateMany({
+    where: {
+      id,
+      holdByUserId: session.user.id,
+    },
+    data: {
+      holdByUserId: null,
+      holdAt: null,
+      holdUntil: null,
+    },
+  });
+
+  revalidatePath("/dashboard/call");
+
+  return {
+    success: true,
+    message: "Order hold released.",
+  };
+}
+
+export async function saveCallingOrder(
+  payload: SaveCallingOrderInput
+): Promise<ActionResult> {
+  const session = await getAuthorizedSession();
+
+  if (!session) {
     return {
       success: false,
       message: "Unauthorized action.",
@@ -56,6 +244,20 @@ export async function saveCallingOrder(
   }
 
   const orderId = String(payload.orderId || "").trim();
+
+  const holdResult = await acquireCallingHold(
+    orderId,
+    session.user.id,
+    session.user.name || "Agent"
+  );
+
+  if (!holdResult.success) {
+    return {
+      success: false,
+      message: holdResult.message,
+    };
+  }
+
   const customerName = String(payload.customerName || "").trim();
   const phone = normalizePhone(payload.phone);
   const address = String(payload.address || "").trim();
@@ -117,7 +319,7 @@ export async function saveCallingOrder(
     };
   }
 
-  if (!["PENDING_CONFIRMATION", "NO_ANSWER", "PHONE_OFF"].includes(order.orderStatus)) {
+  if (!isCallingStatus(order.orderStatus)) {
     return {
       success: false,
       message: "This order is no longer editable from calling panel.",
@@ -149,190 +351,206 @@ export async function saveCallingOrder(
   let totalAmount = Number(order.totalAmount);
 
   try {
-    await prisma.$transaction(async (tx) => {
-      if (payload.items && payload.items.length > 0) {
-        const cleanedItems = payload.items
-          .map((item) => ({
-            orderItemId: String(item.orderItemId || "").trim(),
-            productId: String(item.productId || "").trim(),
-            quantity: Number(item.quantity || 0),
-          }))
-          .filter((item) => item.productId && item.quantity > 0);
+    await prisma.$transaction(
+      async (tx) => {
+        if (payload.items && payload.items.length > 0) {
+          const cleanedItems = payload.items
+            .map((item) => ({
+              orderItemId: String(item.orderItemId || "").trim(),
+              productId: String(item.productId || "").trim(),
+              quantity: Number(item.quantity || 0),
+            }))
+            .filter((item) => item.productId && item.quantity > 0);
 
-        if (!cleanedItems.length) {
-          throw new Error("Please add at least one valid product.");
-        }
+          if (!cleanedItems.length) {
+            throw new Error("Please add at least one valid product.");
+          }
 
-        const productIds = [...new Set(cleanedItems.map((item) => item.productId))];
+          const productIds = [
+            ...new Set(cleanedItems.map((item) => item.productId)),
+          ];
 
-        const products = await tx.product.findMany({
-          where: {
-            id: { in: productIds },
-            status: true,
-          },
-          select: {
-            id: true,
-            sku: true,
-            name: true,
-            sellingPrice: true,
-          },
-        });
-
-        if (products.length !== productIds.length) {
-          throw new Error("One or more selected products are invalid.");
-        }
-
-        const productMap = new Map(products.map((product) => [product.id, product]));
-        const existingIds = new Set(order.items.map((item) => item.id));
-        const keepIds = new Set(
-          cleanedItems
-            .map((item) => item.orderItemId)
-            .filter((id) => id && existingIds.has(id))
-        );
-
-        const deleteIds = order.items
-          .filter((item) => !keepIds.has(item.id))
-          .map((item) => item.id);
-
-        if (deleteIds.length) {
-          await tx.orderItem.deleteMany({
+          const products = await tx.product.findMany({
             where: {
-              id: { in: deleteIds },
+              id: { in: productIds },
+              status: true,
+            },
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              sellingPrice: true,
             },
           });
-        }
 
-        for (const item of cleanedItems) {
-          const product = productMap.get(item.productId);
+          if (products.length !== productIds.length) {
+            throw new Error("One or more selected products are invalid.");
+          }
+
+          const productMap = new Map(
+            products.map((product) => [product.id, product])
+          );
+          const existingIds = new Set(order.items.map((item) => item.id));
+          const keepIds = new Set(
+            cleanedItems
+              .map((item) => item.orderItemId)
+              .filter((id) => id && existingIds.has(id))
+          );
+
+          const deleteIds = order.items
+            .filter((item) => !keepIds.has(item.id))
+            .map((item) => item.id);
+
+          if (deleteIds.length) {
+            await tx.orderItem.deleteMany({
+              where: {
+                id: { in: deleteIds },
+              },
+            });
+          }
+
+          for (const item of cleanedItems) {
+            const product = productMap.get(item.productId);
+
+            if (!product) {
+              throw new Error("Selected product is invalid.");
+            }
+
+            const unitPrice = Number(product.sellingPrice);
+            const lineTotal = unitPrice * item.quantity;
+
+            if (item.orderItemId && existingIds.has(item.orderItemId)) {
+              await tx.orderItem.update({
+                where: {
+                  id: item.orderItemId,
+                },
+                data: {
+                  productId: product.id,
+                  productSku: product.sku,
+                  productName: product.name,
+                  quantity: item.quantity,
+                  unitPrice,
+                  lineTotal,
+                },
+              });
+            } else {
+              await tx.orderItem.create({
+                data: {
+                  orderId: order.id,
+                  productId: product.id,
+                  productSku: product.sku,
+                  productName: product.name,
+                  quantity: item.quantity,
+                  unitPrice,
+                  lineTotal,
+                },
+              });
+            }
+          }
+        } else if (payload.singleItem) {
+          const orderItemId = String(
+            payload.singleItem.orderItemId || ""
+          ).trim();
+          const productId = String(payload.singleItem.productId || "").trim();
+          const quantity = Number(payload.singleItem.quantity || 0);
+
+          if (!orderItemId || !productId || quantity <= 0) {
+            throw new Error("Invalid product row data.");
+          }
+
+          const targetItem = order.items.find(
+            (item) => item.id === orderItemId
+          );
+
+          if (!targetItem) {
+            throw new Error("Order item not found.");
+          }
+
+          const product = await tx.product.findFirst({
+            where: {
+              id: productId,
+              status: true,
+            },
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              sellingPrice: true,
+            },
+          });
+
           if (!product) {
             throw new Error("Selected product is invalid.");
           }
 
-          const unitPrice = Number(product.sellingPrice);
-          const lineTotal = unitPrice * item.quantity;
+          const updatedLineTotal = Number(product.sellingPrice) * quantity;
 
-          if (item.orderItemId && existingIds.has(item.orderItemId)) {
-            await tx.orderItem.update({
-              where: {
-                id: item.orderItemId,
-              },
-              data: {
-                productId: product.id,
-                productSku: product.sku,
-                productName: product.name,
-                quantity: item.quantity,
-                unitPrice,
-                lineTotal,
-              },
-            });
-          } else {
-            await tx.orderItem.create({
-              data: {
-                orderId: order.id,
-                productId: product.id,
-                productSku: product.sku,
-                productName: product.name,
-                quantity: item.quantity,
-                unitPrice,
-                lineTotal,
-              },
-            });
-          }
-        }
-      } else if (payload.singleItem) {
-        const orderItemId = String(payload.singleItem.orderItemId || "").trim();
-        const productId = String(payload.singleItem.productId || "").trim();
-        const quantity = Number(payload.singleItem.quantity || 0);
-
-        if (!orderItemId || !productId || quantity <= 0) {
-          throw new Error("Invalid product row data.");
+          await tx.orderItem.update({
+            where: {
+              id: orderItemId,
+            },
+            data: {
+              productId: product.id,
+              productSku: product.sku,
+              productName: product.name,
+              quantity,
+              unitPrice: Number(product.sellingPrice),
+              lineTotal: updatedLineTotal,
+            },
+          });
         }
 
-        const targetItem = order.items.find((item) => item.id === orderItemId);
-
-        if (!targetItem) {
-          throw new Error("Order item not found.");
-        }
-
-        const product = await tx.product.findFirst({
+        const freshItems = await tx.orderItem.findMany({
           where: {
-            id: productId,
-            status: true,
-          },
-          select: {
-            id: true,
-            sku: true,
-            name: true,
-            sellingPrice: true,
+            orderId: order.id,
           },
         });
 
-        if (!product) {
-          throw new Error("Selected product is invalid.");
+        if (!freshItems.length) {
+          throw new Error("Order must contain at least one product.");
         }
 
-        const updatedLineTotal = Number(product.sellingPrice) * quantity;
+        subtotal = freshItems.reduce(
+          (sum, item) => sum + Number(item.lineTotal),
+          0
+        );
+        totalAmount = Math.max(
+          subtotal + deliveryCharge - discount - Number(order.advance),
+          0
+        );
 
-        await tx.orderItem.update({
+        await tx.order.update({
           where: {
-            id: orderItemId,
+            id: order.id,
           },
           data: {
-            productId: product.id,
-            productSku: product.sku,
-            productName: product.name,
-            quantity,
-            unitPrice: Number(product.sellingPrice),
-            lineTotal: updatedLineTotal,
+            customerName,
+            phone,
+            address,
+            discount,
+            deliveryCharge,
+            subtotal,
+            totalAmount,
+            courier: courierRecord?.slug || null,
+            readyToShipAt: readyToShipAt
+              ? new Date(`${readyToShipAt}T00:00:00`)
+              : order.readyToShipAt,
+            orderStatus: status,
+            note: note || order.note,
+            calledByUserId: session.user.id,
+            calledAt: new Date(),
+            pageId,
+            holdByUserId: null,
+            holdAt: null,
+            holdUntil: null,
           },
         });
-      }
-
-      const freshItems = await tx.orderItem.findMany({
-        where: {
-          orderId: order.id,
-        },
-      });
-
-      if (!freshItems.length) {
-        throw new Error("Order must contain at least one product.");
-      }
-
-      subtotal = freshItems.reduce((sum, item) => sum + Number(item.lineTotal), 0);
-      totalAmount = Math.max(
-        subtotal + deliveryCharge - discount - Number(order.advance),
-        0
-      );
-
-      await tx.order.update({
-        where: {
-          id: order.id,
-        },
-        data: {
-          customerName,
-          phone,
-          address,
-          discount,
-          deliveryCharge,
-          subtotal,
-          totalAmount,
-          courier: courierRecord?.slug || null,
-          readyToShipAt: readyToShipAt
-            ? new Date(`${readyToShipAt}T00:00:00`)
-            : order.readyToShipAt,
-          orderStatus: status,
-          note: note || order.note,
-          calledByUserId: session.user.id,
-          calledAt: new Date(),
-          pageId,
-        },
-      });
-    },
+      },
       {
-      timeout: 20000, // 20 seconds
-      maxWait: 20000,
-    }
-      );
+        timeout: 20000,
+        maxWait: 20000,
+      }
+    );
 
     revalidatePath("/dashboard/call");
     revalidatePath(`/dashboard/call/${order.id}`);
@@ -359,9 +577,9 @@ export async function saveCallingOrder(
 export async function directCancelCallingOrder(
   orderId: string
 ): Promise<ActionResult> {
-  const session = await getServerSession(authOptions);
+  const session = await getAuthorizedSession();
 
-  if (!session || !["ADMIN", "AGENT"].includes(session.user.role)) {
+  if (!session) {
     return {
       success: false,
       message: "Unauthorized action.",
@@ -377,6 +595,19 @@ export async function directCancelCallingOrder(
     };
   }
 
+  const holdResult = await acquireCallingHold(
+    id,
+    session.user.id,
+    session.user.name || "Agent"
+  );
+
+  if (!holdResult.success) {
+    return {
+      success: false,
+      message: holdResult.message,
+    };
+  }
+
   await prisma.order.update({
     where: {
       id,
@@ -385,6 +616,9 @@ export async function directCancelCallingOrder(
       orderStatus: "CANCELLED",
       calledByUserId: session.user.id,
       calledAt: new Date(),
+      holdByUserId: null,
+      holdAt: null,
+      holdUntil: null,
     },
   });
 

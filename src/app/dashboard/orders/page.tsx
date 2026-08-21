@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth";
 
 import CreateOrderForm from "./create-order-form";
 
@@ -46,6 +49,11 @@ function CourierLabel({ courier }: { courier: string | null }) {
 }
 
 export default async function OrdersPage() {
+  const session = await getServerSession(authOptions);
+  if (!session || !["ADMIN", "NOTE_AGENT"].includes(session.user.role)) {
+    redirect("/dashboard");
+  }
+
   const { prisma } = await import("@/lib/prisma");
   const pages = await prisma.page.findMany({
     where: { status: true },

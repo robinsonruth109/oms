@@ -40,7 +40,7 @@ export async function createInvoiceBatch(
 ): Promise<BatchActionState> {
   const session = await getServerSession(authOptions);
 
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
     return {
       success: false,
       message: "Unauthorized action.",
@@ -146,7 +146,7 @@ export async function createCsvBatch(
 ): Promise<BatchActionState> {
   const session = await getServerSession(authOptions);
 
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
     return {
       success: false,
       message: "Unauthorized action.",

@@ -11,10 +11,10 @@ type ActionState = {
   message: string;
 };
 
-async function requireAdmin() {
+async function requirePackagingAccess() {
   const session = await getServerSession(authOptions);
 
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
     throw new Error("Unauthorized");
   }
 }
@@ -48,7 +48,7 @@ export async function markSingleInvoiceStockOut(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await requireAdmin();
+    await requirePackagingAccess();
 
     const invoiceId = String(formData.get("invoiceId") || "").trim();
 
@@ -78,7 +78,7 @@ export async function markSingleInvoiceCancelled(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await requireAdmin();
+    await requirePackagingAccess();
 
     const invoiceId = String(formData.get("invoiceId") || "").trim();
 
@@ -122,7 +122,7 @@ export async function bulkCsvStockOut(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await requireAdmin();
+    await requirePackagingAccess();
 
     const file = formData.get("file");
 
@@ -152,7 +152,7 @@ export async function bulkCsvCancelled(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await requireAdmin();
+    await requirePackagingAccess();
 
     const file = formData.get("file");
 
@@ -179,7 +179,7 @@ export async function bulkCsvCancelled(
 
 export async function restoreStockOutOrder(orderId: string): Promise<ActionState> {
   try {
-    await requireAdmin();
+    await requirePackagingAccess();
 
     await prisma.order.update({
       where: { id: orderId },

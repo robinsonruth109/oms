@@ -1,5 +1,8 @@
 import { BadgeCheck, UserCog, UserRound } from "lucide-react";
 import CreateUserForm from "./create-user-form";
+import DeleteUserButton from "./delete-user-button";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 function RoleBadge({ role }: { role: string }) {
@@ -7,6 +10,22 @@ function RoleBadge({ role }: { role: string }) {
     return (
       <span className="inline-flex items-center rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
         ADMIN
+      </span>
+    );
+  }
+
+  if (role === "NOTE_AGENT") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+        NOTE AGENT
+      </span>
+    );
+  }
+
+  if (role === "PACKAGING_AGENT") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+        PACKAGING AGENT
       </span>
     );
   }
@@ -19,6 +38,7 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 export default async function UsersPage() {
+  const session = await getServerSession(authOptions);
   const { prisma } = await import("@/lib/prisma");
   const users = await prisma.user.findMany({
     orderBy: {
@@ -32,7 +52,7 @@ export default async function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Manage Users</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Create and manage admins and calling agents.
+            Create and manage admins, calling agents, note agents and packaging agents.
           </p>
         </div>
 
@@ -90,6 +110,14 @@ export default async function UsersPage() {
                 </p>
               </div>
             </div>
+
+            <div className="mt-4 border-t pt-4">
+              <DeleteUserButton
+                userId={user.id}
+                userName={user.name}
+                disabled={user.id === session?.user?.id}
+              />
+            </div>
           </div>
         ))}
       </section>
@@ -113,6 +141,9 @@ export default async function UsersPage() {
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Created
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -153,6 +184,14 @@ export default async function UsersPage() {
 
                   <td className="px-6 py-4 text-sm text-slate-700">
                     {new Date(user.createdAt).toLocaleDateString()}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <DeleteUserButton
+                      userId={user.id}
+                      userName={user.name}
+                      disabled={user.id === session?.user?.id}
+                    />
                   </td>
                 </tr>
               ))}

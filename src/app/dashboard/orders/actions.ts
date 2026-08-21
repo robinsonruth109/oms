@@ -55,7 +55,7 @@ export async function createManualOrder(
 ): Promise<CreateOrderState> {
   const session = await getServerSession(authOptions);
 
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !["ADMIN", "NOTE_AGENT"].includes(session.user.role)) {
     return {
       success: false,
       message: "Unauthorized action.",

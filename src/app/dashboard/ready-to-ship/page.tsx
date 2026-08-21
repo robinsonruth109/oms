@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import ReadyToShipClient from "./ready-to-ship-client";
 
@@ -20,6 +23,11 @@ function formatDateTime(date: Date) {
 export default async function ReadyToShipPage({
   searchParams,
 }: ReadyToShipPageProps) {
+  const session = await getServerSession(authOptions);
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+    redirect("/dashboard");
+  }
+
   const { prisma } = await import("@/lib/prisma");
   const params = (await searchParams) || {};
   const courier = (params.courier || "").trim();

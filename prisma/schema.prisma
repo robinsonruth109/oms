@@ -421,6 +421,8 @@ model CsvBatchItem {
 enum Role {
   ADMIN
   AGENT
+  NOTE_AGENT
+  PACKAGING_AGENT
 }
 
 enum OrderSourceType {

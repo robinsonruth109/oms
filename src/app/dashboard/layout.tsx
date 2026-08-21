@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -76,6 +76,9 @@ export default async function DashboardLayout({
 
   const isAdmin = session.user.role === "ADMIN";
   const isAgent = session.user.role === "AGENT";
+  const isNoteAgent = session.user.role === "NOTE_AGENT";
+  const isPackagingAgent = session.user.role === "PACKAGING_AGENT";
+  const isRestrictedAgent = isNoteAgent || isPackagingAgent;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -101,17 +104,45 @@ export default async function DashboardLayout({
 
           <div className="overflow-x-auto px-4 pb-4">
             <div className="flex min-w-max gap-2">
-              <Link href="/dashboard">
-                <Button variant="outline" size="sm">
-                  Dashboard
-                </Button>
-              </Link>
+              {!isRestrictedAgent && (
+                <>
+                  <Link href="/dashboard">
+                    <Button variant="outline" size="sm">
+                      Dashboard
+                    </Button>
+                  </Link>
 
-              <Link href="/dashboard/attendance">
-                <Button variant="outline" size="sm">
-                  Attendance
-                </Button>
-              </Link>
+                  <Link href="/dashboard/attendance">
+                    <Button variant="outline" size="sm">
+                      Attendance
+                    </Button>
+                  </Link>
+                </>
+              )}
+
+              {isNoteAgent && (
+                <Link href="/dashboard/orders">
+                  <Button variant="outline" size="sm">
+                    Orders
+                  </Button>
+                </Link>
+              )}
+
+              {isPackagingAgent && (
+                <>
+                  <Link href="/dashboard/ready-to-ship">
+                    <Button variant="outline" size="sm">
+                      Ready to Ship
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/post-print-actions">
+                    <Button variant="outline" size="sm">
+                      Post Print
+                    </Button>
+                  </Link>
+                </>
+              )}
 
               {isAdmin && (
                 <>
@@ -344,17 +375,44 @@ export default async function DashboardLayout({
             </p>
 
             <nav className="space-y-1">
-              <NavLink
-                href="/dashboard"
-                icon={<LayoutDashboard className="h-4 w-4" />}
-                label="Dashboard"
-              />
+              {!isRestrictedAgent && (
+                <>
+                  <NavLink
+                    href="/dashboard"
+                    icon={<LayoutDashboard className="h-4 w-4" />}
+                    label="Dashboard"
+                  />
 
-              <NavLink
-                href="/dashboard/attendance"
-                icon={<CalendarCheck className="h-4 w-4" />}
-                label="Attendance"
-              />
+                  <NavLink
+                    href="/dashboard/attendance"
+                    icon={<CalendarCheck className="h-4 w-4" />}
+                    label="Attendance"
+                  />
+                </>
+              )}
+
+              {isNoteAgent && (
+                <NavLink
+                  href="/dashboard/orders"
+                  icon={<Package className="h-4 w-4" />}
+                  label="Orders"
+                />
+              )}
+
+              {isPackagingAgent && (
+                <>
+                  <NavLink
+                    href="/dashboard/ready-to-ship"
+                    icon={<Truck className="h-4 w-4" />}
+                    label="Ready to Ship"
+                  />
+                  <NavLink
+                    href="/dashboard/post-print-actions"
+                    icon={<Ban className="h-4 w-4" />}
+                    label="Post Print Actions"
+                  />
+                </>
+              )}
 
               {isAdmin && (
                 <>

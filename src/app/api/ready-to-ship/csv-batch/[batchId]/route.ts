@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +14,11 @@ export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ batchId: string }> }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const { prisma } = await import("@/lib/prisma");
   const { batchId } = await context.params;
 

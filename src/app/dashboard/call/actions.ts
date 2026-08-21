@@ -3,7 +3,6 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 const CALLING_HOLD_MINUTES = 10;
 
@@ -72,6 +71,7 @@ async function acquireCallingHold(
   userId: string,
   userName: string
 ): Promise<ClaimCallingOrderResult> {
+  const { prisma } = await import("@/lib/prisma");
   const id = String(orderId || "").trim();
 
   if (!id) {
@@ -193,6 +193,7 @@ export async function claimCallingOrder(
 export async function releaseCallingOrder(
   orderId: string
 ): Promise<ActionResult> {
+  const { prisma } = await import("@/lib/prisma");
   const session = await getAuthorizedSession();
 
   if (!session) {
@@ -234,6 +235,7 @@ export async function releaseCallingOrder(
 export async function saveCallingOrder(
   payload: SaveCallingOrderInput
 ): Promise<ActionResult> {
+  const { prisma } = await import("@/lib/prisma");
   const session = await getAuthorizedSession();
 
   if (!session) {
@@ -577,6 +579,7 @@ export async function saveCallingOrder(
 export async function directCancelCallingOrder(
   orderId: string
 ): Promise<ActionResult> {
+  const { prisma } = await import("@/lib/prisma");
   const session = await getAuthorizedSession();
 
   if (!session) {

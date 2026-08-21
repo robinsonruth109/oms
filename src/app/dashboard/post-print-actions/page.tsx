@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth";
 import {
   BulkCancelCsvForm,
   BulkStockOutCsvForm,
@@ -5,7 +8,11 @@ import {
   SingleStockOutForm,
 } from "./forms";
 
-export default function PostPrintActionsPage() {
+export default async function PostPrintActionsPage() {
+  const session = await getServerSession(authOptions);
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+    redirect("/dashboard");
+  }
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">

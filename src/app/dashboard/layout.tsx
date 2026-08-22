@@ -121,11 +121,19 @@ export default async function DashboardLayout({
               )}
 
               {isNoteAgent && (
-                <Link href="/dashboard/orders">
-                  <Button variant="outline" size="sm">
-                    Orders
-                  </Button>
-                </Link>
+                <>
+                  <Link href="/dashboard/orders">
+                    <Button variant="outline" size="sm">
+                      Orders
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/all-orders">
+                    <Button variant="outline" size="sm">
+                      All Orders
+                    </Button>
+                  </Link>
+                </>
               )}
 
               {isPackagingAgent && (
@@ -324,6 +332,12 @@ export default async function DashboardLayout({
 
               {isAgent && (
                 <>
+                  <Link href="/dashboard/all-orders">
+                    <Button variant="outline" size="sm">
+                      All Orders
+                    </Button>
+                  </Link>
+
                   <Link href="/dashboard/pending-orders">
                     <Button variant="outline" size="sm">
                       Pending Orders
@@ -392,11 +406,18 @@ export default async function DashboardLayout({
               )}
 
               {isNoteAgent && (
-                <NavLink
-                  href="/dashboard/orders"
-                  icon={<Package className="h-4 w-4" />}
-                  label="Orders"
-                />
+                <>
+                  <NavLink
+                    href="/dashboard/orders"
+                    icon={<Package className="h-4 w-4" />}
+                    label="Orders"
+                  />
+                  <NavLink
+                    href="/dashboard/all-orders"
+                    icon={<Package className="h-4 w-4" />}
+                    label="All Orders"
+                  />
+                </>
               )}
 
               {isPackagingAgent && (
@@ -594,6 +615,12 @@ export default async function DashboardLayout({
 
               {isAgent && (
                 <>
+                  <NavLink
+                    href="/dashboard/all-orders"
+                    icon={<Package className="h-4 w-4" />}
+                    label="All Orders"
+                  />
+
                   <NavLink
                     href="/dashboard/pending-orders"
                     icon={<ClipboardList className="h-4 w-4" />}

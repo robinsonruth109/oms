@@ -9,7 +9,11 @@ function roleHome(role: string) {
 
 function isAllowed(pathname: string, role: string) {
   if (role === "NOTE_AGENT") {
-    return pathname === "/dashboard/orders";
+    return (
+      pathname === "/dashboard/orders" ||
+      pathname === "/dashboard/all-orders" ||
+      pathname.startsWith("/dashboard/all-orders/")
+    );
   }
 
   if (role === "PACKAGING_AGENT") {

@@ -3,6 +3,12 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import ReadyToShipClient from "./ready-to-ship-client";
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+  formatBangladeshDate,
+  formatBangladeshDateTime,
+} from "@/lib/bangladesh-time";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,10 +21,6 @@ type ReadyToShipPageProps = {
     tab?: string;
   }>;
 };
-
-function formatDateTime(date: Date) {
-  return date.toLocaleString();
-}
 
 export default async function ReadyToShipPage({
   searchParams,
@@ -67,8 +69,8 @@ export default async function ReadyToShipPage({
 
   if (from || to) {
     whereBase.readyToShipAt = {
-      ...(from ? { gte: new Date(`${from}T00:00:00`) } : {}),
-      ...(to ? { lte: new Date(`${to}T23:59:59`) } : {}),
+      ...(from ? { gte: bangladeshDateStartUtc(from) } : {}),
+      ...(to ? { lte: bangladeshDateEndUtc(to) } : {}),
     };
   }
 
@@ -267,7 +269,7 @@ export default async function ReadyToShipPage({
           phone: order.phone,
           courier: order.courier,
           totalAmount: Number(order.totalAmount),
-          createdAt: formatDateTime(order.readyToShipAt),
+          createdAt: formatBangladeshDate(order.readyToShipAt),
           items: order.items.map((item) => ({
             id: item.id,
             productSku: item.productSku,
@@ -279,7 +281,7 @@ export default async function ReadyToShipPage({
           batchNo: batch.batchNo,
           courier: batch.courier,
           totalOrders: batch.totalOrders,
-          createdAt: formatDateTime(batch.createdAt),
+          createdAt: formatBangladeshDateTime(batch.createdAt),
           createdByName: batch.createdByUser.name,
           downloadUrl: `/api/ready-to-ship/invoice-batch/${batch.id}`,
         }))}
@@ -288,7 +290,7 @@ export default async function ReadyToShipPage({
           batchNo: batch.batchNo,
           courier: batch.courier,
           totalOrders: batch.totalOrders,
-          createdAt: formatDateTime(batch.createdAt),
+          createdAt: formatBangladeshDateTime(batch.createdAt),
           createdByName: batch.createdByUser.name,
           downloadUrl: `/api/ready-to-ship/csv-batch/${batch.id}`,
         }))}

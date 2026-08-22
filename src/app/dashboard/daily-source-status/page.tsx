@@ -2,6 +2,11 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import DailySourceStatusClient from "./daily-source-status-client";
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+  getBangladeshDateInputValue,
+} from "@/lib/bangladesh-time";
 
 type PageProps = {
   searchParams?: Promise<{
@@ -10,19 +15,6 @@ type PageProps = {
     sourceId?: string;
   }>;
 };
-
-function getLocalDateInputValue(date = new Date()) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
-function startOfDay(value: string) {
-  return new Date(`${value}T00:00:00`);
-}
-
-function endOfDay(value: string) {
-  return new Date(`${value}T23:59:59.999`);
-}
 
 type StatusBucket = {
   totalInvoice: number;
@@ -96,7 +88,7 @@ export default async function DailySourceStatusPage({
   const { prisma } = await import("@/lib/prisma");
 
   const params = (await searchParams) || {};
-  const today = getLocalDateInputValue();
+  const today = getBangladeshDateInputValue();
 
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
@@ -113,8 +105,8 @@ export default async function DailySourceStatusPage({
 
   const where: Record<string, any> = {
     createdAt: {
-      gte: startOfDay(from),
-      lte: endOfDay(to),
+      gte: bangladeshDateStartUtc(from),
+      lte: bangladeshDateEndUtc(to),
     },
   };
 

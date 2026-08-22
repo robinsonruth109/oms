@@ -2,6 +2,10 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import CallingPanelTable from "./calling-panel-table";
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+} from "@/lib/bangladesh-time";
 
 type CallingPanelPageProps = {
   searchParams?: Promise<{
@@ -44,10 +48,10 @@ export default async function CallingPanelPage({
   if (importedFrom || importedTo) {
     where.createdAt = {
       ...(importedFrom
-        ? { gte: new Date(`${importedFrom}T00:00:00`) }
+        ? { gte: bangladeshDateStartUtc(importedFrom) }
         : {}),
       ...(importedTo
-        ? { lte: new Date(`${importedTo}T23:59:59.999`) }
+        ? { lte: bangladeshDateEndUtc(importedTo) }
         : {}),
     };
   }

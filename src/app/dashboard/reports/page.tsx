@@ -1,6 +1,13 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+  formatBangladeshDate,
+  getBangladeshDateInputValue,
+} from "@/lib/bangladesh-time";
+
 type ReportsPageProps = {
   searchParams?: Promise<{
     from?: string;
@@ -9,30 +16,13 @@ type ReportsPageProps = {
   }>;
 };
 
-function getLocalDateInputValue(date = new Date()) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
-function startOfDay(value: string) {
-  return new Date(`${value}T00:00:00`);
-}
-
-function endOfDay(value: string) {
-  return new Date(`${value}T23:59:59.999`);
-}
-
 function percent(part: number, total: number) {
   if (!total) return "0%";
   return `${((part / total) * 100).toFixed(1)}%`;
 }
 
 function formatDay(date: Date) {
-  return date.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatBangladeshDate(date);
 }
 
 type Bucket = {
@@ -93,15 +83,15 @@ export default async function ReportsPage({
   const { prisma } = await import("@/lib/prisma");
   const params = (await searchParams) || {};
 
-  const today = getLocalDateInputValue();
+  const today = getBangladeshDateInputValue();
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
   const agentId = (params.agentId || "").trim();
 
   const whereBase: Record<string, unknown> = {
-    calledAt: {
-      gte: startOfDay(from),
-      lte: endOfDay(to),
+    createdAt: {
+      gte: bangladeshDateStartUtc(from),
+      lte: bangladeshDateEndUtc(to),
     },
     calledByUserId: {
       not: null,
@@ -136,6 +126,7 @@ export default async function ReportsPage({
         id: true,
         orderStatus: true,
         calledAt: true,
+        createdAt: true,
         calledByUserId: true,
         courier: true,
         source: {
@@ -155,7 +146,7 @@ export default async function ReportsPage({
         },
       },
       orderBy: {
-        calledAt: "desc",
+        createdAt: "desc",
       },
     }),
   ]);
@@ -229,11 +220,11 @@ export default async function ReportsPage({
     applyStatus(courierGrouped.get(courierKey)!, order.orderStatus);
 
     if (order.calledAt) {
-      const dateKey = getLocalDateInputValue(order.calledAt);
+      const dateKey = getBangladeshDateInputValue(order.createdAt);
       if (!dayGrouped.has(dateKey)) {
         dayGrouped.set(dateKey, {
           dateKey,
-          label: formatDay(order.calledAt),
+          label: formatDay(order.createdAt),
           ...createBucket(),
         });
       }
@@ -385,7 +376,7 @@ export default async function ReportsPage({
             Agent Wise Performance
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Based on called orders between {from} and {to}.
+            Based on orders imported between {from} and {to} (Bangladesh time).
           </p>
         </div>
 

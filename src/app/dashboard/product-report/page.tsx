@@ -2,6 +2,11 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import ProductReportClient from "./report-client";
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+  getBangladeshDateInputValue,
+} from "@/lib/bangladesh-time";
 
 type ProductReportPageProps = {
   searchParams?: Promise<{
@@ -10,19 +15,6 @@ type ProductReportPageProps = {
     q?: string;
   }>;
 };
-
-function getLocalDateInputValue(date = new Date()) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
-function startOfDay(value: string) {
-  return new Date(`${value}T00:00:00`);
-}
-
-function endOfDay(value: string) {
-  return new Date(`${value}T23:59:59.999`);
-}
 
 type ProductReportRow = {
   sku: string;
@@ -45,7 +37,7 @@ export default async function ProductReportPage({
 
   const params = (await searchParams) || {};
 
-  const today = getLocalDateInputValue();
+  const today = getBangladeshDateInputValue();
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
   const q = (params.q || "").trim().toLowerCase();
@@ -54,8 +46,8 @@ export default async function ProductReportPage({
     where: {
       order: {
         createdAt: {
-          gte: startOfDay(from),
-          lte: endOfDay(to),
+          gte: bangladeshDateStartUtc(from),
+          lte: bangladeshDateEndUtc(to),
         },
       },
     },

@@ -19,20 +19,10 @@ import {
   Clock3,
   TrendingUp,
 } from "lucide-react";
+import { getBangladeshTodayRange } from "@/lib/bangladesh-time";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-function getLocalDayRange() {
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-
-  return { start, end };
-}
 
 function fmtMoney(value: number) {
   return `৳ ${value.toFixed(2)}`;
@@ -298,7 +288,7 @@ function DonutChart({
 
 export default async function DashboardHomePage() {
   const { prisma } = await import("@/lib/prisma");
-  const { start, end } = getLocalDayRange();
+  const { start, end } = getBangladeshTodayRange();
 
   const [
     totalUsers,
@@ -383,9 +373,12 @@ export default async function DashboardHomePage() {
 
     prisma.order.count({
       where: {
-        calledAt: {
+        createdAt: {
           gte: start,
           lte: end,
+        },
+        calledAt: {
+          not: null,
         },
       },
     }),
@@ -393,7 +386,7 @@ export default async function DashboardHomePage() {
     prisma.order.count({
       where: {
         orderStatus: "READY_TO_SHIP",
-        updatedAt: {
+        createdAt: {
           gte: start,
           lte: end,
         },
@@ -403,7 +396,7 @@ export default async function DashboardHomePage() {
     prisma.order.count({
       where: {
         orderStatus: "STOCK_OUT",
-        updatedAt: {
+        createdAt: {
           gte: start,
           lte: end,
         },
@@ -413,7 +406,7 @@ export default async function DashboardHomePage() {
     prisma.order.count({
       where: {
         orderStatus: "CANCELLED",
-        updatedAt: {
+        createdAt: {
           gte: start,
           lte: end,
         },
@@ -433,9 +426,12 @@ export default async function DashboardHomePage() {
 
     prisma.order.findMany({
       where: {
-        calledAt: {
+        createdAt: {
           gte: start,
           lte: end,
+        },
+        calledAt: {
+          not: null,
         },
         calledByUserId: {
           not: null,
@@ -476,7 +472,7 @@ export default async function DashboardHomePage() {
     prisma.order.findMany({
       where: {
         orderStatus: "READY_TO_SHIP",
-        updatedAt: {
+        createdAt: {
           gte: start,
           lte: end,
         },

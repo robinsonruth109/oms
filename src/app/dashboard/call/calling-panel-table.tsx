@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
 import {
   claimCallingOrder,
   directCancelCallingOrder,
@@ -117,8 +118,7 @@ type HoldState = {
 };
 
 function formatDate(value: string | null) {
-  if (!value) return "N/A";
-  return new Date(value).toLocaleString();
+  return formatBangladeshDateTime(value);
 }
 
 function formatMoney(value: number) {

@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
 
 const CALLING_HOLD_MINUTES = 10;
 
@@ -535,7 +536,7 @@ export async function saveCallingOrder(
             totalAmount,
             courier: courierRecord?.slug || null,
             readyToShipAt: readyToShipAt
-              ? new Date(`${readyToShipAt}T00:00:00`)
+              ? bangladeshBusinessDateToUtc(readyToShipAt)
               : order.readyToShipAt,
             orderStatus: status,
             note: note || order.note,

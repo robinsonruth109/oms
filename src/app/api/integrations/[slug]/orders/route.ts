@@ -20,12 +20,25 @@ export async function POST(
     const result = await importIntegrationOrderBySlug(slug, body);
 
     if (!result.success) {
+      console.error("Integration order rejected:", {
+        slug,
+        externalOrderId: body?.externalOrderId,
+        invoiceId: body?.invoiceId,
+        status: result.status,
+        message: result.message,
+      });
+
       return NextResponse.json(
         {
           success: false,
           message: result.message,
         },
-        { status: result.status }
+        {
+          status: result.status,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -35,16 +48,30 @@ export async function POST(
         created: result.created,
         orderId: result.orderId,
         message: result.message,
+        warnings: result.warnings || [],
       },
-      { status: 200 }
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
-  } catch {
+  } catch (error) {
+    console.error("Integration request body/server error:", error);
+
     return NextResponse.json(
       {
         success: false,
-        message: "Invalid request body or server error.",
+        message:
+          "Invalid request body or temporary server error. Retry the request.",
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   }
 }

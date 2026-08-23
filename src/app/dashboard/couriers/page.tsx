@@ -1,129 +1,92 @@
-
 import CreateCourierForm from "./create-courier-form";
+import PathaoCourierCard from "./pathao-courier-card";
 import CourierStatusButton from "./courier-row-actions";
+import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
 export default async function CouriersPage() {
   const { prisma } = await import("@/lib/prisma");
   const couriers = await prisma.courier.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: { createdAt: "desc" },
   });
+
+  const siteUrl = (
+    process.env.SITE_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://glossandglows.com"
+  ).replace(/\/+$/, "");
 
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Courier Master</h1>
+        <h1 className="text-2xl font-bold text-slate-900">
+          Courier Master · Pathao API
+        </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Manage dynamic courier options for the whole OMS.
+          Every courier is a Pathao Merchant API account/store. Credentials and webhook secrets are encrypted at rest.
         </p>
       </section>
 
       <CreateCourierForm />
 
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="border-b px-5 py-4 sm:px-6">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Courier List
-          </h2>
+      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">Pathao Courier Connections</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Activate or deactivate couriers any time.
+            Configure/test each courier before using it from Ready to Ship.
           </p>
         </div>
 
-        <div className="space-y-4 p-4 lg:hidden">
+        <div className="space-y-5">
           {couriers.map((courier) => (
-            <div
-              key={courier.id}
-              className="rounded-2xl border bg-slate-50 p-4"
-            >
-              <div className="space-y-2">
-                <p className="text-lg font-semibold text-slate-900">
-                  {courier.name}
-                </p>
-                <p className="text-sm text-slate-500">Slug: {courier.slug}</p>
-                <p className="text-sm text-slate-500">
-                  Status: {courier.status ? "Active" : "Inactive"}
-                </p>
-              </div>
+            <div key={courier.id}>
+              <PathaoCourierCard
+                courier={{
+                  id: courier.id,
+                  name: courier.name,
+                  slug: courier.slug,
+                  status: courier.status,
+                  pathaoEnabled: courier.pathaoEnabled,
+                  pathaoEnvironment: courier.pathaoEnvironment,
+                  pathaoStoreId: courier.pathaoStoreId,
+                  pathaoStoreName: courier.pathaoStoreName,
+                  pathaoStoreAddress: courier.pathaoStoreAddress,
+                  pathaoLastTestedAt: courier.pathaoLastTestedAt
+                    ? formatBangladeshDateTime(courier.pathaoLastTestedAt)
+                    : null,
+                  pathaoLastTestSuccess: courier.pathaoLastTestSuccess,
+                  pathaoLastTestMessage: courier.pathaoLastTestMessage,
+                  credentialsConfigured: Boolean(
+                    courier.pathaoCredentialsEncrypted &&
+                      courier.pathaoCredentialsIv &&
+                      courier.pathaoCredentialsTag
+                  ),
+                  webhookConfigured: Boolean(
+                    courier.pathaoWebhookSecretEncrypted &&
+                      courier.pathaoWebhookSecretIv &&
+                      courier.pathaoWebhookSecretTag
+                  ),
+                  callbackUrl: `${siteUrl}/api/webhooks/pathao/${courier.id}`,
+                }}
+              />
 
-              <div className="mt-4">
+              <div className="mt-2 flex justify-end">
                 <CourierStatusButton
                   courierId={courier.id}
                   nextStatus={!courier.status}
-                  label={courier.status ? "Deactivate" : "Activate"}
+                  label={courier.status ? "Deactivate Courier" : "Activate Courier"}
                 />
               </div>
             </div>
           ))}
 
-          {!couriers.length && (
-            <div className="rounded-2xl border bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
-              No courier found.
+          {!couriers.length ? (
+            <div className="rounded-2xl border bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+              No Pathao courier configured yet.
             </div>
-          )}
-        </div>
-
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="min-w-full">
-            <thead className="bg-slate-50">
-              <tr className="border-b">
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Name
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Slug
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Status
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Created At
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Action
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {couriers.map((courier) => (
-                <tr key={courier.id} className="border-b last:border-b-0">
-                  <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                    {courier.name}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    {courier.slug}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    {courier.status ? "Active" : "Inactive"}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-700">
-                    {courier.createdAt.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4">
-                    <CourierStatusButton
-                      courierId={courier.id}
-                      nextStatus={!courier.status}
-                      label={courier.status ? "Deactivate" : "Activate"}
-                    />
-                  </td>
-                </tr>
-              ))}
-
-              {!couriers.length && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-8 text-center text-sm text-slate-500"
-                  >
-                    No courier found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          ) : null}
         </div>
       </section>
     </div>

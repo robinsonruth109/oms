@@ -48,6 +48,9 @@ export default async function ReadyToShipPage({
       id: true,
       name: true,
       slug: true,
+      pathaoEnabled: true,
+      pathaoStoreId: true,
+      pathaoStoreName: true,
     },
   });
 
@@ -262,6 +265,15 @@ export default async function ReadyToShipPage({
         courier={courier}
         activeTab={activeTab}
         courierMap={courierMap}
+        selectedCourierConfigured={Boolean(
+          courier &&
+            couriers.find(
+              (row) =>
+                row.slug === courier &&
+                row.pathaoEnabled &&
+                row.pathaoStoreId
+            )
+        )}
         orders={orders.map((order) => ({
           id: order.id,
           invoiceId: order.invoiceId,
@@ -270,6 +282,10 @@ export default async function ReadyToShipPage({
           courier: order.courier,
           totalAmount: Number(order.totalAmount),
           createdAt: formatBangladeshDate(order.readyToShipAt),
+          pathaoSubmissionStatus: order.pathaoSubmissionStatus,
+          pathaoConsignmentId: order.pathaoConsignmentId,
+          pathaoOrderStatus: order.pathaoOrderStatus,
+          pathaoLastError: order.pathaoLastError,
           items: order.items.map((item) => ({
             id: item.id,
             productSku: item.productSku,

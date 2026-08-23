@@ -20,7 +20,9 @@ function isAllowed(pathname: string, role: string) {
     return (
       pathname === "/dashboard/ready-to-ship" ||
       pathname.startsWith("/dashboard/ready-to-ship/") ||
-      pathname === "/dashboard/post-print-actions"
+      pathname === "/dashboard/post-print-actions" ||
+      pathname === "/dashboard/pathao-orders" ||
+      pathname.startsWith("/dashboard/pathao-orders/")
     );
   }
 

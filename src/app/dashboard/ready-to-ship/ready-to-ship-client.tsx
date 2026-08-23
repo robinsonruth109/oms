@@ -12,6 +12,10 @@ type OrderRow = {
   courier: string | null;
   totalAmount: number;
   createdAt: string;
+  pathaoSubmissionStatus: string;
+  pathaoConsignmentId: string | null;
+  pathaoOrderStatus: string | null;
+  pathaoLastError: string | null;
   items: {
     id: string;
     productSku: string;
@@ -33,6 +37,7 @@ type Props = {
   courier: string;
   activeTab: string;
   courierMap: Record<string, string>;
+  selectedCourierConfigured: boolean;
   orders: OrderRow[];
   invoiceBatches: BatchRow[];
   csvBatches: BatchRow[];
@@ -60,6 +65,7 @@ export default function ReadyToShipClient({
   courier,
   activeTab,
   courierMap,
+  selectedCourierConfigured,
   orders,
   invoiceBatches,
   csvBatches,
@@ -162,6 +168,15 @@ export default function ReadyToShipClient({
 
         {activeTab === "non-csv" && (
           <div className="border-b bg-slate-50 px-5 py-4 sm:px-6">
+            {!courier ? (
+              <div className="mb-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Select one courier from the filter before creating a Pathao CSV batch. The backend will only submit orders belonging to that selected courier.
+              </div>
+            ) : !selectedCourierConfigured ? (
+              <div className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                This courier is not fully configured for Pathao API. Configure and test it in Courier Master first.
+              </div>
+            ) : null}
             <form
               action={csvAction}
               className="flex flex-wrap items-center gap-3"
@@ -172,7 +187,15 @@ export default function ReadyToShipClient({
                 value={JSON.stringify(selectedIds)}
               />
               <input type="hidden" name="courier" value={courier} />
-              <Button type="submit" disabled={csvPending || !selectedIds.length}>
+              <Button
+                type="submit"
+                disabled={
+                  csvPending ||
+                  !selectedIds.length ||
+                  !courier ||
+                  !selectedCourierConfigured
+                }
+              >
                 {csvPending
                   ? "Creating CSV Batch..."
                   : "Create CSV Batch + Download CSV"}
@@ -234,6 +257,17 @@ export default function ReadyToShipClient({
                   </p>
                 </div>
                 <div className="col-span-2">
+                  <p className="text-slate-400">Pathao</p>
+                  <p className="font-medium text-slate-800">
+                    {order.pathaoConsignmentId
+                      ? `${order.pathaoConsignmentId} · ${order.pathaoOrderStatus || order.pathaoSubmissionStatus}`
+                      : order.pathaoSubmissionStatus}
+                  </p>
+                  {order.pathaoLastError ? (
+                    <p className="mt-1 text-xs text-red-600">{order.pathaoLastError}</p>
+                  ) : null}
+                </div>
+                <div className="col-span-2">
                   <p className="text-slate-400">Items</p>
                   <div className="space-y-1">
                     {order.items.map((item) => (
@@ -273,6 +307,9 @@ export default function ReadyToShipClient({
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Courier
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Pathao
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Items
@@ -317,6 +354,19 @@ export default function ReadyToShipClient({
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     <div className="space-y-1">
+                      <p className="font-medium">
+                        {order.pathaoConsignmentId || order.pathaoSubmissionStatus}
+                      </p>
+                      {order.pathaoOrderStatus ? (
+                        <p className="text-xs text-slate-500">{order.pathaoOrderStatus}</p>
+                      ) : null}
+                      {order.pathaoLastError ? (
+                        <p className="max-w-xs text-xs text-red-600">{order.pathaoLastError}</p>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-700">
+                    <div className="space-y-1">
                       {order.items.map((item) => (
                         <p key={item.id}>
                           {item.productSku} × {item.quantity}
@@ -338,8 +388,8 @@ export default function ReadyToShipClient({
                   <td
                     colSpan={
                       activeTab === "non-invoiced" || activeTab === "non-csv"
-                        ? 7
-                        : 6
+                        ? 8
+                        : 7
                     }
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >

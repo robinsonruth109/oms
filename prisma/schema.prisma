@@ -23,6 +23,7 @@ model User {
   attendances          Attendance[]
   attendanceEvents     AttendanceEvent[]
   attendanceViolations AttendanceViolation[]
+  postPrintActionLogs  PostPrintActionLog[]
 }
 
 model Page {
@@ -116,6 +117,42 @@ model Courier {
   status    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Pathao API configuration.
+  pathaoEnabled     Boolean           @default(false)
+  pathaoEnvironment PathaoEnvironment @default(LIVE)
+
+  // Client ID, client secret, merchant username and password are stored
+  // together as encrypted JSON using SHOP_SETTINGS_ENCRYPTION_KEY.
+  pathaoCredentialsEncrypted String? @db.Text
+  pathaoCredentialsIv        String?
+  pathaoCredentialsTag       String?
+
+  // OAuth access/refresh tokens are stored separately and encrypted.
+  pathaoTokenEncrypted String? @db.Text
+  pathaoTokenIv        String?
+  pathaoTokenTag       String?
+  pathaoTokenExpiresAt DateTime?
+
+  pathaoStoreId      Int?
+  pathaoStoreName    String?
+  pathaoStoreAddress String? @db.Text
+
+  // Every courier can use a courier-specific webhook URL and secret.
+  pathaoWebhookSecretEncrypted String? @db.Text
+  pathaoWebhookSecretIv        String?
+  pathaoWebhookSecretTag       String?
+
+  pathaoLastTestedAt    DateTime?
+  pathaoLastTestSuccess Boolean?
+  pathaoLastTestMessage String? @db.Text
+
+  pathaoOrders        Order[]              @relation("PathaoCourierOrders")
+  pathaoWebhookEvents PathaoWebhookEvent[]
+
+  @@index([status])
+  @@index([pathaoEnabled])
+  @@index([pathaoStoreId])
 }
 
 model Product {
@@ -190,6 +227,26 @@ model Order {
   metaPurchaseError    String?   @db.Text
   metaPurchaseResponse String?   @db.Text
 
+  // Pathao lifecycle is kept separately from OMS orderStatus.
+  pathaoCourierId String?
+  pathaoCourier   Courier? @relation("PathaoCourierOrders", fields: [pathaoCourierId], references: [id], onDelete: SetNull)
+
+  pathaoConsignmentId  String? @unique
+  pathaoMerchantOrderId String?
+  pathaoSubmissionStatus PathaoSubmissionStatus @default(NOT_SUBMITTED)
+  pathaoOrderStatus     String?
+  pathaoOrderStatusSlug String?
+  pathaoDeliveryFee     Decimal? @db.Decimal(10, 2)
+
+  pathaoSubmittedAt  DateTime?
+  pathaoCreatedAt    DateTime?
+  pathaoLastSyncedAt DateTime?
+  pathaoLastError    String? @db.Text
+  pathaoRawResponse  String? @db.LongText
+
+  pathaoWebhookEvents PathaoWebhookEvent[]
+  postPrintActionLogs PostPrintActionLog[]
+
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
   items             OrderItem[]
@@ -206,6 +263,10 @@ model Order {
   @@index([calledByUserId])
   @@index([holdByUserId])
   @@index([holdUntil])
+  @@index([pathaoCourierId])
+  @@index([pathaoMerchantOrderId])
+  @@index([pathaoSubmissionStatus])
+  @@index([pathaoOrderStatusSlug])
 }
 
 model AdsCostUpload {
@@ -416,6 +477,30 @@ model CsvBatchItem {
 
   @@unique([batchId, orderId])
   @@index([orderId])
+}
+
+
+enum PathaoEnvironment {
+  SANDBOX
+  LIVE
+}
+
+enum PathaoSubmissionStatus {
+  NOT_SUBMITTED
+  SUBMITTING
+  SUBMITTED
+  CONSIGNMENT_CREATED
+  FAILED
+}
+
+enum PostPrintActionType {
+  STOCK_OUT
+  CANCELLED
+}
+
+enum PostPrintActionMethod {
+  SINGLE
+  CSV
 }
 
 enum Role {
@@ -661,6 +746,62 @@ model ReelProductMedia {
   @@index([mediaType])
   @@index([displayOrder])
   @@index([isPrimary])
+  @@index([createdAt])
+}
+
+
+model PathaoWebhookEvent {
+  id String @id @default(uuid())
+
+  courierId String
+  courier   Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  orderId String?
+  order   Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  eventName      String
+  consignmentId String?
+  merchantOrderId String?
+  signatureValid Boolean @default(false)
+  processed      Boolean @default(false)
+  processingNote String? @db.Text
+  rawPayload     Json
+
+  receivedAt DateTime @default(now())
+
+  @@index([courierId])
+  @@index([orderId])
+  @@index([eventName])
+  @@index([consignmentId])
+  @@index([merchantOrderId])
+  @@index([receivedAt])
+}
+
+model PostPrintActionLog {
+  id String @id @default(uuid())
+
+  orderId String
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  invoiceId String?
+  customerName String
+  phone String
+
+  actionType   PostPrintActionType
+  actionMethod PostPrintActionMethod
+  previousStatus OrderStatus
+  newStatus      OrderStatus
+
+  performedByUserId String
+  performedByUser   User @relation(fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([invoiceId])
+  @@index([actionType])
+  @@index([actionMethod])
+  @@index([performedByUserId])
   @@index([createdAt])
 }
 

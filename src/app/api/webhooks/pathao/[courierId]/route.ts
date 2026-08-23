@@ -6,12 +6,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function response202(secret: string, body: Record<string, unknown>) {
+const PATHAO_INTEGRATION_RESPONSE_SECRET =
+  "f3992ecc-59da-4cbe-a049-a13da2018d51";
+
+function response202(
+  headerSecret: string,
+  body: Record<string, unknown>
+) {
   return NextResponse.json(body, {
     status: 202,
     headers: {
       "Cache-Control": "no-store",
-      "X-Pathao-Merchant-Webhook-Integration-Secret": secret,
+      "X-Pathao-Merchant-Webhook-Integration-Secret": headerSecret,
     },
   });
 }
@@ -54,10 +60,11 @@ export async function POST(
 
   const fields = extractPathaoWebhookFields(payload);
 
-  // Pathao's integration verification event needs 202 and the exact secret
-  // echoed in the response header.
+  // Pathao webhook integration verification requires its fixed response-header
+  // value. This is separate from the merchant webhook secret used to validate
+  // incoming X-PATHAO-Signature headers.
   if (fields.event === "webhook_integration") {
-    return response202(secret, {
+    return response202(PATHAO_INTEGRATION_RESPONSE_SECRET, {
       success: true,
       event: "webhook_integration",
     });

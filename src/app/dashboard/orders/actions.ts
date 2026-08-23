@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 type CreateOrderState = {
   success: boolean;
@@ -68,7 +69,7 @@ export async function createManualOrder(
 
   const customerName = String(formData.get("customerName") || "").trim();
   const address = String(formData.get("address") || "").trim();
-  const phone = String(formData.get("phone") || "").trim();
+  const phone = normalizeBangladeshPhone(String(formData.get("phone") || ""));
 
   const discount = toMoney(formData.get("discount"));
   const advance = toMoney(formData.get("advance"));

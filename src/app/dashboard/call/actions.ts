@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 const CALLING_HOLD_MINUTES = 10;
 
@@ -50,7 +51,7 @@ function toMoney(value: unknown) {
 }
 
 function normalizePhone(value: string) {
-  return String(value || "").trim().replace(/\s+/g, "");
+  return normalizeBangladeshPhone(value);
 }
 
 function isCallingStatus(status: string) {

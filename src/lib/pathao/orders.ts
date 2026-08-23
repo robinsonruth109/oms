@@ -1,4 +1,5 @@
 import type { PathaoOrderPayload, PreparedPathaoOrder } from "./types";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 type OrderForPathao = {
   id: string;
@@ -17,17 +18,7 @@ type OrderForPathao = {
 };
 
 export function normalizePathaoPhone(value: string) {
-  const digits = String(value || "").replace(/\D/g, "");
-
-  if (digits.startsWith("8801") && digits.length === 13) {
-    return `0${digits.slice(3)}`;
-  }
-
-  if (digits.startsWith("1") && digits.length === 10) {
-    return `0${digits}`;
-  }
-
-  return digits;
+  return normalizeBangladeshPhone(value);
 }
 
 export function validatePathaoOrder(order: OrderForPathao) {

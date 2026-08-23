@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createManualOrder } from "./actions";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 const initialState = {
   success: false,
@@ -368,6 +369,12 @@ export default function CreateOrderForm({
                 id="phone"
                 name="phone"
                 type="text"
+                inputMode="numeric"
+                onInput={(event) => {
+                  event.currentTarget.value = normalizeBangladeshPhone(
+                    event.currentTarget.value
+                  );
+                }}
                 placeholder="Enter phone number"
                 className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"
                 required

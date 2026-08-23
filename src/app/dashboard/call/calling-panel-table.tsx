@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 import {
   claimCallingOrder,
   directCancelCallingOrder,
@@ -871,7 +872,7 @@ export default function CallingPanelTable({
                       value={row.phone}
                       onChange={(e) =>
                         updateRow(order.id, {
-                          phone: e.target.value,
+                          phone: normalizeBangladeshPhone(e.target.value),
                         })
                       }
                       className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"

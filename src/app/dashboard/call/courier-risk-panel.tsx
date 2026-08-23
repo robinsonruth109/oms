@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldCheck, Truck } from "lucide-react";
 
 import type { CustomerCourierScoreResult } from "@/lib/courier-score/types";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 type ApiResponse = {
   success: boolean;
@@ -61,7 +62,7 @@ export default function CourierRiskPanel({ phone }: { phone: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const normalizedPhone = useMemo(() => phone.replace(/\D/g, ""), [phone]);
+  const normalizedPhone = useMemo(() => normalizeBangladeshPhone(phone), [phone]);
 
   useEffect(() => {
     let cancelled = false;

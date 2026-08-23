@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saveCallingOrder } from "../actions";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 type PageOption = {
   id: string;
@@ -411,7 +412,7 @@ export default function CallingOrderView({
             <input
               type="text"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(normalizeBangladeshPhone(e.target.value))}
               className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"
             />
           </div>

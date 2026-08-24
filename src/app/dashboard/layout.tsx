@@ -150,6 +150,12 @@ export default async function DashboardLayout({
                     </Button>
                   </Link>
 
+                  <Link href="/dashboard/pathao-daily-report">
+                    <Button variant="outline" size="sm">
+                      Pathao Daily Report
+                    </Button>
+                  </Link>
+
                   <Link href="/dashboard/post-print-actions">
                     <Button variant="outline" size="sm">
                       Post Print
@@ -253,6 +259,12 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/pathao-orders">
                     <Button variant="outline" size="sm">
                       Pathao Control
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/pathao-daily-report">
+                    <Button variant="outline" size="sm">
+                      Pathao Daily Report
                     </Button>
                   </Link>
 
@@ -445,6 +457,11 @@ export default async function DashboardLayout({
                     label="Pathao Order Control"
                   />
                   <NavLink
+                    href="/dashboard/pathao-daily-report"
+                    icon={<BarChart3 className="h-4 w-4" />}
+                    label="Pathao Daily Report"
+                  />
+                  <NavLink
                     href="/dashboard/post-print-actions"
                     icon={<Ban className="h-4 w-4" />}
                     label="Post Print Actions"
@@ -547,6 +564,11 @@ export default async function DashboardLayout({
                     href="/dashboard/pathao-orders"
                     icon={<Truck className="h-4 w-4" />}
                     label="Pathao Order Control"
+                  />
+                  <NavLink
+                    href="/dashboard/pathao-daily-report"
+                    icon={<BarChart3 className="h-4 w-4" />}
+                    label="Pathao Daily Report"
                   />
 
                   <NavLink

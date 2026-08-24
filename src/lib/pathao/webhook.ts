@@ -77,6 +77,27 @@ export function extractPathaoWebhookFields(payload: unknown) {
     )
   );
 
+  const amountToCollectRaw = findKeyRecursive(
+    payload,
+    new Set([
+      "amount_to_collect",
+      "amounttocollect",
+      "cod_amount",
+      "codamount",
+      "collection_amount",
+      "collectionamount",
+    ])
+  );
+
+  const amountToCollectNumber =
+    amountToCollectRaw === undefined || amountToCollectRaw === null
+      ? null
+      : Number(
+          typeof amountToCollectRaw === "string"
+            ? amountToCollectRaw.replace(/[^\d.-]/g, "")
+            : amountToCollectRaw
+        );
+
   const deliveryFeeRaw = findKeyRecursive(
     payload,
     new Set(["delivery_fee", "deliveryfee"])
@@ -93,6 +114,10 @@ export function extractPathaoWebhookFields(payload: unknown) {
     merchantOrderId,
     orderStatus,
     orderStatusSlug,
+    amountToCollect:
+      amountToCollectNumber !== null && Number.isFinite(amountToCollectNumber)
+        ? Math.round(amountToCollectNumber * 100) / 100
+        : null,
     deliveryFee:
       deliveryFeeNumber !== null && Number.isFinite(deliveryFeeNumber)
         ? deliveryFeeNumber

@@ -12,7 +12,9 @@ function isAllowed(pathname: string, role: string) {
     return (
       pathname === "/dashboard/orders" ||
       pathname === "/dashboard/all-orders" ||
-      pathname.startsWith("/dashboard/all-orders/")
+      pathname.startsWith("/dashboard/all-orders/") ||
+      pathname === "/dashboard/pathao-problem" ||
+      pathname.startsWith("/dashboard/pathao-problem/")
     );
   }
 

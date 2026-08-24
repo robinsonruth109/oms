@@ -133,6 +133,12 @@ export default async function DashboardLayout({
                       All Orders
                     </Button>
                   </Link>
+
+                  <Link href="/dashboard/pathao-problem">
+                    <Button variant="outline" size="sm">
+                      Pathao Problem
+                    </Button>
+                  </Link>
                 </>
               )}
 
@@ -265,6 +271,12 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/pathao-daily-report">
                     <Button variant="outline" size="sm">
                       Pathao Daily Report
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/pathao-problem">
+                    <Button variant="outline" size="sm">
+                      Pathao Problem
                     </Button>
                   </Link>
 
@@ -441,6 +453,11 @@ export default async function DashboardLayout({
                     icon={<Package className="h-4 w-4" />}
                     label="All Orders"
                   />
+                  <NavLink
+                    href="/dashboard/pathao-problem"
+                    icon={<AlertTriangle className="h-4 w-4" />}
+                    label="Pathao Problem"
+                  />
                 </>
               )}
 
@@ -569,6 +586,11 @@ export default async function DashboardLayout({
                     href="/dashboard/pathao-daily-report"
                     icon={<BarChart3 className="h-4 w-4" />}
                     label="Pathao Daily Report"
+                  />
+                  <NavLink
+                    href="/dashboard/pathao-problem"
+                    icon={<AlertTriangle className="h-4 w-4" />}
+                    label="Pathao Problem"
                   />
 
                   <NavLink

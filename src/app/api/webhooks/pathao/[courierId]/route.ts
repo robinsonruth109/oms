@@ -139,6 +139,9 @@ export async function POST(
     if (fields.orderStatus) nextData.pathaoOrderStatus = fields.orderStatus;
     if (fields.orderStatusSlug) nextData.pathaoOrderStatusSlug = fields.orderStatusSlug;
     if (fields.deliveryFee !== null) nextData.pathaoDeliveryFee = fields.deliveryFee;
+    if (fields.amountToCollect !== null) {
+      nextData.pathaoAmountToCollect = fields.amountToCollect;
+    }
 
     try {
       await prisma.order.update({

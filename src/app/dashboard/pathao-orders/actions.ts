@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { getPathaoOrderInfo } from "@/lib/pathao/client";
+import { extractPathaoAmountToCollect } from "@/lib/pathao/order-info";
 
 type ActionState = { success: boolean; message: string };
 
@@ -44,6 +45,8 @@ export async function refreshPathaoOrder(
       order.pathaoConsignmentId
     );
 
+    const amountToCollect = extractPathaoAmountToCollect(info);
+
     await prisma.order.update({
       where: { id: order.id },
       data: {
@@ -54,6 +57,8 @@ export async function refreshPathaoOrder(
           info.order_status_slug || order.pathaoOrderStatusSlug,
         pathaoSubmissionStatus: "CONSIGNMENT_CREATED",
         pathaoLastSyncedAt: new Date(),
+        pathaoAmountToCollect:
+          amountToCollect ?? order.pathaoAmountToCollect,
         pathaoLastError: null,
         pathaoRawResponse: JSON.stringify(info),
       },

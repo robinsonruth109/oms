@@ -24,6 +24,8 @@ model User {
   attendanceEvents     AttendanceEvent[]
   attendanceViolations AttendanceViolation[]
   postPrintActionLogs  PostPrintActionLog[]
+  pathaoCodAuthorizations PathaoCodAuthorization[] @relation("PathaoCodApprovedBy")
+  pathaoCodApprovedOrders Order[] @relation("OrderPathaoCodApprovedBy")
 }
 
 model Page {
@@ -238,6 +240,19 @@ model Order {
   pathaoOrderStatusSlug String?
   pathaoDeliveryFee     Decimal? @db.Decimal(10, 2)
 
+  // Current COD amount reported by Pathao. This is synchronized from
+  // Pathao order info/webhook data and is never treated as the original
+  // OMS accounting total.
+  pathaoAmountToCollect Decimal? @db.Decimal(10, 2)
+
+  // Agent-authorized courier COD override. `totalAmount` remains the
+  // immutable/original OMS bill used by normal OMS reporting.
+  pathaoAuthorizedCodAmount Decimal? @db.Decimal(10, 2)
+  pathaoCodAdjustmentReason String? @db.Text
+  pathaoCodApprovedByUserId String?
+  pathaoCodApprovedByUser User? @relation("OrderPathaoCodApprovedBy", fields: [pathaoCodApprovedByUserId], references: [id], onDelete: SetNull)
+  pathaoCodApprovedAt DateTime?
+
   pathaoSubmittedAt  DateTime?
   pathaoCreatedAt    DateTime?
   pathaoLastSyncedAt DateTime?
@@ -246,6 +261,7 @@ model Order {
 
   pathaoWebhookEvents PathaoWebhookEvent[]
   postPrintActionLogs PostPrintActionLog[]
+  pathaoCodAuthorizations PathaoCodAuthorization[]
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
@@ -267,6 +283,8 @@ model Order {
   @@index([pathaoMerchantOrderId])
   @@index([pathaoSubmissionStatus])
   @@index([pathaoOrderStatusSlug])
+  @@index([pathaoCodApprovedByUserId])
+  @@index([pathaoCodApprovedAt])
 }
 
 model AdsCostUpload {
@@ -775,6 +793,29 @@ model PathaoWebhookEvent {
   @@index([consignmentId])
   @@index([merchantOrderId])
   @@index([receivedAt])
+}
+
+
+model PathaoCodAuthorization {
+  id String @id @default(uuid())
+
+  orderId String
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  originalOmsTotal Decimal @db.Decimal(10, 2)
+  previousAuthorizedAmount Decimal? @db.Decimal(10, 2)
+  authorizedAmount Decimal @db.Decimal(10, 2)
+  pathaoAmountAtApproval Decimal? @db.Decimal(10, 2)
+  reason String @db.Text
+
+  approvedByUserId String
+  approvedByUser User @relation("PathaoCodApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([approvedByUserId])
+  @@index([createdAt])
 }
 
 model PostPrintActionLog {

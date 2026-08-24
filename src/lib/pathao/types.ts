@@ -49,6 +49,8 @@ export type PathaoOrderInfo = {
   order_status_slug?: string | null;
   updated_at?: string | null;
   invoice_id?: string | null;
+  amount_to_collect?: number | string | null;
+  amountToCollect?: number | string | null;
 };
 
 export type PreparedPathaoOrder = {

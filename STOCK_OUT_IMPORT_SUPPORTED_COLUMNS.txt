@@ -1,0 +1,14 @@
+Supported historical CSV columns include:
+Invoice ID
+Page Name
+Date
+Customer Name
+Phone
+Address
+Product Parent Code
+Product SKU 1 (and Product SKU 2, Product SKU 3, ...)
+Product Price1 (and corresponding positions)
+QTY1 (and corresponding positions)
+DV Cost
+Discount
+Grand Total

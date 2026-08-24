@@ -167,6 +167,12 @@ export default async function DashboardLayout({
                       Post Print
                     </Button>
                   </Link>
+
+                  <Link href="/dashboard/stock-out-import">
+                    <Button variant="outline" size="sm">
+                      Stock Out Import
+                    </Button>
+                  </Link>
                 </>
               )}
 
@@ -289,6 +295,12 @@ export default async function DashboardLayout({
                   <Link href="/dashboard/stock-out">
                     <Button variant="outline" size="sm">
                       Stock Out
+                    </Button>
+                  </Link>
+
+                  <Link href="/dashboard/stock-out-import">
+                    <Button variant="outline" size="sm">
+                      Stock Out Import
                     </Button>
                   </Link>
 
@@ -483,6 +495,11 @@ export default async function DashboardLayout({
                     icon={<Ban className="h-4 w-4" />}
                     label="Post Print Actions"
                   />
+                  <NavLink
+                    href="/dashboard/stock-out-import"
+                    icon={<PackageX className="h-4 w-4" />}
+                    label="Stock Out Import"
+                  />
                 </>
               )}
 
@@ -603,6 +620,11 @@ export default async function DashboardLayout({
                     href="/dashboard/stock-out"
                     icon={<PackageX className="h-4 w-4" />}
                     label="Stock Out"
+                  />
+                  <NavLink
+                    href="/dashboard/stock-out-import"
+                    icon={<PackageX className="h-4 w-4" />}
+                    label="Stock Out Import"
                   />
 
                   <NavLink

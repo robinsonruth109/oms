@@ -26,6 +26,7 @@ model User {
   postPrintActionLogs  PostPrintActionLog[]
   pathaoCodAuthorizations PathaoCodAuthorization[] @relation("PathaoCodApprovedBy")
   pathaoCodApprovedOrders Order[] @relation("OrderPathaoCodApprovedBy")
+  stockOutRestoreBatches StockOutRestoreBatch[]
 }
 
 model Page {
@@ -795,6 +796,49 @@ model PathaoWebhookEvent {
   @@index([receivedAt])
 }
 
+
+
+model StockOutRestoreBatch {
+  id String @id @default(uuid())
+  batchNo String @unique
+  fileName String
+  totalRows Int
+  importedCount Int @default(0)
+  restoredCount Int @default(0)
+  skippedCount Int @default(0)
+  failedCount Int @default(0)
+
+  createdByUserId String
+  createdByUser User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  items StockOutRestoreItem[]
+
+  @@index([createdByUserId])
+  @@index([createdAt])
+}
+
+model StockOutRestoreItem {
+  id String @id @default(uuid())
+
+  batchId String
+  batch StockOutRestoreBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  rowNumber Int
+  invoiceId String
+  resultStatus String
+  resultMessage String? @db.Text
+  orderId String?
+  rawData Json
+
+  createdAt DateTime @default(now())
+
+  @@index([batchId])
+  @@index([invoiceId])
+  @@index([resultStatus])
+  @@index([createdAt])
+}
 
 model PathaoCodAuthorization {
   id String @id @default(uuid())

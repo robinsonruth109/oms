@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 
 import CreateOrderForm from "./create-order-form";
 
@@ -133,6 +134,7 @@ export default async function OrdersPage() {
         sources={sources}
         products={productOptions}
         couriers={couriers}
+        defaultReadyToShipDate={getBangladeshDateInputValue()}
       />
 
       <section className="rounded-3xl border bg-white shadow-sm">

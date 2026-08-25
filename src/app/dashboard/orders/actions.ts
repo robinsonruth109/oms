@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
+import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
 
 type CreateOrderState = {
   success: boolean;
@@ -66,6 +67,9 @@ export async function createManualOrder(
   const pageId = String(formData.get("pageId") || "").trim();
   const sourceId = String(formData.get("sourceId") || "").trim();
   const courier = String(formData.get("courier") || "").trim();
+  const readyToShipDate = String(
+    formData.get("readyToShipDate") || ""
+  ).trim();
 
   const customerName = String(formData.get("customerName") || "").trim();
   const address = String(formData.get("address") || "").trim();
@@ -78,10 +82,29 @@ export async function createManualOrder(
 
   const items = parseItems(String(formData.get("items") || "[]"));
 
-  if (!pageId || !sourceId || !courier || !customerName || !address || !phone) {
+  if (
+    !pageId ||
+    !sourceId ||
+    !courier ||
+    !readyToShipDate ||
+    !customerName ||
+    !address ||
+    !phone
+  ) {
     return {
       success: false,
       message: "Please fill all order header fields.",
+    };
+  }
+
+  let readyToShipAt: Date;
+
+  try {
+    readyToShipAt = bangladeshBusinessDateToUtc(readyToShipDate);
+  } catch {
+    return {
+      success: false,
+      message: "Please select a valid Ready to Ship date.",
     };
   }
 
@@ -200,7 +223,7 @@ export async function createManualOrder(
           orderStatus: OrderStatus.READY_TO_SHIP,
           courier: courierRecord.slug,
           note: note || null,
-          readyToShipAt: new Date(),
+          readyToShipAt,
         },
       });
 

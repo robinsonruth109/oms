@@ -51,6 +51,7 @@ type CreateOrderFormProps = {
   sources: SourceOption[];
   products: ProductOption[];
   couriers: CourierOption[];
+  defaultReadyToShipDate: string;
 };
 
 function makeRowId() {
@@ -142,6 +143,7 @@ export default function CreateOrderForm({
   sources,
   products,
   couriers,
+  defaultReadyToShipDate,
 }: CreateOrderFormProps) {
   const [state, formAction, pending] = useActionState(
     createManualOrder,
@@ -248,7 +250,7 @@ export default function CreateOrderForm({
             Order Header
           </h3>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-2">
               <label
                 htmlFor="pageId"
@@ -330,6 +332,27 @@ export default function CreateOrderForm({
               </select>
               <p className="text-xs text-slate-500">
                 Order will go directly to this courier.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="readyToShipDate"
+                className="text-sm font-medium text-slate-700"
+              >
+                Ready to Ship Date
+              </label>
+              <input
+                id="readyToShipDate"
+                name="readyToShipDate"
+                type="date"
+                defaultValue={defaultReadyToShipDate}
+                className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"
+                required
+              />
+              <p className="text-xs text-slate-500">
+                Choose the Bangladesh business date this order should appear
+                under in Ready to Ship.
               </p>
             </div>
           </div>

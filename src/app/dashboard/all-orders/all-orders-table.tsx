@@ -26,7 +26,13 @@ function formatMoney(value: number) {
   return `৳ ${value.toFixed(2)}`;
 }
 
-export default function AllOrdersTable({ orders }: { orders: OrderRow[] }) {
+export default function AllOrdersTable({
+  orders,
+  canDelete,
+}: {
+  orders: OrderRow[];
+  canDelete: boolean;
+}) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -72,18 +78,22 @@ export default function AllOrdersTable({ orders }: { orders: OrderRow[] }) {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Order List</h2>
           <p className="text-sm text-slate-500">
-            Selected: {selectedIds.length}
+            {canDelete
+              ? `Selected: ${selectedIds.length}`
+              : "View / Update access. Delete permission is Admin only."}
           </p>
         </div>
 
-        <button
-          type="button"
-          disabled={!selectedIds.length || isPending}
-          onClick={handleBulkDelete}
-          className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPending ? "Deleting..." : "Bulk Delete"}
-        </button>
+        {canDelete ? (
+          <button
+            type="button"
+            disabled={!selectedIds.length || isPending}
+            onClick={handleBulkDelete}
+            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isPending ? "Deleting..." : "Bulk Delete"}
+          </button>
+        ) : null}
       </div>
 
       {message ? (
@@ -96,13 +106,16 @@ export default function AllOrdersTable({ orders }: { orders: OrderRow[] }) {
         <table className="min-w-full">
           <thead className="bg-slate-50">
             <tr className="border-b">
-              <th className="px-6 py-4 text-left">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                />
-              </th>
+              {canDelete ? (
+                <th className="px-6 py-4 text-left">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="Select all orders"
+                  />
+                </th>
+              ) : null}
               <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Invoice
               </th>
@@ -130,13 +143,16 @@ export default function AllOrdersTable({ orders }: { orders: OrderRow[] }) {
           <tbody>
             {orders.map((order) => (
               <tr key={order.id} className="border-b last:border-b-0">
-                <td className="px-6 py-4">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(order.id)}
-                    onChange={() => toggleOne(order.id)}
-                  />
-                </td>
+                {canDelete ? (
+                  <td className="px-6 py-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(order.id)}
+                      onChange={() => toggleOne(order.id)}
+                      aria-label={`Select ${order.invoiceId || order.id}`}
+                    />
+                  </td>
+                ) : null}
 
                 <td className="px-6 py-4 text-sm text-slate-700">
                   <p className="font-semibold text-slate-900">
@@ -192,7 +208,9 @@ export default function AllOrdersTable({ orders }: { orders: OrderRow[] }) {
                       View / Update
                     </Link>
 
-                    <DeleteOrderButton orderId={order.id} />
+                    {canDelete ? (
+                      <DeleteOrderButton orderId={order.id} />
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -201,7 +219,7 @@ export default function AllOrdersTable({ orders }: { orders: OrderRow[] }) {
             {!orders.length && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={canDelete ? 8 : 7}
                   className="px-6 py-8 text-center text-sm text-slate-500"
                 >
                   No orders found.

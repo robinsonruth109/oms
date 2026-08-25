@@ -58,7 +58,7 @@ export async function updateAllOrder(
 ): Promise<ActionResult> {
   const session = await getServerSession(authOptions);
 
-  if (!session || !["ADMIN", "AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "AGENT", "NOTE_AGENT"].includes(session.user.role)) {
     return {
       success: false,
       message: "Unauthorized action.",

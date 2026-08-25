@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import AllOrdersTable from "./all-orders-table";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +18,8 @@ type AllOrdersPageProps = {
 export default async function AllOrdersPage({
   searchParams,
 }: AllOrdersPageProps) {
+  const session = await getServerSession(authOptions);
+  const canDelete = session?.user?.role === "ADMIN";
   const { prisma } = await import("@/lib/prisma");
 
   const params = (await searchParams) || {};
@@ -85,7 +89,9 @@ export default async function AllOrdersPage({
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">All Orders</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Search, manage, update and bulk delete orders.
+          {canDelete
+            ? "Search, manage, update and delete orders."
+            : "Search, view and update orders. Delete permission is Admin only."}
         </p>
       </section>
 
@@ -125,7 +131,7 @@ export default async function AllOrdersPage({
         <span className="font-semibold">{totalOrders}</span> total orders.
       </div>
 
-      <AllOrdersTable orders={serializedOrders} />
+      <AllOrdersTable orders={serializedOrders} canDelete={canDelete} />
 
       <div className="flex flex-wrap items-center justify-center gap-3">
         {currentPage > 1 ? (

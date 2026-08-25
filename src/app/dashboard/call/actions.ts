@@ -549,6 +549,23 @@ export async function saveCallingOrder(
             holdUntil: null,
           },
         });
+
+        await tx.orderAuditEvent.create({
+          data: {
+            orderId: order.id,
+            eventType: status === "CANCELLED" ? "CANCELLED" : "CALLED",
+            title:
+              status === "CANCELLED"
+                ? "Order cancelled from Calling Panel"
+                : "Calling result submitted",
+            performedByUserId: session.user.id,
+            actorLabel: session.user.name || session.user.username || "Agent",
+            details: {
+              status,
+              previousStatus: order.orderStatus,
+            },
+          },
+        });
       },
       {
         timeout: 20000,
@@ -613,18 +630,28 @@ export async function directCancelCallingOrder(
     };
   }
 
-  await prisma.order.update({
-    where: {
-      id,
-    },
-    data: {
-      orderStatus: "CANCELLED",
-      calledByUserId: session.user.id,
-      calledAt: new Date(),
-      holdByUserId: null,
-      holdAt: null,
-      holdUntil: null,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.order.update({
+      where: { id },
+      data: {
+        orderStatus: "CANCELLED",
+        calledByUserId: session.user.id,
+        calledAt: new Date(),
+        holdByUserId: null,
+        holdAt: null,
+        holdUntil: null,
+      },
+    });
+
+    await tx.orderAuditEvent.create({
+      data: {
+        orderId: id,
+        eventType: "CANCELLED",
+        title: "Order directly cancelled from Calling Panel",
+        performedByUserId: session.user.id,
+        actorLabel: session.user.name || session.user.username || "Agent",
+      },
+    });
   });
 
   revalidatePath("/dashboard/call");

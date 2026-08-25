@@ -293,6 +293,32 @@ export async function updateAllOrder(
           note,
         },
       });
+
+      const changedToCancelled =
+        order.orderStatus !== "CANCELLED" && status === "CANCELLED";
+
+      await tx.orderAuditEvent.create({
+        data: {
+          orderId: order.id,
+          eventType: changedToCancelled
+            ? "CANCELLED"
+            : order.invoiceDownloaded
+            ? "UPDATED_AFTER_PRINT"
+            : "UPDATED",
+          title: changedToCancelled
+            ? "Order cancelled from All Orders"
+            : order.invoiceDownloaded
+            ? "Order updated after invoice was printed"
+            : "Order updated from All Orders",
+          performedByUserId: session.user.id,
+          actorLabel: session.user.name || session.user.username || "OMS User",
+          details: {
+            previousStatus: order.orderStatus,
+            newStatus: status,
+            invoiceWasPrinted: order.invoiceDownloaded,
+          },
+        },
+      });
     });
 
     revalidatePath("/dashboard/all-orders");
@@ -308,7 +334,9 @@ export async function updateAllOrder(
 
     return {
       success: true,
-      message: "Order updated successfully.",
+      message: order.invoiceDownloaded
+        ? "Order updated successfully. IMPORTANT: This memo was already printed. Contact the Packaging Section immediately because the printed invoice may now be outdated."
+        : "Order updated successfully.",
     };
   } catch (error) {
     return {

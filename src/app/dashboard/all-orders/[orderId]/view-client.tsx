@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock3, Plus, Printer, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { updateAllOrder } from "../actions";
 
@@ -31,6 +31,7 @@ type OrderData = {
   orderStatus: string;
   courier: string | null;
   note: string | null;
+  invoiceDownloaded: boolean;
   readyToShipAt: string;
   pageId: string | null;
   source: {
@@ -68,6 +69,15 @@ type CourierOption = {
 type PageOption = {
   id: string;
   name: string;
+};
+
+type HistoryItem = {
+  id: string;
+  type: string;
+  title: string;
+  actor: string;
+  at: string;
+  detail?: string;
 };
 
 type EditableItem = {
@@ -175,11 +185,13 @@ export default function AllOrderView({
   products,
   couriers,
   pages,
+  history,
 }: {
   order: OrderData;
   products: ProductOption[];
   couriers: CourierOption[];
   pages: PageOption[];
+  history: HistoryItem[];
 }) {
   const [customerName, setCustomerName] = useState(order.customerName);
   const [phone, setPhone] = useState(order.phone);
@@ -332,6 +344,14 @@ export default function AllOrderView({
   function handleSave() {
     setMessage(null);
 
+    if (order.invoiceDownloaded) {
+      const shouldContinue = window.confirm(
+        "WARNING: This memo/invoice has already been printed. If you update this order, the printed memo may become outdated. After saving, contact the Packaging Section immediately. Continue with update?"
+      );
+
+      if (!shouldContinue) return;
+    }
+
     startTransition(async () => {
       const result = await updateAllOrder({
         orderId: order.id,
@@ -386,6 +406,94 @@ export default function AllOrderView({
             <p>Source: {order.source.name}</p>
             <p>Platform: {order.integration?.platform || "N/A"}</p>
           </div>
+        </div>
+      </section>
+
+      {order.invoiceDownloaded ? (
+        <section className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm sm:p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-amber-600" />
+            <div>
+              <h2 className="font-bold text-amber-950">
+                This memo has already been printed
+              </h2>
+              <p className="mt-1 text-sm text-amber-800">
+                You can still update the order. But after any update, contact
+                the <strong>Packaging Section</strong> immediately because the
+                previously printed memo/invoice may contain old customer,
+                product, price, courier or status information.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="border-b px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-2">
+            <Clock3 className="h-5 w-5 text-slate-500" />
+            <h2 className="text-lg font-semibold text-slate-900">
+              Order History
+            </h2>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            Creator/import source, calling agent, invoice printing, cancellation
+            and order edits are recorded here.
+          </p>
+        </div>
+
+        <div className="divide-y">
+          {history.map((event) => {
+            const printed = event.type === "INVOICE_PRINTED";
+            const danger =
+              event.type === "CANCELLED" || event.type === "UPDATED_AFTER_PRINT";
+
+            return (
+              <div
+                key={event.id}
+                className={`grid gap-3 px-5 py-4 sm:grid-cols-[220px_1fr_260px] sm:px-6 ${
+                  danger ? "bg-amber-50/60" : ""
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {printed ? (
+                    <Printer className="mt-0.5 h-4 w-4 text-blue-600" />
+                  ) : (
+                    <UserRound className="mt-0.5 h-4 w-4 text-slate-500" />
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {event.title}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {event.type.replaceAll("_", " ")}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-slate-800">
+                    By: {event.actor}
+                  </p>
+                  {event.detail ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {event.detail}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="text-sm text-slate-500 sm:text-right">
+                  {event.at}
+                </div>
+              </div>
+            );
+          })}
+
+          {!history.length ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-500">
+              No history is available for this order yet.
+            </div>
+          ) : null}
         </div>
       </section>
 

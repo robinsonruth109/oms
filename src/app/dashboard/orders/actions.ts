@@ -239,6 +239,21 @@ export async function createManualOrder(
         })),
       });
 
+      await tx.orderAuditEvent.create({
+        data: {
+          orderId: order.id,
+          eventType: "CREATED",
+          title: "Manual order created",
+          performedByUserId: session.user.id,
+          actorLabel: session.user.name || session.user.username || "OMS User",
+          details: {
+            source: source.name,
+            page: page.name,
+            status: "READY_TO_SHIP",
+          },
+        },
+      });
+
       await tx.page.update({
         where: { id: pageId },
         data: {

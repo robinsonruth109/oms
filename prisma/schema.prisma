@@ -27,6 +27,7 @@ model User {
   pathaoCodAuthorizations PathaoCodAuthorization[] @relation("PathaoCodApprovedBy")
   pathaoCodApprovedOrders Order[] @relation("OrderPathaoCodApprovedBy")
   stockOutRestoreBatches StockOutRestoreBatch[]
+  orderAuditEvents OrderAuditEvent[]
 }
 
 model Page {
@@ -263,6 +264,7 @@ model Order {
   pathaoWebhookEvents PathaoWebhookEvent[]
   postPrintActionLogs PostPrintActionLog[]
   pathaoCodAuthorizations PathaoCodAuthorization[]
+  auditEvents OrderAuditEvent[]
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
@@ -286,6 +288,29 @@ model Order {
   @@index([pathaoOrderStatusSlug])
   @@index([pathaoCodApprovedByUserId])
   @@index([pathaoCodApprovedAt])
+}
+
+
+model OrderAuditEvent {
+  id String @id @default(uuid())
+
+  orderId String
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  eventType String
+  title String
+  details Json?
+
+  performedByUserId String?
+  performedByUser User? @relation(fields: [performedByUserId], references: [id], onDelete: SetNull)
+  actorLabel String?
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([eventType])
+  @@index([performedByUserId])
+  @@index([createdAt])
 }
 
 model AdsCostUpload {

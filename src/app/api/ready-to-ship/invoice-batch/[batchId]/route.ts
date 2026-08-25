@@ -701,6 +701,25 @@ export async function GET(
       },
     });
 
+    // Record the actual user who requested/downloaded this PDF. A batch may
+    // be downloaded more than once, so each real download gets its own audit
+    // event instead of assuming the batch creator was always the downloader.
+    if (batch.items.length) {
+      await prisma.orderAuditEvent.createMany({
+        data: batch.items.map((item) => ({
+          orderId: item.order.id,
+          eventType: "INVOICE_DOWNLOADED",
+          title: "Invoice PDF downloaded",
+          performedByUserId: session.user.id,
+          actorLabel: session.user.name || session.user.username || "Packaging User",
+          details: {
+            batchId: batch.id,
+            batchNo: batch.batchNo,
+          },
+        })),
+      });
+    }
+
     return new Response(Buffer.from(pdfBytes), {
       headers: {
         "Content-Type": "application/pdf",

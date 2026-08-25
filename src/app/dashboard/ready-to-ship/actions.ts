@@ -389,6 +389,8 @@ export async function createCsvBatch(
             pathaoMerchantOrderId: preparedOrder.invoiceId,
             pathaoSubmissionStatus: "SUBMITTED",
             pathaoSubmittedAt: submittedAt,
+            pathaoAmountToCollect: preparedOrder.payload.amount_to_collect,
+            pathaoLastSyncedAt: submittedAt,
             pathaoLastError: null,
             pathaoRawResponse: JSON.stringify(pathaoResponse),
           },

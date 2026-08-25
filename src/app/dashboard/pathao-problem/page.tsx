@@ -7,6 +7,7 @@ import {
   formatBangladeshDateTime,
   getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
+import PathaoProblemBulkSync from "./bulk-sync";
 import {
   ClearCodAuthorizationButton,
   CodAuthorizationForm,
@@ -99,6 +100,10 @@ export default async function PathaoProblemPage({ searchParams }: Props) {
     orderBy: { updatedAt: "desc" },
     take: 500,
   });
+
+  const totalUnsyncedForDate = reportOrders.filter(
+    (order) => order.pathaoAmountToCollect === null
+  ).length;
 
   const reportRows = reportOrders
     .map((order) => {
@@ -477,6 +482,13 @@ export default async function PathaoProblemPage({ searchParams }: Props) {
               </button>
             </form>
           </div>
+        </div>
+
+        <div className="border-b p-5">
+          <PathaoProblemBulkSync
+            selectedDate={selectedDate}
+            initialUnsynced={totalUnsyncedForDate}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 border-b bg-slate-50 p-5 sm:grid-cols-3">

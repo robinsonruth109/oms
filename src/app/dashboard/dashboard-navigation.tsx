@@ -103,6 +103,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Reports & Finance",
     items: [
+      { href: "/dashboard/live-call-report", label: "Live Call Report", icon: PhoneCall, roles: ["ADMIN", "AGENT"] },
       { href: "/dashboard/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN"] },
       { href: "/dashboard/daily-source-status", label: "Daily Source Status", icon: Activity, roles: ["ADMIN"] },
       { href: "/dashboard/product-report", label: "Product Report", icon: ListChecks, roles: ["ADMIN"] },

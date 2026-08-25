@@ -36,6 +36,10 @@ type BatchRow = {
 type Props = {
   courier: string;
   activeTab: string;
+  fromDate: string;
+  toDate: string;
+  bangladeshToday: string;
+  canCreateInvoiceBatch: boolean;
   courierMap: Record<string, string>;
   selectedCourierConfigured: boolean;
   orders: OrderRow[];
@@ -64,6 +68,10 @@ function CourierLabel({
 export default function ReadyToShipClient({
   courier,
   activeTab,
+  fromDate,
+  toDate,
+  bangladeshToday,
+  canCreateInvoiceBatch,
   courierMap,
   selectedCourierConfigured,
   orders,
@@ -144,6 +152,15 @@ export default function ReadyToShipClient({
 
         {activeTab === "non-invoiced" && (
           <div className="border-b bg-slate-50 px-5 py-4 sm:px-6">
+            {!canCreateInvoiceBatch ? (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Invoice PDF can only be created when both <strong>From Date</strong>{" "}
+                and <strong>To Date</strong> are today&apos;s Bangladesh date (
+                <strong>{bangladeshToday}</strong>). Future or previous Ready to
+                Ship memo dates cannot be invoiced from this button.
+              </div>
+            ) : null}
+
             <form
               action={invoiceAction}
               className="flex flex-wrap items-center gap-3"
@@ -154,14 +171,27 @@ export default function ReadyToShipClient({
                 value={JSON.stringify(selectedIds)}
               />
               <input type="hidden" name="courier" value={courier} />
+              <input type="hidden" name="fromDate" value={fromDate} />
+              <input type="hidden" name="toDate" value={toDate} />
+
               <Button
                 type="submit"
-                disabled={invoicePending || !selectedIds.length}
+                disabled={
+                  invoicePending ||
+                  !selectedIds.length ||
+                  !canCreateInvoiceBatch
+                }
               >
                 {invoicePending
                   ? "Creating Invoice Batch..."
                   : "Create Invoice Batch + Download PDF"}
               </Button>
+
+              {canCreateInvoiceBatch ? (
+                <span className="text-xs font-medium text-emerald-700">
+                  Today&apos;s Bangladesh memo only · {bangladeshToday}
+                </span>
+              ) : null}
             </form>
           </div>
         )}

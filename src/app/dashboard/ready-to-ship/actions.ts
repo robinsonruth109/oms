@@ -9,6 +9,10 @@ import {
   validatePathaoOrder,
 } from "@/lib/pathao/orders";
 import type { PreparedPathaoOrder } from "@/lib/pathao/types";
+import {
+  getBangladeshDateInputValue,
+  getBangladeshTodayRange,
+} from "@/lib/bangladesh-time";
 
 type BatchActionState = {
   success: boolean;
@@ -57,19 +61,44 @@ export async function createInvoiceBatch(
       String(formData.get("selectedIds") || "[]")
     );
     const courier = String(formData.get("courier") || "").trim();
+    const fromDate = String(formData.get("fromDate") || "").trim();
+    const toDate = String(formData.get("toDate") || "").trim();
+    const bangladeshToday = getBangladeshDateInputValue();
+
+    if (fromDate !== bangladeshToday || toDate !== bangladeshToday) {
+      return {
+        success: false,
+        message:
+          `Invoice batch blocked. From Date and To Date must both be today's Bangladesh date (${bangladeshToday}). Future or previous memo dates cannot be downloaded.`,
+      };
+    }
 
     if (!selectedIds.length) {
       return { success: false, message: "Please select at least one order." };
     }
+
+    const todayRange = getBangladeshTodayRange();
 
     const orders = await prisma.order.findMany({
       where: {
         id: { in: selectedIds },
         orderStatus: "READY_TO_SHIP",
         invoiceDownloaded: false,
+        readyToShipAt: {
+          gte: todayRange.start,
+          lte: todayRange.end,
+        },
         ...(courier ? { courier } : {}),
       },
     });
+
+    if (orders.length !== selectedIds.length) {
+      return {
+        success: false,
+        message:
+          "Invoice batch blocked. One or more selected orders are not eligible for today's Bangladesh Ready to Ship memo, were already invoiced, or do not match the selected courier.",
+      };
+    }
 
     if (!orders.length) {
       return {

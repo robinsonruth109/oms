@@ -8,6 +8,7 @@ import {
   bangladeshDateStartUtc,
   formatBangladeshDate,
   formatBangladeshDateTime,
+  getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,9 @@ export default async function ReadyToShipPage({
   const from = (params.from || "").trim();
   const to = (params.to || "").trim();
   const activeTab = (params.tab || "non-invoiced").trim();
+  const bangladeshToday = getBangladeshDateInputValue();
+  const canCreateInvoiceBatch =
+    from === bangladeshToday && to === bangladeshToday;
 
   const couriers = await prisma.courier.findMany({
     where: {
@@ -264,6 +268,10 @@ export default async function ReadyToShipPage({
       <ReadyToShipClient
         courier={courier}
         activeTab={activeTab}
+        fromDate={from}
+        toDate={to}
+        bangladeshToday={bangladeshToday}
+        canCreateInvoiceBatch={canCreateInvoiceBatch}
         courierMap={courierMap}
         selectedCourierConfigured={Boolean(
           courier &&

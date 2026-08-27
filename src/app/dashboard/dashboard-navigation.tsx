@@ -78,6 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/stock-out", label: "Stock Out", icon: PackageX, roles: ["ADMIN"] },
       { href: "/dashboard/cancelled", label: "Cancelled", icon: Ban, roles: ["ADMIN"] },
       { href: "/dashboard/ready-orders-download", label: "Ready Orders Download", icon: FileSpreadsheet, roles: ["ADMIN"] },
+      { href: "/dashboard/sheet-sync", label: "Ready Order Sheet Sync", icon: FileSpreadsheet, roles: ["ADMIN"] },
       { href: "/dashboard/stock-out-import", label: "Stock Out Import", icon: RotateCcw, roles: ["ADMIN", "PACKAGING_AGENT"] },
     ],
   },

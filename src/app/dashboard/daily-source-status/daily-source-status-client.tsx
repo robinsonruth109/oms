@@ -5,6 +5,8 @@ import { Fragment, useState } from "react";
 type StatusBucket = {
   totalInvoice: number;
   ready: number;
+  todayReady: number;
+  dateMemo: number;
   phoneOff: number;
   noAnswer: number;
   cancel: number;
@@ -124,9 +126,11 @@ export default function DailySourceStatusClient({
         </form>
       </section>
 
-      <section className="grid grid-cols-2 gap-4 xl:grid-cols-7">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-9">
         <Summary title="Total" value={totals.totalInvoice} />
         <Summary title="Ready" value={totals.ready} green />
+        <Summary title="Today Ready" value={totals.todayReady} blue />
+        <Summary title="Date Memo" value={totals.dateMemo} cyan />
         <Summary title="Phone Off" value={totals.phoneOff} />
         <Summary title="No Answer" value={totals.noAnswer} />
         <Summary title="Cancel" value={totals.cancel} red />
@@ -239,6 +243,8 @@ function Summary({
   red,
   amber,
   purple,
+  blue,
+  cyan,
 }: {
   title: string;
   value: number;
@@ -246,10 +252,16 @@ function Summary({
   red?: boolean;
   amber?: boolean;
   purple?: boolean;
+  blue?: boolean;
+  cyan?: boolean;
 }) {
   const color = green
     ? "text-emerald-600"
-    : red
+    : blue
+      ? "text-blue-600"
+      : cyan
+        ? "text-cyan-600"
+        : red
       ? "text-red-600"
       : amber
         ? "text-amber-600"

@@ -19,6 +19,8 @@ type PageProps = {
 type StatusBucket = {
   totalInvoice: number;
   ready: number;
+  todayReady: number;
+  dateMemo: number;
   phoneOff: number;
   noAnswer: number;
   cancel: number;
@@ -31,6 +33,8 @@ function emptyBucket(): StatusBucket {
   return {
     totalInvoice: 0,
     ready: 0,
+    todayReady: 0,
+    dateMemo: 0,
     phoneOff: 0,
     noAnswer: 0,
     cancel: 0,
@@ -40,16 +44,33 @@ function emptyBucket(): StatusBucket {
   };
 }
 
-function applyStatus(bucket: StatusBucket, status: string, orderId: string) {
+function applyStatus(
+  bucket: StatusBucket,
+  status: string,
+  orderId: string,
+  readyToShipAt: Date | null,
+  today: string
+) {
   if (bucket.orderIds.has(orderId)) return;
 
   bucket.orderIds.add(orderId);
   bucket.totalInvoice += 1;
 
   switch (status) {
-    case "READY_TO_SHIP":
+    case "READY_TO_SHIP": {
       bucket.ready += 1;
+
+      if (readyToShipAt) {
+        const readyDate = getBangladeshDateInputValue(readyToShipAt);
+
+        if (readyDate === today) {
+          bucket.todayReady += 1;
+        } else if (readyDate > today) {
+          bucket.dateMemo += 1;
+        }
+      }
       break;
+    }
     case "PHONE_OFF":
       bucket.phoneOff += 1;
       break;
@@ -74,6 +95,8 @@ function toSafeBucket(bucket: StatusBucket) {
   return {
     totalInvoice: bucket.totalInvoice,
     ready: bucket.ready,
+    todayReady: bucket.todayReady,
+    dateMemo: bucket.dateMemo,
     phoneOff: bucket.phoneOff,
     noAnswer: bucket.noAnswer,
     cancel: bucket.cancel,
@@ -123,6 +146,7 @@ export default async function DailySourceStatusPage({
         select: {
           id: true,
           orderStatus: true,
+          readyToShipAt: true,
           source: {
             select: {
               id: true,
@@ -162,7 +186,13 @@ export default async function DailySourceStatusPage({
   const totals = emptyBucket();
 
   for (const item of orderItems) {
-    applyStatus(totals, item.order.orderStatus, item.order.id);
+    applyStatus(
+      totals,
+      item.order.orderStatus,
+      item.order.id,
+      item.order.readyToShipAt,
+      today
+    );
 
     const parentCode = item.product?.parent?.sku || "N/A";
     const parentName = item.product?.parent?.name || "No Parent";
@@ -180,7 +210,13 @@ export default async function DailySourceStatusPage({
     }
 
     const parentRow = parentMap.get(key)!;
-    applyStatus(parentRow, item.order.orderStatus, item.order.id);
+    applyStatus(
+      parentRow,
+      item.order.orderStatus,
+      item.order.id,
+      item.order.readyToShipAt,
+      today
+    );
 
     const sku = item.productSku || "N/A";
 
@@ -195,7 +231,9 @@ export default async function DailySourceStatusPage({
     applyStatus(
       parentRow.skuRows.get(sku)!,
       item.order.orderStatus,
-      item.order.id
+      item.order.id,
+      item.order.readyToShipAt,
+      today
     );
   }
 

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
 type UpdateAllOrderInput = {
   orderId: string;
   customerName: string;
@@ -286,7 +287,7 @@ export async function updateAllOrder(
           totalAmount,
           courier: courierRecord?.slug || (courier ? courier : null),
           readyToShipAt: readyToShipAt
-            ? new Date(`${readyToShipAt}T00:00:00`)
+            ? bangladeshBusinessDateToUtc(readyToShipAt)
             : order.readyToShipAt,
           pageId,
           orderStatus: status ,

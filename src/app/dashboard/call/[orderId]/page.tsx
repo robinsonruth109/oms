@@ -2,6 +2,7 @@
 import { notFound } from "next/navigation";
 import CallingOrderView from "./view-client";
 
+import { getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -86,8 +87,8 @@ export default async function CallingOrderViewPage({ params }: Props) {
         note: order.note,
         pageId: order.pageId,
         readyToShipAt: order.readyToShipAt
-          ? order.readyToShipAt.toISOString().slice(0, 10)
-          : new Date().toISOString().slice(0, 10),
+          ? getBangladeshDateInputValue(order.readyToShipAt)
+          : getBangladeshDateInputValue(),
         source: {
           name: order.source.name,
           type: order.source.type,

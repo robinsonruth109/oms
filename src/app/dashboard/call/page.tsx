@@ -2,10 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import CallingPanelTable from "./calling-panel-table";
-import {
-  bangladeshDateEndUtc,
-  bangladeshDateStartUtc,
-} from "@/lib/bangladesh-time";
+import { bangladeshDateEndUtc, bangladeshDateStartUtc, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 
 type CallingPanelPageProps = {
   searchParams?: Promise<{
@@ -212,7 +209,7 @@ export default async function CallingPanelPage({
     note: order.note,
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
-    readyToShipAt: order.readyToShipAt.toISOString().slice(0, 10),
+    readyToShipAt: getBangladeshDateInputValue(order.readyToShipAt),
     calledAt: order.calledAt ? order.calledAt.toISOString() : null,
     holdAt: order.holdAt ? order.holdAt.toISOString() : null,
     holdUntil: order.holdUntil ? order.holdUntil.toISOString() : null,

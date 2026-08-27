@@ -1,4 +1,4 @@
-import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
+import { formatBangladeshDateTime, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 
 import { notFound } from "next/navigation";
 import AllOrderViewClient from "./view-client";
@@ -200,8 +200,8 @@ export default async function AllOrderViewPage({ params }: Props) {
         invoiceDownloaded: order.invoiceDownloaded,
         pageId: order.pageId,
         readyToShipAt: order.readyToShipAt
-          ? order.readyToShipAt.toISOString().slice(0, 10)
-          : new Date().toISOString().slice(0, 10),
+          ? getBangladeshDateInputValue(order.readyToShipAt)
+          : getBangladeshDateInputValue(),
         source: {
           id: order.source?.id || "",
           name: order.source?.name || "",

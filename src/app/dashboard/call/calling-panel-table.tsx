@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
+import { formatBangladeshDateTime, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 import {
   claimCallingOrder,
@@ -237,7 +237,7 @@ function getDefaultState(
     deliveryCharge: order.deliveryCharge,
     courier: order.courier || "",
     readyToShipAt:
-      order.readyToShipAt || new Date().toISOString().slice(0, 10),
+      order.readyToShipAt || getBangladeshDateInputValue(),
     status:
       order.orderStatus === "NO_ANSWER" ||
       order.orderStatus === "PHONE_OFF"

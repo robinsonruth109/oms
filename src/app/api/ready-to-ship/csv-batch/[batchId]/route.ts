@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+import { getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -60,7 +61,7 @@ export async function GET(
       "",
       String(Number(order.totalAmount || 0)),
       order.readyToShipAt
-        ? new Date(order.readyToShipAt).toISOString().slice(0, 10)
+        ? getBangladeshDateInputValue(new Date(order.readyToShipAt))
         : "",
     ];
   });

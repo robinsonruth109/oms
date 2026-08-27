@@ -49,7 +49,7 @@ function applyStatus(
   status: string,
   orderId: string,
   readyToShipAt: Date | null,
-  today: string
+  filterDate: string
 ) {
   if (bucket.orderIds.has(orderId)) return;
 
@@ -63,9 +63,9 @@ function applyStatus(
       if (readyToShipAt) {
         const readyDate = getBangladeshDateInputValue(readyToShipAt);
 
-        if (readyDate === today) {
+        if (readyDate === filterDate) {
           bucket.todayReady += 1;
-        } else if (readyDate > today) {
+        } else if (readyDate > filterDate) {
           bucket.dateMemo += 1;
         }
       }
@@ -116,6 +116,14 @@ export default async function DailySourceStatusPage({
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
   const sourceId = (params.sourceId || "").trim();
+
+  // Daily Source Status is filtered by the order import/create date.
+  // The Ready breakdown must compare Ready To Ship Date with the selected
+  // report date, NOT with the server/current date. For the normal daily
+  // report From Date = To Date, so this is that selected date. If a range
+  // is used, To Date is the comparison/cutoff date and Date Memo means
+  // Ready To Ship Date is after that cutoff.
+  const readyFilterDate = to;
 
   const sources = await prisma.orderSource.findMany({
     orderBy: { name: "asc" },
@@ -191,7 +199,7 @@ export default async function DailySourceStatusPage({
       item.order.orderStatus,
       item.order.id,
       item.order.readyToShipAt,
-      today
+      readyFilterDate
     );
 
     const parentCode = item.product?.parent?.sku || "N/A";
@@ -215,7 +223,7 @@ export default async function DailySourceStatusPage({
       item.order.orderStatus,
       item.order.id,
       item.order.readyToShipAt,
-      today
+      readyFilterDate
     );
 
     const sku = item.productSku || "N/A";
@@ -233,7 +241,7 @@ export default async function DailySourceStatusPage({
       item.order.orderStatus,
       item.order.id,
       item.order.readyToShipAt,
-      today
+      readyFilterDate
     );
   }
 

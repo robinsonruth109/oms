@@ -29,6 +29,7 @@ model User {
   stockOutRestoreBatches StockOutRestoreBatch[]
   orderAuditEvents OrderAuditEvent[]
   readyOrderSheetSyncRuns ReadyOrderSheetSyncRun[]
+  readyToShipDateShifts ReadyToShipDateShift[]
 }
 
 model Page {
@@ -267,6 +268,7 @@ model Order {
   pathaoCodAuthorizations PathaoCodAuthorization[]
   auditEvents OrderAuditEvent[]
   readyOrderSheetSyncItems ReadyOrderSheetSyncItem[]
+  readyToShipDateShiftItems ReadyToShipDateShiftItem[]
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
@@ -313,6 +315,49 @@ model OrderAuditEvent {
   @@index([eventType])
   @@index([performedByUserId])
   @@index([createdAt])
+}
+
+
+model ReadyToShipDateShift {
+  id String @id @default(uuid())
+
+  // When every selected order came from one Bangladesh business date this
+  // contains YYYY-MM-DD. It is null for a CSV operation spanning multiple dates.
+  sourceDate String?
+  targetDate String
+  method String
+  totalOrders Int
+  uploadedFileName String?
+
+  performedByUserId String
+  performedByUser User @relation(fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  items ReadyToShipDateShiftItem[]
+
+  @@index([sourceDate])
+  @@index([targetDate])
+  @@index([method])
+  @@index([performedByUserId])
+  @@index([createdAt])
+}
+
+model ReadyToShipDateShiftItem {
+  id String @id @default(uuid())
+
+  shiftId String
+  shift ReadyToShipDateShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  orderId String
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  invoiceIdSnapshot String?
+  fromReadyToShipAt DateTime
+  toReadyToShipAt DateTime
+
+  @@unique([shiftId, orderId])
+  @@index([orderId])
 }
 
 model AdsCostUpload {

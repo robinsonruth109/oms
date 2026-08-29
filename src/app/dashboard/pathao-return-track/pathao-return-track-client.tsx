@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   Loader2,
   PackageCheck,
   ScanLine,
@@ -376,15 +377,37 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
             </h2>
             <p className="mt-1 text-sm text-slate-500">Processed Pathao returns for the selected Bangladesh date.</p>
           </div>
-          <form className="flex items-end gap-2">
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Date</span>
-              <input type="date" name="date" defaultValue={filterDate} className="rounded-xl border px-3 py-2.5 outline-none" />
-            </label>
-            <button type="submit" className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">
-              Filter
-            </button>
-          </form>
+          <div className="flex flex-wrap items-end gap-2">
+            <form className="flex items-end gap-2">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Date</span>
+                <input type="date" name="date" defaultValue={filterDate} className="rounded-xl border px-3 py-2.5 outline-none" />
+              </label>
+              <button type="submit" className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">
+                Filter
+              </button>
+            </form>
+            {rows.length ? (
+              <a
+                href={`/api/pathao-return-track/export?date=${encodeURIComponent(filterDate)}`}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                title={`Download ${filterDate} return report as CSV`}
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex cursor-not-allowed items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 opacity-50"
+                title="No returns to download for this date"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">

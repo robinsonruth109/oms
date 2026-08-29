@@ -30,6 +30,7 @@ model User {
   orderAuditEvents OrderAuditEvent[]
   readyOrderSheetSyncRuns ReadyOrderSheetSyncRun[]
   readyToShipDateShifts ReadyToShipDateShift[]
+  pathaoReturnTracks PathaoReturnTrack[]
 }
 
 model Page {
@@ -155,6 +156,7 @@ model Courier {
 
   pathaoOrders        Order[]              @relation("PathaoCourierOrders")
   pathaoWebhookEvents PathaoWebhookEvent[]
+  pathaoReturnTracks  PathaoReturnTrack[] @relation("PathaoReturnCourier")
 
   @@index([status])
   @@index([pathaoEnabled])
@@ -179,6 +181,7 @@ model Product {
   orderItems     OrderItem[]
   purchaseOrders PurchaseOrder[]
   reelProducts   ReelProduct[]
+  pathaoReturnItems PathaoReturnItem[]
 }
 
 model Order {
@@ -269,6 +272,7 @@ model Order {
   auditEvents OrderAuditEvent[]
   readyOrderSheetSyncItems ReadyOrderSheetSyncItem[]
   readyToShipDateShiftItems ReadyToShipDateShiftItem[]
+  pathaoReturnTracks PathaoReturnTrack[]
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
@@ -360,6 +364,70 @@ model ReadyToShipDateShiftItem {
   @@index([orderId])
 }
 
+model PathaoReturnTrack {
+  id String @id @default(uuid())
+
+  returnConsignmentId String @unique
+  outboundConsignmentId String?
+  merchantOrderId String
+
+  orderId String
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  pathaoCourierId String
+  pathaoCourier Courier @relation("PathaoReturnCourier", fields: [pathaoCourierId], references: [id], onDelete: Restrict)
+
+  pathaoOrderStatus String?
+  pathaoOrderStatusSlug String?
+  previousOmsStatus String
+  newOmsStatus String
+  returnType String
+  totalRestoredQty Int
+  processingMethod String
+
+  rawPathaoResponse Json?
+
+  processedByUserId String
+  processedByUser User @relation(fields: [processedByUserId], references: [id], onDelete: Restrict)
+  processedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  items PathaoReturnItem[]
+
+  @@index([merchantOrderId])
+  @@index([orderId])
+  @@index([pathaoCourierId])
+  @@index([processedByUserId])
+  @@index([processedAt])
+  @@index([returnType])
+}
+
+model PathaoReturnItem {
+  id String @id @default(uuid())
+
+  returnTrackId String
+  returnTrack PathaoReturnTrack @relation(fields: [returnTrackId], references: [id], onDelete: Cascade)
+
+  orderItemId String
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  productId String
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  productSkuSnapshot String
+  productNameSnapshot String
+  orderedQty Int
+  returnedQty Int
+  stockBefore Int
+  stockAfter Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([returnTrackId, orderItemId])
+  @@index([orderItemId])
+  @@index([productId])
+}
+
 model AdsCostUpload {
   id          String   @id @default(uuid())
   uploadDate  DateTime
@@ -413,6 +481,8 @@ model OrderItem {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  pathaoReturnItems PathaoReturnItem[]
 
   @@index([orderId])
   @@index([productId])
@@ -621,6 +691,7 @@ enum OrderStatus {
   DOUBLE_ORDER
   STOCK_OUT
   RETURNED
+  PARTIAL_RETURN
 }
 
 enum AttendanceStatus {

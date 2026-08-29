@@ -44,7 +44,7 @@ function shortDateLabel(value: string) {
 
 function hasReachedReadyToShip(order: ReportOrder) {
   return (
-    ["READY_TO_SHIP", "STOCK_OUT", "RETURNED"].includes(order.orderStatus) ||
+    ["READY_TO_SHIP", "STOCK_OUT", "RETURNED", "PARTIAL_RETURN"].includes(order.orderStatus) ||
     order.invoiceDownloaded ||
     order.csvDownloaded ||
     order.pathaoSubmissionStatus !== "NOT_SUBMITTED"

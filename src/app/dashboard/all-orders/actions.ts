@@ -26,6 +26,7 @@ type UpdateAllOrderInput = {
     | "STOCK_OUT"
     | "CANCELLED"
     | "RETURNED"
+    | "PARTIAL_RETURN"
     | "DOUBLE_ORDER";
   note?: string;
   items?: {
@@ -94,6 +95,7 @@ export async function updateAllOrder(
     "STOCK_OUT",
     "CANCELLED",
     "RETURNED",
+    "PARTIAL_RETURN",
     "DOUBLE_ORDER",
   ];
 

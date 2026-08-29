@@ -210,6 +210,7 @@ export default function AllOrderView({
     | "STOCK_OUT"
     | "CANCELLED"
     | "RETURNED"
+    | "PARTIAL_RETURN"
     | "DOUBLE_ORDER"
   >(order.orderStatus as any);
   const [note, setNote] = useState(order.note || "");
@@ -791,6 +792,7 @@ export default function AllOrderView({
                     | "STOCK_OUT"
                     | "CANCELLED"
                     | "RETURNED"
+                    | "PARTIAL_RETURN"
                     | "DOUBLE_ORDER"
                 )
               }
@@ -803,6 +805,7 @@ export default function AllOrderView({
               <option value="STOCK_OUT">Stock Out</option>
               <option value="CANCELLED">Cancelled</option>
               <option value="RETURNED">Returned</option>
+              <option value="PARTIAL_RETURN" disabled>Partial Return (Pathao Return Track)</option>
               <option value="DOUBLE_ORDER">Double Order</option>
             </select>
           </div>

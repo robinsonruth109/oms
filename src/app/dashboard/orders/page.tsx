@@ -19,6 +19,7 @@ function StatusBadge({ status }: { status: string }) {
     DOUBLE_ORDER: "bg-orange-100 text-orange-700",
     STOCK_OUT: "bg-purple-100 text-purple-700",
     RETURNED: "bg-pink-100 text-pink-700",
+    PARTIAL_RETURN: "bg-amber-100 text-amber-700",
   };
 
   return (

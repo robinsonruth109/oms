@@ -164,6 +164,7 @@ export default async function LiveCallReportPage({ searchParams }: Props) {
         row.doubleOrder += 1;
         break;
       case "RETURNED":
+      case "PARTIAL_RETURN":
         row.returned += 1;
         break;
     }

@@ -923,6 +923,7 @@ model PathaoWebhookEvent {
 
   eventName      String
   consignmentId String?
+  returnConsignmentId String?
   merchantOrderId String?
   signatureValid Boolean @default(false)
   processed      Boolean @default(false)
@@ -935,6 +936,7 @@ model PathaoWebhookEvent {
   @@index([orderId])
   @@index([eventName])
   @@index([consignmentId])
+  @@index([returnConsignmentId])
   @@index([merchantOrderId])
   @@index([receivedAt])
 }

@@ -9,6 +9,12 @@ export const revalidate = 0;
 const PATHAO_INTEGRATION_RESPONSE_SECRET =
   "f3992ecc-59da-4cbe-a049-a13da2018d51";
 
+const PATHAO_RETURN_LIFECYCLE_EVENTS = new Set([
+  "order.return-id-created",
+  "order.return-in-transit",
+  "order.returned-to-merchant",
+]);
+
 function response202(
   headerSecret: string,
   body: Record<string, unknown>
@@ -81,6 +87,7 @@ export async function POST(
         courierId,
         eventName: fields.event,
         consignmentId: fields.consignmentId,
+        returnConsignmentId: fields.returnConsignmentId,
         merchantOrderId: fields.merchantOrderId,
         signatureValid: false,
         processed: false,
@@ -97,10 +104,16 @@ export async function POST(
 
   let order = null;
 
-  if (fields.consignmentId) {
+  const consignmentCandidates = [
+    fields.consignmentId,
+    fields.returnConsignmentId,
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of consignmentCandidates) {
     order = await prisma.order.findUnique({
-      where: { pathaoConsignmentId: fields.consignmentId },
+      where: { pathaoConsignmentId: candidate },
     });
+    if (order) break;
   }
 
   if (!order && fields.merchantOrderId) {
@@ -119,6 +132,10 @@ export async function POST(
   let processingNote = order ? "Matched and processed." : "Stored; OMS order not matched yet.";
 
   if (order) {
+    const isReturnLifecycleEvent =
+      PATHAO_RETURN_LIFECYCLE_EVENTS.has(fields.event) ||
+      Boolean(fields.returnConsignmentId);
+
     const nextData: Record<string, unknown> = {
       pathaoCourierId: courierId,
       pathaoLastSyncedAt: new Date(),
@@ -126,7 +143,9 @@ export async function POST(
       pathaoLastError: null,
     };
 
-    if (fields.consignmentId) {
+    // Keep the original outbound consignment ID stable. Return lifecycle
+    // webhooks can carry a different return-leg consignment ID.
+    if (fields.consignmentId && !isReturnLifecycleEvent) {
       nextData.pathaoConsignmentId = fields.consignmentId;
       nextData.pathaoSubmissionStatus = "CONSIGNMENT_CREATED";
       nextData.pathaoCreatedAt = order.pathaoCreatedAt || new Date();
@@ -162,6 +181,7 @@ export async function POST(
       orderId: order?.id || null,
       eventName: fields.event,
       consignmentId: fields.consignmentId,
+      returnConsignmentId: fields.returnConsignmentId,
       merchantOrderId: fields.merchantOrderId,
       signatureValid: true,
       processed: Boolean(order),

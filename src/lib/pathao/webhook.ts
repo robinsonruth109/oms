@@ -50,6 +50,18 @@ export function extractPathaoWebhookFields(payload: unknown) {
     )
   );
 
+  const returnConsignmentId = text(
+    findKeyRecursive(
+      payload,
+      new Set([
+        "return_consignment_id",
+        "returnconsignmentid",
+        "return_consignment",
+        "returnconsignment",
+      ])
+    )
+  );
+
   const merchantOrderId = text(
     findKeyRecursive(
       payload,
@@ -111,6 +123,7 @@ export function extractPathaoWebhookFields(payload: unknown) {
   return {
     event,
     consignmentId,
+    returnConsignmentId,
     merchantOrderId,
     orderStatus,
     orderStatusSlug,

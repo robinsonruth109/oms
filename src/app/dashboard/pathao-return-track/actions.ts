@@ -5,9 +5,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getPathaoOrderInfo } from "@/lib/pathao/client";
 import {
-  pathaoMerchantOrderId,
   searchAllPathaoCouriersForConsignment,
   type PathaoReturnCourierMatch,
 } from "@/lib/pathao/return-tracking";
@@ -106,7 +104,7 @@ async function requireReturnAccess() {
 }
 
 function normalizeConsignmentId(value: unknown) {
-  return String(value ?? "").trim().replace(/\s+/g, "");
+  return String(value ?? "").trim().replace(/\s+/g, "").toUpperCase();
 }
 
 function isUniqueConstraintError(error: unknown) {
@@ -197,6 +195,9 @@ async function processReturn({
         throw new ReturnProcessError("ERROR", "OMS order was not found.");
       }
 
+      const outboundConsignmentId =
+        match.outboundConsignmentId || order.pathaoConsignmentId;
+
       if (order.invoiceId !== match.merchantOrderId) {
         throw new ReturnProcessError(
           "ERROR",
@@ -204,7 +205,7 @@ async function processReturn({
         );
       }
 
-      if (order.pathaoConsignmentId === consignmentId) {
+      if (outboundConsignmentId === consignmentId) {
         throw new ReturnProcessError(
           "ERROR",
           "This is the original outbound consignment ID, not a return consignment ID."
@@ -276,7 +277,7 @@ async function processReturn({
       const track = await tx.pathaoReturnTrack.create({
         data: {
           returnConsignmentId: consignmentId,
-          outboundConsignmentId: order.pathaoConsignmentId,
+          outboundConsignmentId,
           merchantOrderId: order.invoiceId,
           orderId: order.id,
           pathaoCourierId: match.courierId,
@@ -364,7 +365,7 @@ async function processReturn({
           actorLabel: user.name || user.username || "OMS User",
           details: {
             returnConsignmentId: consignmentId,
-            outboundConsignmentId: order.pathaoConsignmentId,
+            outboundConsignmentId,
             merchantOrderId: order.invoiceId,
             pathaoCourier: match.courierName,
             pathaoStatus: match.pathaoStatus,
@@ -489,7 +490,7 @@ export async function scanPathaoReturnAction(
 
       throw new ReturnProcessError(
         "ERROR",
-        `Consignment ${consignmentId} was not found in any configured Pathao courier.${suffix}`
+        `Return consignment ${consignmentId} could not be matched. OMS checked verified Pathao return-webhook history first, then all configured Pathao courier accounts.${suffix} If this is an RG return ID, confirm Pathao return lifecycle webhooks are enabled for that courier account.`
       );
     }
 
@@ -523,7 +524,26 @@ export async function scanPathaoReturnAction(
       throw new ReturnProcessError("ERROR", "Matched OMS order has no invoice ID.");
     }
 
-    if (order.pathaoConsignmentId === consignmentId) {
+    const resolvedOutboundConsignmentId =
+      match.outboundConsignmentId || order.pathaoConsignmentId;
+
+    // Repair a previously overwritten outbound ID when verified Pathao webhook
+    // history gives us the original outbound consignment.
+    if (
+      match.source === "RETURN_WEBHOOK" &&
+      resolvedOutboundConsignmentId &&
+      order.pathaoConsignmentId !== resolvedOutboundConsignmentId
+    ) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { pathaoConsignmentId: resolvedOutboundConsignmentId },
+      });
+    }
+
+    if (
+      resolvedOutboundConsignmentId === consignmentId ||
+      match.source === "ORDER_INFO"
+    ) {
       throw new ReturnProcessError(
         "ERROR",
         "This barcode is the original outbound Pathao consignment ID. Scan the return consignment ID instead."
@@ -594,7 +614,7 @@ export async function scanPathaoReturnAction(
           customerName: order.customerName,
           phone: order.phone,
           orderStatus: order.orderStatus,
-          outboundConsignmentId: order.pathaoConsignmentId,
+          outboundConsignmentId: resolvedOutboundConsignmentId,
           items: selectionItems,
         },
       },
@@ -636,25 +656,19 @@ export async function processSelectedPathaoReturnAction(
       throw new ReturnProcessError("ERROR", "OMS order was not found.");
     }
 
-    const info = await getPathaoOrderInfo(courier.id, consignmentId);
-    const merchantOrderId = pathaoMerchantOrderId(info);
+    const search = await searchAllPathaoCouriersForConsignment(consignmentId);
+    const match = search.matches.find(
+      (candidate) =>
+        candidate.courierId === courier.id &&
+        candidate.merchantOrderId === order.invoiceId
+    );
 
-    if (!merchantOrderId || merchantOrderId !== order.invoiceId) {
+    if (!match) {
       throw new ReturnProcessError(
         "ERROR",
         "Pathao return consignment no longer matches this OMS invoice."
       );
     }
-
-    const match: PathaoReturnCourierMatch = {
-      courierId: courier.id,
-      courierName: courier.name,
-      courierSlug: courier.slug,
-      merchantOrderId,
-      pathaoStatus: String(info.order_status || "").trim() || null,
-      pathaoStatusSlug: String(info.order_status_slug || "").trim() || null,
-      info,
-    };
 
     return await processReturn({
       consignmentId,

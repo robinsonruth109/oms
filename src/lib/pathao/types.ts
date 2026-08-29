@@ -44,6 +44,7 @@ export type PathaoBulkResponse = {
 
 export type PathaoOrderInfo = {
   consignment_id?: string;
+  return_consignment_id?: string | null;
   merchant_order_id?: string | null;
   order_status?: string | null;
   order_status_slug?: string | null;

@@ -4,7 +4,10 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createManualOrder } from "./actions";
-import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
+import {
+  isValidBangladeshMobile,
+  normalizeBangladeshPhone,
+} from "@/lib/phone-normalization";
 
 const initialState = {
   success: false,
@@ -154,6 +157,7 @@ export default function CreateOrderForm({
   const [discount, setDiscount] = useState(0);
   const [advance, setAdvance] = useState(0);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [phone, setPhone] = useState("");
   const [itemsJson, setItemsJson] = useState("[]");
   const [resetKey, setResetKey] = useState(0);
 
@@ -174,6 +178,7 @@ export default function CreateOrderForm({
       setDiscount(0);
       setAdvance(0);
       setDeliveryCharge(0);
+      setPhone("");
       setResetKey((prev) => prev + 1);
     }
   }, [state.success]);
@@ -186,6 +191,8 @@ export default function CreateOrderForm({
     subtotal + deliveryCharge - discount - advance,
     0
   );
+
+  const phoneIsValid = isValidBangladeshMobile(phone);
 
   function addRow() {
     setRows((prev) => [...prev, createEmptyRow()]);
@@ -393,15 +400,45 @@ export default function CreateOrderForm({
                 name="phone"
                 type="text"
                 inputMode="numeric"
-                onInput={(event) => {
-                  event.currentTarget.value = normalizeBangladeshPhone(
+                autoComplete="tel"
+                maxLength={11}
+                pattern="01[0-9]{9}"
+                value={phone}
+                onChange={(event) => {
+                  const normalized = normalizeBangladeshPhone(
                     event.currentTarget.value
-                  );
+                  ).slice(0, 11);
+
+                  setPhone(normalized);
                 }}
-                placeholder="Enter phone number"
-                className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"
+                placeholder="01XXXXXXXXX"
+                aria-invalid={phone.length > 0 && !phoneIsValid}
+                aria-describedby="phone-help"
+                className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${
+                  phone.length === 0
+                    ? "border-slate-200"
+                    : phoneIsValid
+                      ? "border-emerald-500 focus:border-emerald-600"
+                      : "border-red-500 focus:border-red-600"
+                }`}
                 required
               />
+              <p
+                id="phone-help"
+                className={`text-xs ${
+                  phone.length > 0 && !phoneIsValid
+                    ? "font-medium text-red-600"
+                    : phoneIsValid
+                      ? "font-medium text-emerald-600"
+                      : "text-slate-500"
+                }`}
+              >
+                {phone.length > 0 && !phoneIsValid
+                  ? "Invalid phone number. Enter exactly 11 English digits starting with 01."
+                  : phoneIsValid
+                    ? "Valid 11-digit phone number."
+                    : "Required: exactly 11 English digits, starting with 01."}
+              </p>
             </div>
           </div>
 
@@ -700,7 +737,11 @@ export default function CreateOrderForm({
         <div className="flex justify-end">
           <Button
             type="submit"
-            disabled={pending || !rows.some((row) => row.productId)}
+            disabled={
+              pending ||
+              !phoneIsValid ||
+              !rows.some((row) => row.productId)
+            }
           >
             {pending ? "Creating Order..." : "Create Order"}
           </Button>

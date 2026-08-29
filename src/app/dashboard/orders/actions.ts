@@ -5,7 +5,10 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
+import {
+  isValidBangladeshMobile,
+  normalizeBangladeshPhone,
+} from "@/lib/phone-normalization";
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
 
 type CreateOrderState = {
@@ -94,6 +97,14 @@ export async function createManualOrder(
     return {
       success: false,
       message: "Please fill all order header fields.",
+    };
+  }
+
+  if (!isValidBangladeshMobile(phone)) {
+    return {
+      success: false,
+      message:
+        "Invalid phone number. Enter exactly 11 English digits starting with 01.",
     };
   }
 

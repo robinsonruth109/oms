@@ -564,16 +564,15 @@ function buildInvoiceHtml(orders: OrderForPdf[], fontPath: string) {
 }
 
 function resolveChromeExecutablePath(fs: any) {
-  const fromEnv = process.env.PUPPETEER_EXECUTABLE_PATH;
-  if (fromEnv) return fromEnv;
-
   const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_BIN,
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium-browser",
     "/usr/bin/chromium",
-  ];
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+  ].filter(Boolean) as string[];
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -582,6 +581,118 @@ function resolveChromeExecutablePath(fs: any) {
   }
 
   return undefined;
+}
+
+// Railway containers have relatively tight process/memory limits. Reusing one
+// browser and serializing PDF work prevents several Chrome process trees from
+// being spawned at the same time. That is the common cause of spawn EAGAIN.
+let sharedPdfBrowser: any = null;
+let sharedPdfBrowserPromise: Promise<any> | null = null;
+let pdfJobTail: Promise<void> = Promise.resolve();
+
+const CHROME_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--no-zygote",
+  "--single-process",
+  "--no-first-run",
+  "--disable-background-networking",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-breakpad",
+  "--disable-component-update",
+  "--disable-default-apps",
+  "--disable-extensions",
+  "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints",
+  "--disable-sync",
+  "--metrics-recording-only",
+  "--mute-audio",
+] as const;
+
+function isSpawnEagain(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  const withCode = error as Error & { code?: string };
+  return withCode.code === "EAGAIN" || /\bEAGAIN\b/i.test(error.message);
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function launchPdfBrowser(
+  puppeteer: any,
+  executablePath: string
+) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await puppeteer.launch({
+        executablePath,
+        headless: true,
+        timeout: 60000,
+        args: [...CHROME_ARGS],
+      });
+    } catch (error) {
+      lastError = error;
+
+      if (!isSpawnEagain(error) || attempt === 3) {
+        throw error;
+      }
+
+      // A very short burst of process pressure can clear on its own. The
+      // serialized queue below ensures no new PDF job adds more pressure here.
+      await sleep(attempt * 750);
+    }
+  }
+
+  throw lastError;
+}
+
+async function getPdfBrowser(puppeteer: any, executablePath: string) {
+  if (sharedPdfBrowser?.connected) {
+    return sharedPdfBrowser;
+  }
+
+  if (!sharedPdfBrowserPromise) {
+    sharedPdfBrowserPromise = launchPdfBrowser(puppeteer, executablePath)
+      .then((browser) => {
+        sharedPdfBrowser = browser;
+
+        browser.on("disconnected", () => {
+          if (sharedPdfBrowser === browser) {
+            sharedPdfBrowser = null;
+          }
+        });
+
+        return browser;
+      })
+      .finally(() => {
+        sharedPdfBrowserPromise = null;
+      });
+  }
+
+  return sharedPdfBrowserPromise;
+}
+
+async function runPdfJob<T>(job: () => Promise<T>): Promise<T> {
+  const previousJob = pdfJobTail;
+  let release!: () => void;
+
+  pdfJobTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previousJob;
+
+  try {
+    return await job();
+  } finally {
+    release();
+  }
 }
 
 export async function GET(
@@ -657,48 +768,43 @@ export async function GET(
     );
   }
 
-  let browser: any = null;
-
   try {
-    browser = await puppeteer.launch({
-      executablePath,
-      headless: true,
-      timeout: 60000,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--no-first-run",
-      ],
-    });
+    const pdfBytes = await runPdfJob(async () => {
+      const browser = await getPdfBrowser(puppeteer, executablePath);
+      let page: any = null;
 
-    const page = await browser.newPage();
+      try {
+        page = await browser.newPage();
 
-    await page.setViewport({
-      width: 794,
-      height: 1123,
-      deviceScaleFactor: 1.5,
-    });
+        await page.setViewport({
+          width: 794,
+          height: 1123,
+          deviceScaleFactor: 1,
+        });
 
-    await page.setContent(html, {
-      waitUntil: "networkidle0",
-      timeout: 60000,
-    });
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+          timeout: 60000,
+        });
 
-    await page.emulateMediaType("screen");
+        await page.emulateMediaType("screen");
 
-    const pdfBytes = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      preferCSSPageSize: true,
-      margin: {
-        top: "0mm",
-        right: "0mm",
-        bottom: "0mm",
-        left: "0mm",
-      },
+        return await page.pdf({
+          format: "A4",
+          printBackground: true,
+          preferCSSPageSize: true,
+          margin: {
+            top: "0mm",
+            right: "0mm",
+            bottom: "0mm",
+            left: "0mm",
+          },
+        });
+      } finally {
+        if (page && !page.isClosed()) {
+          await page.close().catch(() => undefined);
+        }
+      }
     });
 
     // Record the actual user who requested/downloaded this PDF. A batch may
@@ -733,9 +839,5 @@ export async function GET(
     return new Response(`PDF generation failed: ${message}`, {
       status: 500,
     });
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 }

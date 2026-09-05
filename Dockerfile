@@ -1,21 +1,20 @@
 FROM node:22-bookworm-slim AS base
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV CHROME_BIN=/usr/bin/chromium
 
+# Chromium from Debian is lighter and more predictable in Railway containers.
+# tini runs as PID 1 so orphaned Chromium child processes are reaped instead of
+# accumulating until Linux refuses another spawn with EAGAIN.
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    chromium \
     fonts-noto \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
-    wget \
-    gnupg \
     openssl \
-    --no-install-recommends && \
-    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-linux.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list && \
-    apt-get update && apt-get install -y \
-    google-chrome-stable \
+    tini \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
@@ -51,4 +50,5 @@ COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3000
 
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "server.js"]

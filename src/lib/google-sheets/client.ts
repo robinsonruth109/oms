@@ -88,7 +88,11 @@ async function googleRequest<T>(
   });
   const text = await response.text();
   let body: unknown = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
   if (!response.ok) {
     const message =
       typeof body === "object" && body && "error" in body
@@ -99,30 +103,63 @@ async function googleRequest<T>(
   return body as T;
 }
 
+/**
+ * Required Ready Order sheet layout.
+ *
+ * A      UUID
+ * B-C    Invoice ID (intentionally duplicated)
+ * D-H    Source/date/customer/phone/address
+ * I-AN   8 product groups × 4 columns
+ * AO-AT  totals/note/status
+ */
 export const READY_ORDER_SHEET_HEADERS = [
-  "OMS Order UUID",
-  "Ready To Ship Date",
+  "UUID",
   "Invoice ID",
-  "Order ID",
+  "Invoice ID",
+  "Source Name",
+  "Date",
   "Customer Name",
-  "Phone",
+  "Phone Number",
   "Address",
-  "Source",
-  "Page",
-  "Courier",
-  "Items",
-  "Subtotal",
-  "Delivery Charge",
-  "Discount",
+  "Product Parent Code-1",
+  "Product SKU-1",
+  "Product Price-1",
+  "QTY-1",
+  "Product Parent Code-2",
+  "Product SKU-2",
+  "Product Price-2",
+  "QTY-2",
+  "Product Parent Code-3",
+  "Product SKU-3",
+  "Product Price-3",
+  "QTY-3",
+  "Product Parent Code-4",
+  "Product SKU-4",
+  "Product Price-4",
+  "QTY-4",
+  "Product Parent Code-5",
+  "Product SKU-5",
+  "Product Price-5",
+  "QTY-5",
+  "Product Parent Code-6",
+  "Product SKU-6",
+  "Product Price-6",
+  "QTY-6",
+  "Product Parent Code-7",
+  "Product SKU-7",
+  "Product Price-7",
+  "QTY-7",
+  "Product Parent Code-8",
+  "Product SKU-8",
+  "Product Price-8",
+  "QTY-8",
+  "DV Cost",
   "Advance",
-  "Final Total",
-  "Consignment ID",
-  "Pathao Status",
-  "Called By",
-  "Called At",
-  "Imported At",
-  "Synced At",
-];
+  "Discount",
+  "Grand Total",
+  "Note",
+  "Status",
+] as const;
 
 export async function testGoogleSheetConnection(input: {
   account: GoogleServiceAccount;
@@ -145,12 +182,17 @@ export async function ensureReadyOrderSheetHeader(input: {
   sheetName: string;
 }) {
   const { account, spreadsheetId, sheetName } = input;
-  const range = `'${sheetName.replace(/'/g, "''")}'!A1:V1`;
-  await googleRequest(account,
+  const range = `'${sheetName.replace(/'/g, "''")}'!A1:AT1`;
+  await googleRequest(
+    account,
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
     {
       method: "PUT",
-      body: JSON.stringify({ range, majorDimension: "ROWS", values: [READY_ORDER_SHEET_HEADERS] }),
+      body: JSON.stringify({
+        range,
+        majorDimension: "ROWS",
+        values: [READY_ORDER_SHEET_HEADERS],
+      }),
     }
   );
 }
@@ -163,10 +205,19 @@ export async function appendReadyOrderRows(input: {
 }) {
   const { account, spreadsheetId, sheetName, rows } = input;
   if (!rows.length) return { startRow: null as number | null, updatedRows: 0 };
-  const range = `'${sheetName.replace(/'/g, "''")}'!A:V`;
+
+  const expectedColumns = READY_ORDER_SHEET_HEADERS.length;
+  const invalidRow = rows.findIndex((row) => row.length !== expectedColumns);
+  if (invalidRow !== -1) {
+    throw new Error(
+      `Ready Order Sheet row ${invalidRow + 1} has ${rows[invalidRow].length} columns; expected ${expectedColumns}.`
+    );
+  }
+
+  const range = `'${sheetName.replace(/'/g, "''")}'!A:AT`;
   const result = await googleRequest<{ updates?: { updatedRange?: string; updatedRows?: number } }>(
     account,
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: "POST",
       body: JSON.stringify({ range, majorDimension: "ROWS", values: rows }),

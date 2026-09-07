@@ -11,7 +11,6 @@ import {
   normalizeSalaryMonth,
   SALARY_TRANSACTION_LABELS,
 } from "@/lib/finance/salary";
-import { prisma } from "@/lib/prisma";
 import { addSalaryTransactionAction, deleteSalaryTransactionAction } from "../../actions";
 import ConfirmSubmitButton from "../../confirm-submit-button";
 
@@ -30,6 +29,10 @@ function taka(value: unknown) {
 export default async function SalaryDetailsPage({ params, searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
+
+  // Lazy-load Prisma only after the request reaches this dynamic page.
+  // This prevents the MariaDB adapter from initializing during `next build`.
+  const { prisma } = await import("@/lib/prisma");
 
   const { userId } = await params;
   const canManage = session.user.role === "ADMIN";

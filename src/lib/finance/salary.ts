@@ -1,7 +1,11 @@
 import type { SalaryTransactionType } from "@prisma/client";
 
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
-import { prisma } from "@/lib/prisma";
+
+async function getPrisma() {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma;
+}
 
 export const SALARY_TRANSACTION_LABELS: Record<SalaryTransactionType, string> = {
   BONUS: "Bonus",
@@ -118,6 +122,7 @@ export function calculateSalaryTotals(input: {
 }
 
 export async function ensureSalaryMonth(userId: string, month: string) {
+  const prisma = await getPrisma();
   const monthDate = salaryMonthDate(month);
 
   const existing = await prisma.salaryMonth.findUnique({
@@ -157,6 +162,7 @@ export async function ensureSalaryMonth(userId: string, month: string) {
 }
 
 export async function getSalaryMonthWithFallback(userId: string, month: string) {
+  const prisma = await getPrisma();
   const monthDate = salaryMonthDate(month);
 
   const existing = await prisma.salaryMonth.findUnique({

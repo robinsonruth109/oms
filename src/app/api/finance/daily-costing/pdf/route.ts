@@ -5,7 +5,6 @@ import { PageSizes } from "pdf-lib";
 import { authOptions } from "@/lib/auth";
 import { getBangladeshDateInputValue, getBangladeshDayRange } from "@/lib/bangladesh-time";
 import { createFinancePdf, drawBusinessHeader, drawTableCell, wrapText } from "@/lib/finance/pdf";
-import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +21,10 @@ function dateLabel(value: string) {
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") return new NextResponse("Unauthorized", { status: 401 });
+
+  // Lazy-load Prisma at request time so Railway/Next build never initializes
+  // the MariaDB adapter while collecting route configuration.
+  const { prisma } = await import("@/lib/prisma");
 
   const date = request.nextUrl.searchParams.get("date") || getBangladeshDateInputValue();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return new NextResponse("Invalid date", { status: 400 });

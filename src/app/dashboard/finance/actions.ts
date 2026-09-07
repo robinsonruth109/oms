@@ -15,7 +15,11 @@ import {
   money,
   normalizeSalaryMonth,
 } from "@/lib/finance/salary";
-import { prisma } from "@/lib/prisma";
+
+async function getPrisma() {
+  const { prisma } = await import("@/lib/prisma");
+  return prisma;
+}
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
@@ -33,6 +37,7 @@ function requiredString(value: FormDataEntryValue | null, field: string) {
 
 export async function createDailyCostAction(formData: FormData) {
   const session = await requireAdmin();
+  const prisma = await getPrisma();
 
   const costDate = requiredString(formData.get("costDate"), "Date");
   const category = requiredString(formData.get("category"), "Category");
@@ -60,6 +65,7 @@ export async function createDailyCostAction(formData: FormData) {
 
 export async function deleteDailyCostAction(formData: FormData) {
   await requireAdmin();
+  const prisma = await getPrisma();
   const id = requiredString(formData.get("id"), "Cost ID");
   await prisma.financeDailyCost.delete({ where: { id } });
   revalidatePath("/dashboard/finance/daily-costing");
@@ -67,6 +73,7 @@ export async function deleteDailyCostAction(formData: FormData) {
 
 export async function saveSalaryProfileAction(formData: FormData) {
   await requireAdmin();
+  const prisma = await getPrisma();
 
   const userId = requiredString(formData.get("userId"), "Employee");
   const baseSalary = money(formData.get("baseSalary"));
@@ -104,6 +111,7 @@ export async function saveSalaryProfileAction(formData: FormData) {
 
 export async function toggleSalaryProfileAction(formData: FormData) {
   await requireAdmin();
+  const prisma = await getPrisma();
   const userId = requiredString(formData.get("userId"), "Employee");
   const enabled = String(formData.get("enabled") || "") === "true";
 
@@ -128,6 +136,7 @@ const TRANSACTION_TYPES = new Set<SalaryTransactionType>([
 
 export async function addSalaryTransactionAction(formData: FormData) {
   const session = await requireAdmin();
+  const prisma = await getPrisma();
 
   const userId = requiredString(formData.get("userId"), "Employee");
   const month = normalizeSalaryMonth(requiredString(formData.get("month"), "Month"));
@@ -185,6 +194,7 @@ export async function addSalaryTransactionAction(formData: FormData) {
 
 export async function deleteSalaryTransactionAction(formData: FormData) {
   await requireAdmin();
+  const prisma = await getPrisma();
   const id = requiredString(formData.get("id"), "Transaction ID");
   const userId = requiredString(formData.get("userId"), "Employee");
 

@@ -10,7 +10,6 @@ import {
   getSalaryMonthWithFallback,
   normalizeSalaryMonth,
 } from "@/lib/finance/salary";
-import { prisma } from "@/lib/prisma";
 import { saveSalaryProfileAction, toggleSalaryProfileAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +24,10 @@ function taka(value: unknown) {
 export default async function SalaryManagementPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") redirect("/dashboard");
+
+  // Lazy-load Prisma only after the request reaches this dynamic page.
+  // This prevents the MariaDB adapter from initializing during `next build`.
+  const { prisma } = await import("@/lib/prisma");
 
   const params = (await searchParams) || {};
   const defaultMonth = getBangladeshDateInputValue().slice(0, 7);

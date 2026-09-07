@@ -8,7 +8,6 @@ import {
   getBangladeshDateInputValue,
   getBangladeshDayRange,
 } from "@/lib/bangladesh-time";
-import { prisma } from "@/lib/prisma";
 import { createDailyCostAction, deleteDailyCostAction } from "../actions";
 import ConfirmSubmitButton from "../confirm-submit-button";
 
@@ -29,6 +28,10 @@ function taka(value: unknown) {
 export default async function DailyCostingPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") redirect("/dashboard");
+
+  // Lazy-load Prisma only after the request reaches this dynamic page.
+  // This prevents the MariaDB adapter from initializing during `next build`.
+  const { prisma } = await import("@/lib/prisma");
 
   const params = (await searchParams) || {};
   const date = String(params.date || getBangladeshDateInputValue()).trim();

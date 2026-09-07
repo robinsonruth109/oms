@@ -6,7 +6,6 @@ import { authOptions } from "@/lib/auth";
 import { getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 import { createFinancePdf, drawBusinessHeader, drawTableCell } from "@/lib/finance/pdf";
 import { calculateSalaryTotals, ensureSalaryMonth, normalizeSalaryMonth } from "@/lib/finance/salary";
-import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +22,10 @@ function monthLabel(value: string) {
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") return new NextResponse("Unauthorized", { status: 401 });
+
+  // Lazy-load Prisma at request time so Railway/Next build never initializes
+  // the MariaDB adapter while collecting route configuration.
+  const { prisma } = await import("@/lib/prisma");
 
   let month: string;
   try {

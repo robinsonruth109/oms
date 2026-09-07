@@ -31,6 +31,12 @@ model User {
   readyOrderSheetSyncRuns ReadyOrderSheetSyncRun[]
   readyToShipDateShifts ReadyToShipDateShift[]
   pathaoReturnTracks PathaoReturnTrack[]
+
+  financeDailyCostsCreated FinanceDailyCost[] @relation("FinanceDailyCostCreatedBy")
+  salaryProfile SalaryProfile? @relation("SalaryProfileUser")
+  salaryMonths SalaryMonth[] @relation("SalaryMonthUser")
+  salaryTransactions SalaryTransaction[] @relation("SalaryTransactionUser")
+  salaryTransactionsCreated SalaryTransaction[] @relation("SalaryTransactionCreatedBy")
 }
 
 model Page {
@@ -1188,3 +1194,104 @@ model CustomerCourierScore {
   @@index([riskLevel])
   @@index([checkedAt])
 }
+
+model FinanceDailyCost {
+  id String @id @default(uuid())
+
+  costDate DateTime
+  category String
+  description String @db.Text
+  amount Decimal @db.Decimal(12, 2)
+  paymentMethod String?
+  note String? @db.Text
+
+  createdByUserId String
+  createdByUser User @relation("FinanceDailyCostCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([costDate])
+  @@index([category])
+  @@index([createdByUserId])
+  @@index([createdAt])
+}
+
+model SalaryProfile {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user User @relation("SalaryProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  baseSalary Decimal @db.Decimal(12, 2)
+  incrementAmount Decimal @default(0) @db.Decimal(12, 2)
+  enabled Boolean @default(true)
+  note String? @db.Text
+
+  salaryMonths SalaryMonth[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+}
+
+model SalaryMonth {
+  id String @id @default(uuid())
+
+  userId String
+  user User @relation("SalaryMonthUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  salaryProfileId String?
+  salaryProfile SalaryProfile? @relation(fields: [salaryProfileId], references: [id], onDelete: SetNull)
+
+  monthDate DateTime
+  baseSalary Decimal @db.Decimal(12, 2)
+  incrementAmount Decimal @default(0) @db.Decimal(12, 2)
+
+  transactions SalaryTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, monthDate])
+  @@index([monthDate])
+  @@index([salaryProfileId])
+}
+
+enum SalaryTransactionType {
+  BONUS
+  ADVANCE_SALARY
+  LIABILITY_ADD
+  LIABILITY_PAYMENT
+  FINE
+  PARTIAL_SALARY
+  FULL_SALARY
+}
+
+model SalaryTransaction {
+  id String @id @default(uuid())
+
+  salaryMonthId String
+  salaryMonth SalaryMonth @relation(fields: [salaryMonthId], references: [id], onDelete: Cascade)
+
+  userId String
+  user User @relation("SalaryTransactionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  type SalaryTransactionType
+  amount Decimal @db.Decimal(12, 2)
+  transactionDate DateTime
+  note String? @db.Text
+
+  createdByUserId String
+  createdByUser User @relation("SalaryTransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([salaryMonthId])
+  @@index([userId])
+  @@index([type])
+  @@index([transactionDate])
+  @@index([createdByUserId])
+}
+

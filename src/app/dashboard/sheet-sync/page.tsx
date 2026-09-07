@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getBangladeshDateInputValue, getBangladeshDayRange, formatBangladeshDateTime } from "@/lib/bangladesh-time";
 import { DEFAULT_READY_ORDER_SHEET_NAME, DEFAULT_READY_ORDER_SPREADSHEET_ID } from "@/lib/google-sheets/settings";
-import { saveSheetSyncSettings, testSheetSyncConnection, runSheetSyncNow } from "./actions";
+import { saveSheetSyncSettings, testSheetSyncConnection, runSheetSyncNow, checkExistingSheetUpgrade, upgradeExistingSheetRows } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -63,6 +63,55 @@ export default async function SheetSyncPage({ searchParams }: Props) {
         <div className="flex flex-wrap gap-3"><button className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Save Settings</button></div>
       </form>
       <form action={testSheetSyncConnection} className="mt-3"><button className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Test Connection</button></form>
+    </section>
+
+    <section className="rounded-3xl border border-amber-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Upgrade Existing Sheet Data</h2>
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">
+            Convert the existing historical rows to the same 46-column format used by new syncs: UUID, duplicated Invoice ID, separate Product Parent Code / SKU / Price / QTY columns for up to 8 product lines, totals, note and Ready status.
+          </p>
+        </div>
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          ADMIN ONLY · ONE-TIME HISTORICAL REBUILD
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        <strong>Safe migration design:</strong>
+        <p className="mt-1 text-amber-900">
+          OMS first matches every existing Sheet row back to its OMS order. The upgrade refuses to start if even one non-empty row cannot be matched or an order has more than 8 product lines. Before rewriting anything, OMS duplicates the complete current Data tab as a timestamped backup.
+        </p>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-4 xl:flex-row xl:items-end">
+        <form action={checkExistingSheetUpgrade}>
+          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+            1. Check Existing Rows
+          </button>
+        </form>
+
+        <form action={upgradeExistingSheetRows} className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-900">
+            <input
+              type="checkbox"
+              name="confirmExistingUpgrade"
+              value="YES"
+              required
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>I understand OMS will create a backup tab and then rewrite the existing historical rows in the Data tab.</span>
+          </label>
+          <button className="whitespace-nowrap rounded-xl bg-red-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-800">
+            2. Backup & Upgrade Existing Rows
+          </button>
+        </form>
+      </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        Existing row order is preserved. Phone numbers are rewritten from OMS as text, so leading zeroes are preserved, and Bangla text is sent to Google Sheets as Unicode using RAW values.
+      </p>
     </section>
 
     <section className="rounded-3xl border bg-white p-5 shadow-sm">

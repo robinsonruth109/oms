@@ -161,6 +161,10 @@ export const READY_ORDER_SHEET_HEADERS = [
   "Status",
 ] as const;
 
+function quoteSheetName(sheetName: string) {
+  return `'${sheetName.replace(/'/g, "''")}'`;
+}
+
 export async function testGoogleSheetConnection(input: {
   account: GoogleServiceAccount;
   spreadsheetId: string;
@@ -182,7 +186,19 @@ export async function ensureReadyOrderSheetHeader(input: {
   sheetName: string;
 }) {
   const { account, spreadsheetId, sheetName } = input;
-  const range = `'${sheetName.replace(/'/g, "''")}'!A1:AT1`;
+  const range = `${quoteSheetName(sheetName)}!A1:AT1`;
+
+  // Never rewrite an existing sheet header during ordinary daily sync.
+  // Historical conversion is handled only by the explicit admin upgrade tool.
+  const existing = await googleRequest<{ values?: unknown[][] }>(
+    account,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
+  );
+
+  const firstRow = existing.values?.[0] || [];
+  const hasExistingHeader = firstRow.some((value) => String(value ?? "").trim() !== "");
+  if (hasExistingHeader) return;
+
   await googleRequest(
     account,
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
@@ -214,7 +230,7 @@ export async function appendReadyOrderRows(input: {
     );
   }
 
-  const range = `'${sheetName.replace(/'/g, "''")}'!A:AT`;
+  const range = `${quoteSheetName(sheetName)}!A:AT`;
   const result = await googleRequest<{ updates?: { updatedRange?: string; updatedRows?: number } }>(
     account,
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
@@ -229,4 +245,109 @@ export async function appendReadyOrderRows(input: {
     startRow: match ? Number(match[1]) : null,
     updatedRows: Number(result.updates?.updatedRows || rows.length),
   };
+}
+
+export async function readReadyOrderSheetRows(input: {
+  account: GoogleServiceAccount;
+  spreadsheetId: string;
+  sheetName: string;
+}) {
+  const { account, spreadsheetId, sheetName } = input;
+  const range = `${quoteSheetName(sheetName)}!A:AT`;
+  const result = await googleRequest<{ values?: unknown[][] }>(
+    account,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS`
+  );
+  return result.values || [];
+}
+
+export async function duplicateReadyOrderSheet(input: {
+  account: GoogleServiceAccount;
+  spreadsheetId: string;
+  sheetName: string;
+  backupSheetName: string;
+}) {
+  const { account, spreadsheetId, sheetName, backupSheetName } = input;
+  const metadata = await googleRequest<{
+    sheets?: Array<{ properties?: { sheetId?: number; title?: string } }>;
+  }>(
+    account,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.sheetId,sheets.properties.title`
+  );
+
+  const source = metadata.sheets?.find((sheet) => sheet.properties?.title === sheetName);
+  const sourceSheetId = source?.properties?.sheetId;
+  if (typeof sourceSheetId !== "number") {
+    throw new Error(`Sheet tab “${sheetName}” was not found.`);
+  }
+
+  const duplicate = await googleRequest<{
+    replies?: Array<{ duplicateSheet?: { properties?: { sheetId?: number; title?: string } } }>;
+  }>(
+    account,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [
+          {
+            duplicateSheet: {
+              sourceSheetId,
+              newSheetName: backupSheetName,
+            },
+          },
+        ],
+      }),
+    }
+  );
+
+  const createdTitle = duplicate.replies?.[0]?.duplicateSheet?.properties?.title;
+  return createdTitle || backupSheetName;
+}
+
+export async function replaceReadyOrderSheetRows(input: {
+  account: GoogleServiceAccount;
+  spreadsheetId: string;
+  sheetName: string;
+  rows: Array<Array<string | number>>;
+}) {
+  const { account, spreadsheetId, sheetName, rows } = input;
+  const expectedColumns = READY_ORDER_SHEET_HEADERS.length;
+  const invalidRow = rows.findIndex((row) => row.length !== expectedColumns);
+  if (invalidRow !== -1) {
+    throw new Error(
+      `Historical row ${invalidRow + 1} has ${rows[invalidRow].length} columns; expected ${expectedColumns}.`
+    );
+  }
+
+  // Write the converted rows in-place. The migration keeps the existing row
+  // count/order, so there is no destructive clear before the replacement.
+  // A full backup tab is created by the migration service before this runs.
+  const allRows: Array<Array<string | number>> = [
+    [...READY_ORDER_SHEET_HEADERS],
+    ...rows,
+  ];
+
+  const batchSize = 300;
+  for (let offset = 0; offset < allRows.length; offset += batchSize) {
+    const chunk = allRows.slice(offset, offset + batchSize);
+    const startRow = offset + 1;
+    const endRow = startRow + chunk.length - 1;
+    const range = `${quoteSheetName(sheetName)}!A${startRow}:AT${endRow}`;
+
+    await googleRequest(
+      account,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          range,
+          majorDimension: "ROWS",
+          values: chunk,
+        }),
+      }
+    );
+  }
+
+  return { updatedRows: rows.length };
 }

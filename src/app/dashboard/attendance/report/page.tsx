@@ -2,7 +2,13 @@
 
 import { Fragment, useEffect, useState } from "react";
 
-type AttendanceEvent = {
+type DeviceInfo = {
+  deviceType: string | null;
+  deviceOs: string | null;
+  deviceBrowser: string | null;
+};
+
+type AttendanceEvent = DeviceInfo & {
   id: string;
   eventType: string;
   eventTimeFormatted: string | null;
@@ -22,6 +28,7 @@ type AttendanceRecord = {
   status: string;
   lateMinutes: number;
   attendAtFormatted: string | null;
+  attendDevice: DeviceInfo | null;
   workOffAtFormatted: string | null;
   events: AttendanceEvent[];
   violations: {
@@ -44,6 +51,45 @@ function formatEventName(eventType: string) {
   };
 
   return names[eventType] || eventType.replaceAll("_", " ");
+}
+
+function DeviceBadge({ device }: { device: DeviceInfo | null }) {
+  if (!device?.deviceType) {
+    return <span className="text-gray-400">Unknown</span>;
+  }
+
+  const type = device.deviceType.toUpperCase();
+  const badgeClass =
+    type === "MOBILE"
+      ? "bg-red-100 text-red-700"
+      : type === "TABLET"
+      ? "bg-orange-100 text-orange-700"
+      : type === "DESKTOP"
+      ? "bg-green-100 text-green-700"
+      : "bg-gray-100 text-gray-700";
+
+  const detail = [device.deviceOs, device.deviceBrowser]
+    .filter(Boolean)
+    .join(" • ");
+
+  return (
+    <div className="min-w-[135px]">
+      <span
+        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass}`}
+      >
+        {type === "MOBILE"
+          ? "PHONE / MOBILE"
+          : type === "TABLET"
+          ? "TABLET"
+          : type === "DESKTOP"
+          ? "DESKTOP"
+          : "UNKNOWN"}
+      </span>
+      {detail ? (
+        <p className="mt-1 text-xs text-gray-500">{detail}</p>
+      ) : null}
+    </div>
+  );
 }
 
 export default function AttendanceReportPage() {
@@ -163,12 +209,13 @@ export default function AttendanceReportPage() {
           <p className="text-sm text-gray-500">No attendance record found.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] border-collapse text-sm">
+            <table className="w-full min-w-[1180px] border-collapse text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left">
                   <th className="p-3">Employee</th>
                   <th className="p-3">Role</th>
                   <th className="p-3">Attend</th>
+                  <th className="p-3">Device</th>
                   <th className="p-3">Work Off</th>
                   <th className="p-3">Status</th>
                   <th className="p-3">Late</th>
@@ -201,6 +248,13 @@ export default function AttendanceReportPage() {
 
                       <td className="p-3">{record.user.role}</td>
                       <td className="p-3">{record.attendAtFormatted || "-"}</td>
+                      <td className="p-3">
+                        {record.status === "ABSENT" ? (
+                          "-"
+                        ) : (
+                          <DeviceBadge device={record.attendDevice} />
+                        )}
+                      </td>
                       <td className="p-3">
                         {record.workOffAtFormatted || "-"}
                       </td>
@@ -238,7 +292,7 @@ export default function AttendanceReportPage() {
 
                     {expandedUser === record.user.id && (
                       <tr>
-                        <td colSpan={7} className="bg-gray-50 p-4">
+                        <td colSpan={8} className="bg-gray-50 p-4">
                           <div className="rounded-xl border bg-white p-4">
                             <h3 className="mb-3 text-base font-semibold">
                               Attendance History
@@ -254,6 +308,7 @@ export default function AttendanceReportPage() {
                                   <tr className="border-b bg-gray-50 text-left">
                                     <th className="p-2">Action</th>
                                     <th className="p-2">Time</th>
+                                    <th className="p-2">Device</th>
                                     <th className="p-2">Duration</th>
                                     <th className="p-2">Late</th>
                                   </tr>
@@ -267,6 +322,9 @@ export default function AttendanceReportPage() {
                                       </td>
                                       <td className="p-2">
                                         {event.eventTimeFormatted || "-"}
+                                      </td>
+                                      <td className="p-2">
+                                        <DeviceBadge device={event} />
                                       </td>
                                       <td className="p-2">
                                         {event.durationMinutes

@@ -64,6 +64,64 @@ function formatBangladeshTime(date: Date | null) {
   }).format(date);
 }
 
+type DeviceType = "MOBILE" | "TABLET" | "DESKTOP" | "UNKNOWN";
+
+type AttendanceDeviceInfo = {
+  deviceType: DeviceType;
+  deviceOs: string;
+  deviceBrowser: string;
+  userAgent: string;
+};
+
+function detectDeviceInfo(request: NextRequest): AttendanceDeviceInfo {
+  const userAgent = (request.headers.get("user-agent") || "").trim();
+  const clientMobile = request.headers.get("sec-ch-ua-mobile");
+  const clientPlatform = (request.headers.get("sec-ch-ua-platform") || "")
+    .replaceAll('"', "")
+    .trim();
+
+  const isTablet =
+    /iPad|Tablet|Kindle|Silk/i.test(userAgent) ||
+    (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent));
+
+  const isMobile =
+    !isTablet &&
+    (clientMobile === "?1" ||
+      /iPhone|iPod|Android.*Mobile|Windows Phone|IEMobile|Opera Mini|Mobile/i.test(
+        userAgent
+      ));
+
+  let deviceType: DeviceType = "DESKTOP";
+  if (!userAgent) deviceType = "UNKNOWN";
+  else if (isTablet) deviceType = "TABLET";
+  else if (isMobile) deviceType = "MOBILE";
+
+  let deviceOs = clientPlatform || "Unknown OS";
+  if (/iPhone|iPad|iPod/i.test(userAgent)) deviceOs = "iOS/iPadOS";
+  else if (/Android/i.test(userAgent)) deviceOs = "Android";
+  else if (/Windows NT/i.test(userAgent)) deviceOs = "Windows";
+  else if (/CrOS/i.test(userAgent)) deviceOs = "ChromeOS";
+  else if (/Macintosh|Mac OS X/i.test(userAgent)) deviceOs = "macOS";
+  else if (/Linux/i.test(userAgent)) deviceOs = "Linux";
+
+  let deviceBrowser = "Unknown Browser";
+  if (/SamsungBrowser\//i.test(userAgent)) deviceBrowser = "Samsung Internet";
+  else if (/EdgA?\//i.test(userAgent)) deviceBrowser = "Microsoft Edge";
+  else if (/OPR\//i.test(userAgent)) deviceBrowser = "Opera";
+  else if (/CriOS\//i.test(userAgent)) deviceBrowser = "Chrome iOS";
+  else if (/Chrome\//i.test(userAgent)) deviceBrowser = "Chrome";
+  else if (/FxiOS\//i.test(userAgent)) deviceBrowser = "Firefox iOS";
+  else if (/Firefox\//i.test(userAgent)) deviceBrowser = "Firefox";
+  else if (/Safari\//i.test(userAgent)) deviceBrowser = "Safari";
+
+  return {
+    deviceType,
+    deviceOs,
+    deviceBrowser,
+    userAgent: userAgent.slice(0, 2000),
+  };
+}
+
 async function getCurrentUserId() {
   const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
@@ -174,6 +232,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const deviceInfo = detectDeviceInfo(request);
   const now = new Date();
   const attendance = await getOrCreateTodayAttendance(userId, now);
   const lastEvent = attendance.events[attendance.events.length - 1] || null;
@@ -207,6 +266,7 @@ export async function POST(request: NextRequest) {
             userId,
             eventType: "ATTEND",
             eventTime: now,
+            ...deviceInfo,
             isLate,
             lateMinutes,
           },
@@ -275,6 +335,7 @@ export async function POST(request: NextRequest) {
         userId,
         eventType: "BREAK_START",
         eventTime: now,
+        ...deviceInfo,
       },
     });
 
@@ -301,6 +362,7 @@ export async function POST(request: NextRequest) {
         userId,
         eventType: "BREAK_END",
         eventTime: now,
+        ...deviceInfo,
         durationMinutes,
       },
     });
@@ -329,6 +391,7 @@ export async function POST(request: NextRequest) {
         userId,
         eventType: "EVENING_BREAK_START",
         eventTime: now,
+        ...deviceInfo,
       },
     });
 
@@ -359,6 +422,7 @@ export async function POST(request: NextRequest) {
         userId,
         eventType: "EVENING_BREAK_END",
         eventTime: now,
+        ...deviceInfo,
         durationMinutes,
         isLate,
         lateMinutes,
@@ -415,6 +479,7 @@ export async function POST(request: NextRequest) {
             userId,
             eventType: "WORK_OFF",
             eventTime: now,
+            ...deviceInfo,
           },
         },
       },

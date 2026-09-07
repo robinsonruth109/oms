@@ -101,6 +101,8 @@ export async function GET(request: NextRequest) {
 
   const records = users.map((user) => {
     const attendance = user.attendances[0] || null;
+    const attendEvent =
+      attendance?.events.find((event) => event.eventType === "ATTEND") || null;
 
     return {
       id: attendance?.id || `absent-${user.id}`,
@@ -114,6 +116,13 @@ export async function GET(request: NextRequest) {
       lateMinutes: attendance?.lateMinutes || 0,
       attendAt: attendance?.attendAt || null,
       attendAtFormatted: formatBangladeshTime(attendance?.attendAt),
+      attendDevice: attendEvent
+        ? {
+            deviceType: attendEvent.deviceType,
+            deviceOs: attendEvent.deviceOs,
+            deviceBrowser: attendEvent.deviceBrowser,
+          }
+        : null,
       workOffAt: attendance?.workOffAt || null,
       workOffAtFormatted: formatBangladeshTime(attendance?.workOffAt),
       events:
@@ -125,6 +134,9 @@ export async function GET(request: NextRequest) {
           durationMinutes: event.durationMinutes,
           isLate: event.isLate,
           lateMinutes: event.lateMinutes,
+          deviceType: event.deviceType,
+          deviceOs: event.deviceOs,
+          deviceBrowser: event.deviceBrowser,
         })) || [],
       violations:
         attendance?.violations.map((violation) => ({

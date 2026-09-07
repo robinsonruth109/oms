@@ -772,6 +772,13 @@ model AttendanceEvent {
   isLate          Boolean @default(false)
   lateMinutes     Int     @default(0)
 
+  // Device metadata captured from the browser that submitted this event.
+  // Existing historical events remain NULL after the migration.
+  deviceType    String? @db.VarChar(32)
+  deviceOs      String? @db.VarChar(64)
+  deviceBrowser String? @db.VarChar(64)
+  userAgent     String? @db.Text
+
   createdAt DateTime @default(now())
 
   @@index([attendanceId])

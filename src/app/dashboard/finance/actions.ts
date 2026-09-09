@@ -15,6 +15,7 @@ import {
   money,
   normalizeSalaryMonth,
 } from "@/lib/finance/salary";
+import { DAILY_EXPENSE_TYPES, DAILY_PAYMENT_METHODS } from "@/lib/finance/daily-cash";
 
 async function getPrisma() {
   const { prisma } = await import("@/lib/prisma");
@@ -40,17 +41,37 @@ export async function createDailyCostAction(formData: FormData) {
   const prisma = await getPrisma();
 
   const costDate = requiredString(formData.get("costDate"), "Date");
-  const category = requiredString(formData.get("category"), "Category");
-  const description = requiredString(formData.get("description"), "Description");
+  const entryType = requiredString(formData.get("entryType"), "Entry type").toUpperCase();
   const amount = money(formData.get("amount"));
-  const paymentMethod = String(formData.get("paymentMethod") || "").trim() || null;
-  const note = String(formData.get("note") || "").trim() || null;
+  const paymentMethod = requiredString(formData.get("paymentMethod"), "Method");
+  const details = String(formData.get("details") || "").trim();
 
-  if (amount <= 0) throw new Error("Cost amount must be greater than 0.");
+  if (entryType !== "JOMA" && entryType !== "KHOROCH") {
+    throw new Error("Entry type must be Joma or Khoroch.");
+  }
+  if (!DAILY_PAYMENT_METHODS.includes(paymentMethod as (typeof DAILY_PAYMENT_METHODS)[number])) {
+    throw new Error("Method must be Cash, Bank, or bKash.");
+  }
+  if (amount <= 0) throw new Error("Amount must be greater than 0.");
+
+  let category = "Joma";
+  let description = details || "Cash In";
+  let note: string | null = details || null;
+
+  if (entryType === "KHOROCH") {
+    category = requiredString(formData.get("category"), "Expense type");
+    if (!DAILY_EXPENSE_TYPES.includes(category as (typeof DAILY_EXPENSE_TYPES)[number])) {
+      throw new Error("Invalid expense type.");
+    }
+    if (!details) throw new Error("Expense note/details is required.");
+    description = details;
+    note = details;
+  }
 
   await prisma.financeDailyCost.create({
     data: {
       costDate: bangladeshBusinessDateToUtc(costDate),
+      entryType: entryType as "JOMA" | "KHOROCH",
       category,
       description,
       amount,

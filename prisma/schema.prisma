@@ -1195,10 +1195,16 @@ model CustomerCourierScore {
   @@index([checkedAt])
 }
 
+enum FinanceDailyEntryType {
+  JOMA
+  KHOROCH
+}
+
 model FinanceDailyCost {
   id String @id @default(uuid())
 
   costDate DateTime
+  entryType FinanceDailyEntryType @default(KHOROCH)
   category String
   description String @db.Text
   amount Decimal @db.Decimal(12, 2)
@@ -1212,6 +1218,7 @@ model FinanceDailyCost {
   updatedAt DateTime @updatedAt
 
   @@index([costDate])
+  @@index([entryType])
   @@index([category])
   @@index([createdByUserId])
   @@index([createdAt])

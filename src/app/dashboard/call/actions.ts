@@ -3,7 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
-import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
+import { bangladeshBusinessDateToUtc, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 const CALLING_HOLD_MINUTES = 10;
@@ -303,6 +303,14 @@ export async function saveCallingOrder(
       return {
         success: false,
         message: "Please select ready to ship date.",
+      };
+    }
+
+    const bangladeshToday = getBangladeshDateInputValue();
+    if (readyToShipAt < bangladeshToday) {
+      return {
+        success: false,
+        message: `Ready To Ship Date cannot be before today (${bangladeshToday}) in Bangladesh.`,
       };
     }
   }

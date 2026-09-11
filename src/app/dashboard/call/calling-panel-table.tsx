@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Eye, Search, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatBangladeshDateTime, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
+import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
 import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 import {
   claimCallingOrder,
@@ -29,6 +29,28 @@ type UserRef = {
   id: string;
   name: string;
   username: string;
+};
+
+type PreviousCustomerOrder = {
+  id: string;
+  invoiceId: string | null;
+  orderId: string | null;
+  externalOrderId: string | null;
+  customerName: string;
+  phone: string;
+  orderStatus: string;
+  createdAt: string;
+  pathaoConsignmentId: string | null;
+  pathaoMerchantOrderId: string | null;
+  pathaoSubmissionStatus: string;
+  pathaoOrderStatus: string | null;
+  pathaoOrderStatusSlug: string | null;
+  pathaoLastSyncedAt: string | null;
+  pathaoCourier: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
 };
 
 type CallingOrder = {
@@ -67,6 +89,7 @@ type CallingOrder = {
   } | null;
   calledByUser: UserRef | null;
   holdByUser: UserRef | null;
+  previousOrder: PreviousCustomerOrder | null;
   items: CallingOrderItem[];
 };
 
@@ -224,7 +247,8 @@ function findMatchedProduct(
 
 function getDefaultState(
   order: CallingOrder,
-  products: ProductOption[]
+  products: ProductOption[],
+  bangladeshToday: string
 ): EditableRowState {
   const firstItem = order.items[0];
   const matchedProduct = findMatchedProduct(order, products);
@@ -237,7 +261,9 @@ function getDefaultState(
     deliveryCharge: order.deliveryCharge,
     courier: order.courier || "",
     readyToShipAt:
-      order.readyToShipAt || getBangladeshDateInputValue(),
+      order.readyToShipAt && order.readyToShipAt >= bangladeshToday
+        ? order.readyToShipAt
+        : bangladeshToday,
     status:
       order.orderStatus === "NO_ANSWER" ||
       order.orderStatus === "PHONE_OFF"
@@ -258,10 +284,11 @@ function getDefaultState(
 
 function buildInitialMap(
   orders: CallingOrder[],
-  products: ProductOption[]
+  products: ProductOption[],
+  bangladeshToday: string
 ) {
   return orders.reduce<Record<string, EditableRowState>>((acc, order) => {
-    acc[order.id] = getDefaultState(order, products);
+    acc[order.id] = getDefaultState(order, products, bangladeshToday);
     return acc;
   }, {});
 }
@@ -308,6 +335,7 @@ export default function CallingPanelTable({
   pages,
   queueSummary,
   currentUser,
+  bangladeshToday,
 }: {
   orders: CallingOrder[];
   couriers: CourierOption[];
@@ -323,9 +351,10 @@ export default function CallingPanelTable({
     id: string;
     name: string;
   };
+  bangladeshToday: string;
 }) {
   const [rowMap, setRowMap] = useState<Record<string, EditableRowState>>(
-    buildInitialMap(orders, products)
+    buildInitialMap(orders, products, bangladeshToday)
   );
   const [holdMap, setHoldMap] = useState<Record<string, HoldState>>(
     buildInitialHoldMap(orders)
@@ -343,12 +372,15 @@ export default function CallingPanelTable({
   const [, startTransition] = useTransition();
 
   useEffect(() => {
-    setRowMap(buildInitialMap(orders, products));
+    setRowMap(buildInitialMap(orders, products, bangladeshToday));
     setHoldMap(buildInitialHoldMap(orders));
-  }, [orders, products]);
+  }, [orders, products, bangladeshToday]);
 
   function getRow(order: CallingOrder) {
-    return rowMap[order.id] || getDefaultState(order, products);
+    return (
+      rowMap[order.id] ||
+      getDefaultState(order, products, bangladeshToday)
+    );
   }
 
   function getHold(order: CallingOrder) {
@@ -372,7 +404,8 @@ export default function CallingPanelTable({
     setRowMap((prev) => ({
       ...prev,
       [orderId]: {
-        ...(prev[orderId] || getDefaultState(order, products)),
+        ...(prev[orderId] ||
+          getDefaultState(order, products, bangladeshToday)),
         ...patch,
       },
     }));
@@ -548,10 +581,24 @@ export default function CallingPanelTable({
   }
 
   async function handleSave(order: CallingOrder) {
+    const row = getRow(order);
+
+    if (
+      row.status === "READY_TO_SHIP" &&
+      row.readyToShipAt &&
+      row.readyToShipAt < bangladeshToday
+    ) {
+      setRowMessage(
+        order.id,
+        false,
+        `Ready To Ship Date cannot be before today (${bangladeshToday}) in Bangladesh.`
+      );
+      return;
+    }
+
     const claimed = await ensureClaim(order);
     if (!claimed) return;
 
-    const row = getRow(order);
     const isSingleItem = order.items.length === 1;
 
     clearMessage(order.id);
@@ -613,7 +660,8 @@ export default function CallingPanelTable({
 
     for (const order of orders) {
       const row =
-        rowMap[order.id] || getDefaultState(order, products);
+        rowMap[order.id] ||
+        getDefaultState(order, products, bangladeshToday);
       const phone = normalizePhone(row.phone || order.phone || "");
 
       let productKey = "";
@@ -1111,14 +1159,26 @@ export default function CallingPanelTable({
                     </label>
                     <input
                       type="date"
+                      min={bangladeshToday}
                       value={row.readyToShipAt}
                       onChange={(e) =>
                         updateRow(order.id, {
                           readyToShipAt: e.target.value,
                         })
                       }
-                      className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"
+                      className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none ${
+                        row.readyToShipAt &&
+                        row.readyToShipAt < bangladeshToday
+                          ? "border-red-500 bg-red-50 text-red-700"
+                          : "bg-white"
+                      }`}
                     />
+                    {row.readyToShipAt &&
+                    row.readyToShipAt < bangladeshToday ? (
+                      <p className="mt-1.5 text-xs font-semibold text-red-600">
+                        Previous Bangladesh date is not allowed. Select today or a future date.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="xl:col-span-2">
@@ -1172,6 +1232,94 @@ export default function CallingPanelTable({
                       </p>
                       <p>Advance: {formatMoney(order.advance)}</p>
                     </div>
+
+                    {order.previousOrder ? (
+                      <div
+                        className={`rounded-2xl border p-4 ${
+                          order.previousOrder.orderStatus === "CANCELLED"
+                            ? "border-red-300 bg-red-50"
+                            : "border-amber-200 bg-amber-50"
+                        }`}
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Customer Last Order
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                              <span className="font-bold text-slate-900">
+                                {order.previousOrder.invoiceId ||
+                                  order.previousOrder.orderId ||
+                                  order.previousOrder.externalOrderId ||
+                                  "N/A"}
+                              </span>
+                              <span className="text-slate-500">
+                                {formatDate(order.previousOrder.createdAt)}
+                              </span>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                              <span
+                                className={`rounded-full px-2.5 py-1 ${
+                                  order.previousOrder.orderStatus === "CANCELLED"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-slate-200 text-slate-700"
+                                }`}
+                              >
+                                OMS: {order.previousOrder.orderStatus}
+                              </span>
+
+                              {order.previousOrder.pathaoConsignmentId ||
+                              order.previousOrder.pathaoOrderStatus ||
+                              order.previousOrder.pathaoOrderStatusSlug ||
+                              order.previousOrder.pathaoSubmissionStatus !==
+                                "NOT_SUBMITTED" ? (
+                                <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-indigo-700">
+                                  Pathao: {
+                                    order.previousOrder.pathaoOrderStatus ||
+                                    order.previousOrder.pathaoOrderStatusSlug ||
+                                    order.previousOrder.pathaoSubmissionStatus
+                                  }
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500">
+                                  Pathao: Not submitted
+                                </span>
+                              )}
+                            </div>
+
+                            {order.previousOrder.orderStatus === "CANCELLED" ? (
+                              <p className="mt-2 text-sm font-semibold text-red-700">
+                                This customer's previous order was cancelled in OMS.
+                              </p>
+                            ) : null}
+
+                            {order.previousOrder.pathaoConsignmentId ? (
+                              <p className="mt-2 text-xs text-slate-500">
+                                Pathao CID: {order.previousOrder.pathaoConsignmentId}
+                                {order.previousOrder.pathaoCourier?.name
+                                  ? ` · ${order.previousOrder.pathaoCourier.name}`
+                                  : ""}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <a
+                            href={`/dashboard/all-orders/${order.previousOrder.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            View Last Order
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                        No previous order found for this phone number.
+                      </div>
+                    )}
 
                     <CourierRiskPanel phone={row.phone} />
                   </div>

@@ -126,6 +126,7 @@ export default async function CallingOrderViewPage({ params }: Props) {
         id: p.id,
         name: p.name,
       }))}
+      bangladeshToday={getBangladeshDateInputValue()}
     />
   );
 }

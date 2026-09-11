@@ -186,11 +186,13 @@ export default function CallingOrderView({
   products,
   couriers,
   pages,
+  bangladeshToday,
 }: {
   order: OrderData;
   products: ProductOption[];
   couriers: CourierOption[];
   pages: PageOption[];
+  bangladeshToday: string;
 }) {
   const [customerName, setCustomerName] = useState(order.customerName);
   const [phone, setPhone] = useState(order.phone);
@@ -198,7 +200,11 @@ export default function CallingOrderView({
   const [discount, setDiscount] = useState(order.discount);
   const [deliveryCharge, setDeliveryCharge] = useState(order.deliveryCharge);
   const [courier, setCourier] = useState(order.courier || "");
-  const [readyToShipAt, setReadyToShipAt] = useState(order.readyToShipAt);
+  const [readyToShipAt, setReadyToShipAt] = useState(
+    order.readyToShipAt && order.readyToShipAt >= bangladeshToday
+      ? order.readyToShipAt
+      : bangladeshToday
+  );
   const [pageId, setPageId] = useState(order.pageId || "");
   const [status, setStatus] = useState<
     "READY_TO_SHIP" | "NO_ANSWER" | "PHONE_OFF" | "STOCK_OUT" | "CANCELLED"
@@ -333,6 +339,18 @@ export default function CallingOrderView({
   function handleSave() {
     setMessage(null);
 
+    if (
+      status === "READY_TO_SHIP" &&
+      readyToShipAt &&
+      readyToShipAt < bangladeshToday
+    ) {
+      setMessage({
+        success: false,
+        text: `Ready To Ship Date cannot be before today (${bangladeshToday}) in Bangladesh.`,
+      });
+      return;
+    }
+
     startTransition(async () => {
       const result = await saveCallingOrder({
         orderId: order.id,
@@ -423,10 +441,20 @@ export default function CallingOrderView({
             </label>
             <input
               type="date"
+              min={bangladeshToday}
               value={readyToShipAt}
               onChange={(e) => setReadyToShipAt(e.target.value)}
-              className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none"
+              className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none ${
+                readyToShipAt && readyToShipAt < bangladeshToday
+                  ? "border-red-500 bg-red-50 text-red-700"
+                  : "bg-white"
+              }`}
             />
+            {readyToShipAt && readyToShipAt < bangladeshToday ? (
+              <p className="text-xs font-semibold text-red-600">
+                Previous Bangladesh date is not allowed. Select today or a future date.
+              </p>
+            ) : null}
           </div>
         </div>
 

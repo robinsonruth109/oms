@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import CallingPanelTable from "./calling-panel-table";
 import { bangladeshDateEndUtc, bangladeshDateStartUtc, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
+import { normalizeBangladeshPhone } from "@/lib/phone-normalization";
 
 type CallingPanelPageProps = {
   searchParams?: Promise<{
@@ -17,6 +18,12 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const PAGE_SIZE = 20;
+
+function getPhoneLookupSuffix(value: string) {
+  const normalized = normalizeBangladeshPhone(value);
+  if (normalized.length < 10) return "";
+  return normalized.slice(-10);
+}
 
 export default async function CallingPanelPage({
   searchParams,
@@ -166,6 +173,64 @@ export default async function CallingPanelPage({
     }),
   ]);
 
+  const previousOrderPairs = await Promise.all(
+    orders.map(async (order) => {
+      const normalizedPhone = normalizeBangladeshPhone(order.phone);
+      const lookupSuffix = getPhoneLookupSuffix(order.phone);
+
+      if (!lookupSuffix) {
+        return [order.id, null] as const;
+      }
+
+      // Search by the last 10 digits so historical values such as
+      // +8801..., 8801... and 01... can all match. Then verify the
+      // normalized number before using the result.
+      const candidates = await prisma.order.findMany({
+        where: {
+          id: { not: order.id },
+          createdAt: { lt: order.createdAt },
+          phone: { contains: lookupSuffix },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          invoiceId: true,
+          orderId: true,
+          externalOrderId: true,
+          customerName: true,
+          phone: true,
+          orderStatus: true,
+          createdAt: true,
+          pathaoConsignmentId: true,
+          pathaoMerchantOrderId: true,
+          pathaoSubmissionStatus: true,
+          pathaoOrderStatus: true,
+          pathaoOrderStatusSlug: true,
+          pathaoLastSyncedAt: true,
+          pathaoCourier: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        },
+      });
+
+      const previous =
+        candidates.find(
+          (candidate) =>
+            normalizeBangladeshPhone(candidate.phone) === normalizedPhone
+        ) || null;
+
+      return [order.id, previous] as const;
+    })
+  );
+
+  const previousOrderMap = new Map(previousOrderPairs);
+  const bangladeshToday = getBangladeshDateInputValue();
+
   const queueSummary = {
     total: totalOrders,
     alreadyCalled: alreadyCalledCount,
@@ -248,6 +313,36 @@ export default async function CallingPanelPage({
           username: order.holdByUser.username,
         }
       : null,
+    previousOrder: (() => {
+      const previous = previousOrderMap.get(order.id);
+      if (!previous) return null;
+
+      return {
+        id: previous.id,
+        invoiceId: previous.invoiceId,
+        orderId: previous.orderId,
+        externalOrderId: previous.externalOrderId,
+        customerName: previous.customerName,
+        phone: previous.phone,
+        orderStatus: previous.orderStatus,
+        createdAt: previous.createdAt.toISOString(),
+        pathaoConsignmentId: previous.pathaoConsignmentId,
+        pathaoMerchantOrderId: previous.pathaoMerchantOrderId,
+        pathaoSubmissionStatus: previous.pathaoSubmissionStatus,
+        pathaoOrderStatus: previous.pathaoOrderStatus,
+        pathaoOrderStatusSlug: previous.pathaoOrderStatusSlug,
+        pathaoLastSyncedAt: previous.pathaoLastSyncedAt
+          ? previous.pathaoLastSyncedAt.toISOString()
+          : null,
+        pathaoCourier: previous.pathaoCourier
+          ? {
+              id: previous.pathaoCourier.id,
+              name: previous.pathaoCourier.name,
+              slug: previous.pathaoCourier.slug,
+            }
+          : null,
+      };
+    })(),
     items: order.items.map((item) => ({
       id: item.id,
       orderId: item.orderId,
@@ -377,6 +472,7 @@ export default async function CallingPanelPage({
           id: session?.user?.id || "",
           name: session?.user?.name || "Agent",
         }}
+        bangladeshToday={bangladeshToday}
       />
 
       <div className="flex flex-wrap items-center justify-center gap-3">

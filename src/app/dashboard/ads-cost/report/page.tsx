@@ -78,6 +78,7 @@ const adsItems = await prisma.adsCostItem.findMany({
 const readyItems = await prisma.orderItem.findMany({
   where: {
     order: {
+      orderKind: "NORMAL",
       orderStatus: "READY_TO_SHIP",
       readyToShipAt: {
         gte: fromDate,

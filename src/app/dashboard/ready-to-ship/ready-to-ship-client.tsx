@@ -7,6 +7,7 @@ import { createCsvBatch, createInvoiceBatch } from "./actions";
 type OrderRow = {
   id: string;
   invoiceId: string | null;
+  orderKind: string;
   customerName: string;
   phone: string;
   courier: string | null;
@@ -253,9 +254,16 @@ export default function ReadyToShipClient({
             <div key={order.id} className="rounded-2xl border bg-slate-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-slate-900">
-                    {order.invoiceId || "N/A"}
-                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-slate-900">
+                      {order.invoiceId || "N/A"}
+                    </h3>
+                    {order.orderKind === "EXCHANGE" ? (
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
+                        EXCHANGE
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="text-sm text-slate-500">
                     {order.customerName} · {order.phone}
                   </p>
@@ -366,7 +374,14 @@ export default function ReadyToShipClient({
                     </td>
                   )}
                   <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                    {order.invoiceId || "N/A"}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{order.invoiceId || "N/A"}</span>
+                      {order.orderKind === "EXCHANGE" ? (
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
+                          EXCHANGE
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     <div>

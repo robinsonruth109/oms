@@ -285,6 +285,7 @@ export default async function ReadyToShipPage({
         orders={orders.map((order) => ({
           id: order.id,
           invoiceId: order.invoiceId,
+          orderKind: order.orderKind,
           customerName: order.customerName,
           phone: order.phone,
           courier: order.courier,

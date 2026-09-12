@@ -188,6 +188,7 @@ export default async function CallingPanelPage({
       const candidates = await prisma.order.findMany({
         where: {
           id: { not: order.id },
+          orderKind: "NORMAL",
           createdAt: { lt: order.createdAt },
           phone: { contains: lookupSuffix },
         },

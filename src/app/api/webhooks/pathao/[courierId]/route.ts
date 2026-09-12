@@ -15,6 +15,17 @@ const PATHAO_RETURN_LIFECYCLE_EVENTS = new Set([
   "order.returned-to-merchant",
 ]);
 
+function isExchangeLifecycleEvent(fields: {
+  event: string;
+  orderStatus?: string | null;
+  orderStatusSlug?: string | null;
+}) {
+  const combined = `${fields.event || ""} ${fields.orderStatus || ""} ${
+    fields.orderStatusSlug || ""
+  }`.toLowerCase();
+  return combined.includes("exchang");
+}
+
 function response202(
   headerSecret: string,
   body: Record<string, unknown>
@@ -172,6 +183,69 @@ export async function POST(
         error instanceof Error
           ? `Webhook stored but order update failed: ${error.message}`
           : "Webhook stored but order update failed.";
+    }
+  }
+
+  if (order && isExchangeLifecycleEvent(fields)) {
+    const cidCandidates = [
+      fields.consignmentId,
+      fields.returnConsignmentId,
+    ].filter((value): value is string => Boolean(value));
+
+    let exchangeCase = await prisma.exchangeCase.findUnique({
+      where: { exchangeOrderId: order.id },
+      select: { id: true, exchangeOrderId: true },
+    });
+
+    if (!exchangeCase && cidCandidates.length) {
+      exchangeCase = await prisma.exchangeCase.findFirst({
+        where: {
+          originalOrderId: order.id,
+          pathaoExchangeConsignmentId: { in: cidCandidates },
+        },
+        select: { id: true, exchangeOrderId: true },
+      });
+    }
+
+    if (!exchangeCase && cidCandidates.length) {
+      exchangeCase = await prisma.exchangeCase.findFirst({
+        where: { pathaoExchangeConsignmentId: { in: cidCandidates } },
+        select: { id: true, exchangeOrderId: true },
+      });
+    }
+
+    if (exchangeCase) {
+      const now = new Date();
+      const exchangeStatus = fields.orderStatus || null;
+      const exchangeStatusSlug = fields.orderStatusSlug || null;
+
+      await prisma.$transaction([
+        prisma.exchangeCase.update({
+          where: { id: exchangeCase.id },
+          data: {
+            verificationStatus: "VERIFIED",
+            verificationMessage: `Verified by Pathao webhook: ${fields.event}.`,
+            pathaoOrderStatus: exchangeStatus,
+            pathaoOrderStatusSlug: exchangeStatusSlug,
+            status: "PATHAO_EXCHANGED",
+            completedAt: now,
+          },
+        }),
+        prisma.order.update({
+          where: { id: exchangeCase.exchangeOrderId },
+          data: {
+            pathaoCourierId: courierId,
+            pathaoOrderStatus: exchangeStatus,
+            pathaoOrderStatusSlug: exchangeStatusSlug,
+            pathaoSubmissionStatus: "CONSIGNMENT_CREATED",
+            pathaoLastSyncedAt: now,
+            pathaoRawResponse: JSON.stringify(payload),
+            pathaoLastError: null,
+          },
+        }),
+      ]);
+
+      processingNote = `${processingNote} Exchange ${fields.event} linked to OMS exchange case.`;
     }
   }
 

@@ -333,46 +333,53 @@ export default async function DashboardHomePage() {
       where: { status: true },
     }),
 
-    prisma.order.count(),
+    prisma.order.count({ where: { orderKind: "NORMAL" } }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "PENDING_CONFIRMATION",
       },
     }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "NO_ANSWER",
       },
     }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "PHONE_OFF",
       },
     }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "READY_TO_SHIP",
       },
     }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "STOCK_OUT",
       },
     }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "CANCELLED",
       },
     }),
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         createdAt: {
           gte: start,
           lte: end,
@@ -385,6 +392,7 @@ export default async function DashboardHomePage() {
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "READY_TO_SHIP",
         createdAt: {
           gte: start,
@@ -395,6 +403,7 @@ export default async function DashboardHomePage() {
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "STOCK_OUT",
         createdAt: {
           gte: start,
@@ -405,6 +414,7 @@ export default async function DashboardHomePage() {
 
     prisma.order.count({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "CANCELLED",
         createdAt: {
           gte: start,
@@ -414,6 +424,7 @@ export default async function DashboardHomePage() {
     }),
 
     prisma.order.findMany({
+      where: { orderKind: "NORMAL" },
       orderBy: {
         createdAt: "desc",
       },
@@ -426,6 +437,7 @@ export default async function DashboardHomePage() {
 
     prisma.order.findMany({
       where: {
+        orderKind: "NORMAL",
         createdAt: {
           gte: start,
           lte: end,
@@ -453,6 +465,7 @@ export default async function DashboardHomePage() {
 
     prisma.order.findMany({
       where: {
+        orderKind: "NORMAL",
         createdAt: {
           gte: start,
           lte: end,
@@ -471,6 +484,7 @@ export default async function DashboardHomePage() {
 
     prisma.order.findMany({
       where: {
+        orderKind: "NORMAL",
         orderStatus: "READY_TO_SHIP",
         createdAt: {
           gte: start,

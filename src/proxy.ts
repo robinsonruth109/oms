@@ -13,6 +13,8 @@ function isAllowed(pathname: string, role: string) {
       pathname === "/dashboard/orders" ||
       pathname === "/dashboard/all-orders" ||
       pathname.startsWith("/dashboard/all-orders/") ||
+      pathname === "/dashboard/exchange" ||
+      pathname.startsWith("/dashboard/exchange/") ||
       pathname === "/dashboard/pathao-problem" ||
       pathname.startsWith("/dashboard/pathao-problem/")
     );
@@ -20,6 +22,8 @@ function isAllowed(pathname: string, role: string) {
 
   if (role === "PACKAGING_AGENT") {
     return (
+      pathname === "/dashboard/exchange" ||
+      pathname.startsWith("/dashboard/exchange/") ||
       pathname === "/dashboard/ready-to-ship" ||
       pathname.startsWith("/dashboard/ready-to-ship/") ||
       pathname === "/dashboard/post-print-actions" ||

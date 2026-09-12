@@ -45,6 +45,7 @@ export default async function ProductReportPage({
   const items = await prisma.orderItem.findMany({
     where: {
       order: {
+        orderKind: "NORMAL",
         createdAt: {
           gte: bangladeshDateStartUtc(from),
           lte: bangladeshDateEndUtc(to),

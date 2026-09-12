@@ -31,6 +31,7 @@ model User {
   readyOrderSheetSyncRuns ReadyOrderSheetSyncRun[]
   readyToShipDateShifts ReadyToShipDateShift[]
   pathaoReturnTracks PathaoReturnTrack[]
+  exchangeCasesCreated ExchangeCase[]
 
   financeDailyCostsCreated FinanceDailyCost[] @relation("FinanceDailyCostCreatedBy")
   salaryProfile SalaryProfile? @relation("SalaryProfileUser")
@@ -188,6 +189,7 @@ model Product {
   purchaseOrders PurchaseOrder[]
   reelProducts   ReelProduct[]
   pathaoReturnItems PathaoReturnItem[]
+  exchangeCaseItems ExchangeCaseItem[]
 }
 
 model Order {
@@ -216,6 +218,7 @@ model Order {
   totalAmount    Decimal @db.Decimal(10, 2)
 
   orderStatus OrderStatus @default(PENDING_CONFIRMATION)
+  orderKind   OrderKind   @default(NORMAL)
   courier     String?
 
   note           String? @db.Text
@@ -279,6 +282,8 @@ model Order {
   readyOrderSheetSyncItems ReadyOrderSheetSyncItem[]
   readyToShipDateShiftItems ReadyToShipDateShiftItem[]
   pathaoReturnTracks PathaoReturnTrack[]
+  exchangeCasesAsOriginal ExchangeCase[] @relation("ExchangeOriginalOrder")
+  exchangeCaseAsMemo ExchangeCase? @relation("ExchangeMemoOrder")
 
   invoiceBatchItems InvoiceBatchItem[]
   csvBatchItems     CsvBatchItem[]
@@ -293,6 +298,7 @@ model Order {
   @@index([sourceId])
   @@index([pageId])
   @@index([orderStatus])
+  @@index([orderKind])
   @@index([calledByUserId])
   @@index([holdByUserId])
   @@index([holdUntil])
@@ -431,6 +437,83 @@ model PathaoReturnItem {
 
   @@unique([returnTrackId, orderItemId])
   @@index([orderItemId])
+  @@index([productId])
+}
+
+model ExchangeCase {
+  id String @id @default(uuid())
+
+  exchangeCode String @unique
+  sequenceNo   Int
+
+  originalOrderId String
+  originalOrder   Order @relation("ExchangeOriginalOrder", fields: [originalOrderId], references: [id], onDelete: Restrict)
+
+  exchangeOrderId String @unique
+  exchangeOrder   Order @relation("ExchangeMemoOrder", fields: [exchangeOrderId], references: [id], onDelete: Restrict)
+
+  originalPathaoConsignmentId String?
+  pathaoExchangeConsignmentId String @unique
+  pathaoCourierIdSnapshot     String?
+  pathaoCourierNameSnapshot   String?
+
+  reason String? @db.Text
+  note   String? @db.Text
+
+  returnedCredit          Decimal @default(0) @db.Decimal(10, 2)
+  outgoingSubtotal        Decimal @default(0) @db.Decimal(10, 2)
+  priceDifference         Decimal @default(0) @db.Decimal(10, 2)
+  exchangeDeliveryCharge  Decimal @default(0) @db.Decimal(10, 2)
+  amountToCollect         Decimal @default(0) @db.Decimal(10, 2)
+  customerCredit          Decimal @default(0) @db.Decimal(10, 2)
+
+  verificationStatus ExchangeVerificationStatus @default(PENDING)
+  verificationMessage String? @db.Text
+  pathaoOrderStatus     String?
+  pathaoOrderStatusSlug String?
+
+  status      ExchangeCaseStatus @default(ISSUED)
+  completedAt DateTime?
+
+  createdByUserId String
+  createdByUser   User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items ExchangeCaseItem[]
+
+  @@unique([originalOrderId, sequenceNo])
+  @@index([originalOrderId])
+  @@index([exchangeOrderId])
+  @@index([createdByUserId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ExchangeCaseItem {
+  id String @id @default(uuid())
+
+  exchangeCaseId String
+  exchangeCase   ExchangeCase @relation(fields: [exchangeCaseId], references: [id], onDelete: Cascade)
+
+  kind ExchangeItemKind
+
+  originalOrderItemId String?
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  productSkuSnapshot  String
+  productNameSnapshot String
+  quantity            Int
+  unitPrice           Decimal @db.Decimal(10, 2)
+  lineTotal           Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([exchangeCaseId])
+  @@index([kind])
+  @@index([originalOrderItemId])
   @@index([productId])
 }
 
@@ -688,6 +771,11 @@ enum IntegrationPlatform {
   LARAVEL
 }
 
+enum OrderKind {
+  NORMAL
+  EXCHANGE
+}
+
 enum OrderStatus {
   PENDING_CONFIRMATION
   READY_TO_SHIP
@@ -698,6 +786,23 @@ enum OrderStatus {
   STOCK_OUT
   RETURNED
   PARTIAL_RETURN
+}
+
+enum ExchangeCaseStatus {
+  ISSUED
+  PATHAO_EXCHANGED
+  CANCELLED
+}
+
+enum ExchangeItemKind {
+  EXPECTED_RETURN
+  OUTGOING
+}
+
+enum ExchangeVerificationStatus {
+  VERIFIED
+  PENDING
+  FAILED
 }
 
 enum AttendanceStatus {

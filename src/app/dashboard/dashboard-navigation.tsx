@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  ArrowRightLeft,
   Ban,
   BarChart3,
   Boxes,
@@ -74,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/all-orders", label: "All Orders", icon: Boxes, roles: ["ADMIN", "AGENT", "NOTE_AGENT"] },
       { href: "/dashboard/pending-orders", label: "Pending Orders", icon: PackageSearch, roles: ["ADMIN", "AGENT"] },
       { href: "/dashboard/call", label: "Calling Panel", icon: PhoneCall, roles: ["ADMIN", "AGENT"] },
+      { href: "/dashboard/exchange", label: "Exchange Panel", icon: ArrowRightLeft, roles: ALL_ROLES },
       { href: "/dashboard/ready-to-ship", label: "Ready to Ship", icon: Truck, roles: ["ADMIN", "PACKAGING_AGENT"] },
       { href: "/dashboard/ready-date-shift", label: "Ready Date Shift", icon: CalendarClock, roles: ["ADMIN", "PACKAGING_AGENT"] },
       { href: "/dashboard/post-print-actions", label: "Post Print Actions", icon: ReceiptText, roles: ["ADMIN", "PACKAGING_AGENT"] },

@@ -135,6 +135,7 @@ export default async function DailySourceStatusPage({
   });
 
   const where: Record<string, any> = {
+    orderKind: "NORMAL",
     createdAt: {
       gte: bangladeshDateStartUtc(from),
       lte: bangladeshDateEndUtc(to),

@@ -89,6 +89,7 @@ export default async function ReportsPage({
   const agentId = (params.agentId || "").trim();
 
   const whereBase: Record<string, unknown> = {
+    orderKind: "NORMAL",
     createdAt: {
       gte: bangladeshDateStartUtc(from),
       lte: bangladeshDateEndUtc(to),

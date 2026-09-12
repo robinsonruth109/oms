@@ -527,11 +527,34 @@ export async function scanPathaoReturnAction(
     const resolvedOutboundConsignmentId =
       match.outboundConsignmentId || order.pathaoConsignmentId;
 
-    // Repair a previously overwritten outbound ID when verified Pathao webhook
-    // history gives us the original outbound consignment.
+    // An exchange return can legitimately use the Exchange Parcel ID as the
+    // outbound leg while Pathao still reports the ORIGINAL merchant_order_id.
+    // Never overwrite the historical original order's Pathao CID with an
+    // exchange CID (the exchange memo already owns that CID in OMS).
+    const exchangeOutbound = resolvedOutboundConsignmentId
+      ? await prisma.exchangeCase.findUnique({
+          where: {
+            pathaoExchangeConsignmentId: resolvedOutboundConsignmentId,
+          },
+          select: {
+            id: true,
+            originalOrderId: true,
+            exchangeOrderId: true,
+          },
+        })
+      : null;
+    const isExchangeReturnLeg = Boolean(
+      exchangeOutbound &&
+        (exchangeOutbound.originalOrderId === order.id ||
+          exchangeOutbound.exchangeOrderId === order.id)
+    );
+
+    // Repair a previously overwritten outbound ID only for a normal Pathao
+    // return. Exchange return legs must keep the original outbound CID intact.
     if (
       match.source === "RETURN_WEBHOOK" &&
       resolvedOutboundConsignmentId &&
+      !isExchangeReturnLeg &&
       order.pathaoConsignmentId !== resolvedOutboundConsignmentId
     ) {
       await prisma.order.update({

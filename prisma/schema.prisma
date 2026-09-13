@@ -33,6 +33,10 @@ model User {
   pathaoReturnTracks PathaoReturnTrack[]
   exchangeCasesCreated ExchangeCase[]
 
+  staffEmploymentProfile StaffEmploymentProfile? @relation("StaffEmploymentProfileUser")
+  staffEmploymentProfilesCreated StaffEmploymentProfile[] @relation("StaffEmploymentProfileCreatedBy")
+  staffEmploymentEventsCreated StaffEmploymentEvent[] @relation("StaffEmploymentEventCreatedBy")
+
   financeDailyCostsCreated FinanceDailyCost[] @relation("FinanceDailyCostCreatedBy")
   salaryProfile SalaryProfile? @relation("SalaryProfileUser")
   salaryMonths SalaryMonth[] @relation("SalaryMonthUser")
@@ -1405,5 +1409,91 @@ model SalaryTransaction {
   @@index([type])
   @@index([transactionDate])
   @@index([createdByUserId])
+}
+
+enum StaffEmploymentStatus {
+  PROBATION
+  PERMANENT
+  TERMINATED
+}
+
+enum StaffEmploymentEventType {
+  PROFILE_CREATED
+  PROFILE_UPDATED
+  PROBATION_STARTED
+  PERMANENT_RECRUITED
+  TERMINATED
+}
+
+model StaffEmploymentProfile {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user User @relation("StaffEmploymentProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  fatherName String
+  address String @db.Text
+  phone String
+  designation String
+
+  nidEncrypted String @db.Text
+  nidIv String
+  nidTag String
+  nidHash String @unique
+  nidLast4 String
+
+  baseSalary Decimal @db.Decimal(12, 2)
+  probationCompensation Decimal @default(0) @db.Decimal(12, 2)
+  probationStartDate DateTime
+  probationEndDate DateTime
+
+  dutyStartTime String @default("09:00")
+  workOffDeadline String @default("22:00")
+  eveningBreakMinutes Int @default(30)
+
+  employmentStatus StaffEmploymentStatus @default(PROBATION)
+  permanentJoinDate DateTime?
+  agreementStartDate DateTime?
+  agreementEndDate DateTime?
+  earlyExitSettlementLimit Decimal @default(10000) @db.Decimal(12, 2)
+
+  terminationDate DateTime?
+  terminationReason String? @db.Text
+  permanentApprovedByUserId String?
+  terminatedByUserId String?
+
+  createdByUserId String
+  createdByUser User @relation("StaffEmploymentProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  events StaffEmploymentEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employmentStatus])
+  @@index([phone])
+  @@index([probationEndDate])
+  @@index([agreementEndDate])
+  @@index([createdByUserId])
+}
+
+model StaffEmploymentEvent {
+  id String @id @default(uuid())
+
+  profileId String
+  profile StaffEmploymentProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  type StaffEmploymentEventType
+  note String? @db.Text
+
+  createdByUserId String
+  createdByUser User @relation("StaffEmploymentEventCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
+  @@index([type])
+  @@index([createdByUserId])
+  @@index([createdAt])
 }
 

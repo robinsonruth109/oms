@@ -133,6 +133,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Administration",
     items: [
+      { href: "/dashboard/recruitment", label: "Staff Recruitment", icon: BriefcaseBusiness, roles: ["ADMIN"] },
       { href: "/dashboard/users", label: "Manage Users", icon: Users, roles: ["ADMIN"] },
       { href: "/dashboard/customer-data-retention", label: "Customer Data", icon: UserRoundCog, roles: ["ADMIN"] },
     ],

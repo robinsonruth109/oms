@@ -42,7 +42,7 @@ export function isFinalPathaoReturnState(
 /**
  * Pathao's Merchant Panel calls this workflow "Return Requested". Depending on
  * whether the value reached OMS via order-info or webhook, the current state can
- * arrive as "Return Requested", "Return", "Returned" or "order.returned".
+ * arrive as "Return Requested", "Return" or webhook event "order.returned".
  * Once a reverse-return lifecycle event starts, the parcel is no longer treated
  * as an actionable Return Requested item.
  */
@@ -63,8 +63,12 @@ export function isPathaoReturnRequestedState(
     return true;
   }
 
+  // Pathao's official WooCommerce mapping converts the webhook event
+  // `order.returned` to the API/UI lifecycle status `Return`. Do not treat
+  // generic `Returned` as Return Requested because it can be confused with
+  // a later completed-return state.
   return values.some((value) =>
-    ["return", "returned", "order.returned"].includes(value)
+    ["return", "order.returned"].includes(value)
   );
 }
 

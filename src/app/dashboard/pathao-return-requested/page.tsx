@@ -290,8 +290,10 @@ export default async function PathaoReturnRequestedPage({ searchParams }: Props)
         <div className="border-b px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">Return Requested Orders</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Pathao states that return-marked parcels can be reviewed until 6:00 PM on the
-            following day. OMS shows the calculated deadline from the first current return event.
+            This list mirrors Pathao Merchant Panel's <b>Return Requested</b> queue. Pathao's
+            public order status/webhook can still report the underlying lifecycle as
+            <b>Return</b> / <b>order.returned</b>; OMS maps that raw value to the Merchant Panel
+            label here while keeping the raw API status visible underneath.
           </p>
         </div>
 
@@ -303,7 +305,7 @@ export default async function PathaoReturnRequestedPage({ searchParams }: Props)
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Courier</th>
                 <th className="px-4 py-3">Pathao CID</th>
-                <th className="px-4 py-3">Pathao Status</th>
+                <th className="px-4 py-3">Pathao Panel Status</th>
                 <th className="px-4 py-3">Return Marked</th>
                 <th className="px-4 py-3">Action Deadline</th>
                 <th className="px-4 py-3">OMS Reattempt Log</th>
@@ -332,9 +334,12 @@ export default async function PathaoReturnRequestedPage({ searchParams }: Props)
                   </td>
                   <td className="px-4 py-4">
                     <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                      {statusText(row.pathaoOrderStatus || row.pathaoOrderStatusSlug)}
+                      Return Requested
                     </span>
                     <p className="mt-1 text-[11px] text-slate-500">
+                      Pathao API: {statusText(row.pathaoOrderStatus || row.pathaoOrderStatusSlug)}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
                       Synced {formatBangladeshDateTime(row.pathaoLastSyncedAt)}
                     </p>
                   </td>

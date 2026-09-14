@@ -10,6 +10,8 @@ import {
 } from "@/lib/pathao/orders";
 import type { PreparedPathaoOrder } from "@/lib/pathao/types";
 import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
   getBangladeshDateInputValue,
   getBangladeshTodayRange,
 } from "@/lib/bangladesh-time";
@@ -450,3 +452,345 @@ export async function createCsvBatch(
     };
   }
 }
+
+const PUSH_ALL_CHUNK_SIZE = 50;
+
+function makePushAllBatchNo() {
+  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 17);
+  const suffix = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `AUTOCSV-${stamp}-${suffix}`;
+}
+
+function chunkArray<T>(rows: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+  return chunks;
+}
+
+export async function pushAllToAssignedCouriers(
+  _prevState: BatchActionState,
+  formData: FormData
+): Promise<BatchActionState> {
+  try {
+    const session = await requirePackagingSession();
+    const { prisma } = await import("@/lib/prisma");
+
+    const courierFilter = String(formData.get("courier") || "").trim();
+    const fromDate = String(formData.get("fromDate") || "").trim();
+    const toDate = String(formData.get("toDate") || "").trim();
+
+    const readyToShipAt =
+      fromDate || toDate
+        ? {
+            ...(fromDate ? { gte: bangladeshDateStartUtc(fromDate) } : {}),
+            ...(toDate ? { lte: bangladeshDateEndUtc(toDate) } : {}),
+          }
+        : undefined;
+
+    // Important: this query is intentionally NOT limited to the 200 rows shown
+    // in the UI. "Push All" means every eligible Non CSV order matching the
+    // current courier/date filters.
+    const orders = await prisma.order.findMany({
+      where: {
+        orderStatus: "READY_TO_SHIP",
+        csvDownloaded: false,
+        ...(courierFilter ? { courier: courierFilter } : {}),
+        ...(readyToShipAt ? { readyToShipAt } : {}),
+      },
+      include: {
+        items: true,
+      },
+      orderBy: {
+        readyToShipAt: "asc",
+      },
+    });
+
+    if (!orders.length) {
+      return {
+        success: false,
+        message: "No Non CSV Ready to Ship orders match the current filters.",
+      };
+    }
+
+    const ordersWithoutCourier = orders.filter((order) => !order.courier);
+    const courierSlugs = [
+      ...new Set(
+        orders
+          .map((order) => order.courier)
+          .filter((value): value is string => Boolean(value))
+      ),
+    ];
+
+    const couriers = courierSlugs.length
+      ? await prisma.courier.findMany({
+          where: {
+            slug: { in: courierSlugs },
+            status: true,
+          },
+        })
+      : [];
+
+    const courierBySlug = new Map(couriers.map((row) => [row.slug, row]));
+
+    let submittedCount = 0;
+    let alreadySubmittedCount = 0;
+    let invalidCount = 0;
+    let failedCount = 0;
+    let skippedConfigurationCount = ordersWithoutCourier.length;
+    let batchCount = 0;
+    const detailMessages: string[] = [];
+
+    if (ordersWithoutCourier.length) {
+      detailMessages.push(
+        `${ordersWithoutCourier.length} order(s) have no courier assigned.`
+      );
+    }
+
+    for (const courierSlug of courierSlugs) {
+      const courier = courierBySlug.get(courierSlug);
+      const courierOrders = orders.filter((order) => order.courier === courierSlug);
+
+      if (!courier) {
+        skippedConfigurationCount += courierOrders.length;
+        detailMessages.push(
+          `${courierSlug}: ${courierOrders.length} order(s) skipped because the courier is inactive or missing.`
+        );
+        continue;
+      }
+
+      if (!courier.pathaoEnabled || !courier.pathaoStoreId) {
+        skippedConfigurationCount += courierOrders.length;
+        detailMessages.push(
+          `${courier.name}: ${courierOrders.length} order(s) skipped because Pathao API/Store ID is not configured.`
+        );
+        continue;
+      }
+
+      const alreadyPathao = courierOrders.filter(
+        (order) =>
+          Boolean(order.pathaoConsignmentId) ||
+          ["SUBMITTING", "SUBMITTED", "CONSIGNMENT_CREATED"].includes(
+            order.pathaoSubmissionStatus
+          )
+      );
+      alreadySubmittedCount += alreadyPathao.length;
+
+      const candidates = courierOrders.filter(
+        (order) =>
+          !order.pathaoConsignmentId &&
+          !["SUBMITTING", "SUBMITTED", "CONSIGNMENT_CREATED"].includes(
+            order.pathaoSubmissionStatus
+          )
+      );
+
+      const validPrepared: PreparedPathaoOrder[] = [];
+      const invalidRows: { id: string; invoice: string; error: string }[] = [];
+
+      for (const order of candidates) {
+        const errors = validatePathaoOrder(order);
+        if (errors.length) {
+          invalidRows.push({
+            id: order.id,
+            invoice: order.invoiceId || order.orderId || order.id,
+            error: errors.join(" "),
+          });
+          continue;
+        }
+
+        validPrepared.push(preparePathaoOrder(order, courier.pathaoStoreId));
+      }
+
+      invalidCount += invalidRows.length;
+
+      for (const row of invalidRows) {
+        await prisma.order.update({
+          where: { id: row.id },
+          data: {
+            pathaoCourierId: courier.id,
+            pathaoSubmissionStatus: "FAILED",
+            pathaoLastError: row.error,
+          },
+        });
+      }
+
+      if (invalidRows.length) {
+        detailMessages.push(
+          `${courier.name}: ${invalidRows.length} invalid order(s) remain in Non CSV.`
+        );
+      }
+
+      for (const preparedChunk of chunkArray(
+        validPrepared,
+        PUSH_ALL_CHUNK_SIZE
+      )) {
+        const claimedPrepared: PreparedPathaoOrder[] = [];
+
+        // Claim each order independently. This avoids one agent/button click
+        // interfering with another concurrent submission of a different order.
+        for (const preparedOrder of preparedChunk) {
+          const claimed = await prisma.order.updateMany({
+            where: {
+              id: preparedOrder.orderId,
+              csvDownloaded: false,
+              pathaoSubmissionStatus: { in: ["NOT_SUBMITTED", "FAILED"] },
+              pathaoConsignmentId: null,
+            },
+            data: {
+              pathaoCourierId: courier.id,
+              pathaoSubmissionStatus: "SUBMITTING",
+              pathaoMerchantOrderId: null,
+              pathaoLastError: null,
+            },
+          });
+
+          if (claimed.count === 1) {
+            claimedPrepared.push(preparedOrder);
+          } else {
+            alreadySubmittedCount += 1;
+          }
+        }
+
+        if (!claimedPrepared.length) continue;
+
+        const preparedIds = claimedPrepared.map((row) => row.orderId);
+
+        let pathaoResponse;
+        try {
+          pathaoResponse = await createPathaoBulkOrders(
+            courier.id,
+            claimedPrepared.map((row) => row.payload)
+          );
+
+          if (
+            Number(pathaoResponse.code || 202) !== 202 ||
+            pathaoResponse.data !== true
+          ) {
+            throw new Error(
+              pathaoResponse.message ||
+                "Pathao did not accept the bulk order request."
+            );
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : "Pathao bulk submission failed.";
+
+          await prisma.order.updateMany({
+            where: {
+              id: { in: preparedIds },
+              pathaoSubmissionStatus: "SUBMITTING",
+              pathaoCourierId: courier.id,
+            },
+            data: {
+              pathaoSubmissionStatus: "FAILED",
+              pathaoLastError: errorMessage,
+              pathaoRawResponse: errorMessage,
+            },
+          });
+
+          failedCount += preparedIds.length;
+          detailMessages.push(
+            `${courier.name}: ${preparedIds.length} order(s) failed — ${errorMessage}`
+          );
+          continue;
+        }
+
+        const submittedAt = new Date();
+        const batchNo = makePushAllBatchNo();
+
+        await prisma.$transaction(async (tx) => {
+          const batch = await tx.csvBatch.create({
+            data: {
+              batchNo,
+              courier: courierSlug,
+              totalOrders: preparedIds.length,
+              createdByUserId: session.user.id,
+            },
+          });
+
+          await tx.csvBatchItem.createMany({
+            data: preparedIds.map((orderId) => ({
+              batchId: batch.id,
+              orderId,
+            })),
+          });
+
+          for (const preparedOrder of claimedPrepared) {
+            await tx.order.update({
+              where: { id: preparedOrder.orderId },
+              data: {
+                csvDownloaded: true,
+                pathaoCourierId: courier.id,
+                pathaoMerchantOrderId: preparedOrder.invoiceId,
+                pathaoSubmissionStatus: "SUBMITTED",
+                pathaoSubmittedAt: submittedAt,
+                pathaoAmountToCollect: preparedOrder.payload.amount_to_collect,
+                pathaoLastSyncedAt: submittedAt,
+                pathaoLastError: null,
+                pathaoRawResponse: JSON.stringify(pathaoResponse),
+              },
+            });
+
+            await tx.orderAuditEvent.create({
+              data: {
+                orderId: preparedOrder.orderId,
+                eventType: "PATHAO_PUSH_ALL",
+                title: "Pushed to assigned Pathao courier",
+                details: {
+                  courierId: courier.id,
+                  courierName: courier.name,
+                  courierSlug,
+                  batchNo,
+                  merchantOrderId: preparedOrder.invoiceId,
+                },
+                performedByUserId: session.user.id,
+                actorLabel: session.user.name || session.user.username || "OMS user",
+              },
+            });
+          }
+        }, { timeout: 30_000 });
+
+        submittedCount += preparedIds.length;
+        batchCount += 1;
+      }
+    }
+
+    revalidatePath("/dashboard/ready-to-ship");
+    revalidatePath("/dashboard/pathao-orders");
+
+    const summary = [
+      `${submittedCount} submitted`,
+      `${batchCount} courier batch${batchCount === 1 ? "" : "es"}`,
+      invalidCount ? `${invalidCount} invalid` : "",
+      alreadySubmittedCount ? `${alreadySubmittedCount} already submitted` : "",
+      skippedConfigurationCount
+        ? `${skippedConfigurationCount} skipped/unconfigured`
+        : "",
+      failedCount ? `${failedCount} failed` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const details = detailMessages.slice(0, 6).join(" ");
+
+    return {
+      success: submittedCount > 0 && failedCount === 0,
+      message:
+        submittedCount > 0
+          ? `Push All finished: ${summary}.${details ? ` ${details}` : ""}`
+          : `Nothing was submitted. ${summary}.${details ? ` ${details}` : ""}`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to push orders to assigned couriers.",
+    };
+  }
+}
+

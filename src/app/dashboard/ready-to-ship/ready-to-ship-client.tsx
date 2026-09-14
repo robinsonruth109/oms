@@ -2,7 +2,11 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createCsvBatch, createInvoiceBatch } from "./actions";
+import {
+  createCsvBatch,
+  createInvoiceBatch,
+  pushAllToAssignedCouriers,
+} from "./actions";
 
 type OrderRow = {
   id: string;
@@ -43,6 +47,7 @@ type Props = {
   canCreateInvoiceBatch: boolean;
   courierMap: Record<string, string>;
   selectedCourierConfigured: boolean;
+  nonCsvCount: number;
   orders: OrderRow[];
   invoiceBatches: BatchRow[];
   csvBatches: BatchRow[];
@@ -75,6 +80,7 @@ export default function ReadyToShipClient({
   canCreateInvoiceBatch,
   courierMap,
   selectedCourierConfigured,
+  nonCsvCount,
   orders,
   invoiceBatches,
   csvBatches,
@@ -86,6 +92,10 @@ export default function ReadyToShipClient({
   );
   const [csvState, csvAction, csvPending] = useActionState(
     createCsvBatch,
+    initialState
+  );
+  const [pushAllState, pushAllAction, pushAllPending] = useActionState(
+    pushAllToAssignedCouriers,
     initialState
   );
 
@@ -121,8 +131,13 @@ export default function ReadyToShipClient({
     }
   }
 
-  const flashMessage = invoiceState.message || csvState.message;
-  const flashSuccess = invoiceState.success || csvState.success;
+  const activeFlash = pushAllState.message
+    ? pushAllState
+    : csvState.message
+      ? csvState
+      : invoiceState;
+  const flashMessage = activeFlash.message;
+  const flashSuccess = activeFlash.success;
 
   return (
     <div className="space-y-6">
@@ -140,15 +155,47 @@ export default function ReadyToShipClient({
 
       <div className="rounded-3xl border bg-white shadow-sm">
         <div className="border-b px-5 py-4 sm:px-6">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {activeTab === "non-invoiced" && "Non Invoiced Orders"}
-            {activeTab === "invoiced" && "Invoice Downloaded Orders"}
-            {activeTab === "non-csv" && "Non CSV Orders"}
-            {activeTab === "csv-downloaded" && "CSV Downloaded Orders"}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Filtered by ready-to-ship orders and selected courier/date.
-          </p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                {activeTab === "non-invoiced" && "Non Invoiced Orders"}
+                {activeTab === "invoiced" && "Invoice Downloaded Orders"}
+                {activeTab === "non-csv" && "Non CSV Orders"}
+                {activeTab === "csv-downloaded" && "CSV Downloaded Orders"}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Filtered by ready-to-ship orders and selected courier/date.
+              </p>
+            </div>
+
+            {activeTab === "non-csv" ? (
+              <form
+                action={pushAllAction}
+                onSubmit={(event) => {
+                  const label = courier
+                    ? courierMap[courier] || courier
+                    : "all assigned couriers";
+                  const confirmed = window.confirm(
+                    `Push ALL ${nonCsvCount} Non CSV order(s) matching the current filters to ${label}?\n\nOMS will group orders by their assigned courier and submit each group through that courier's Pathao API account. Invalid or unconfigured orders will remain in Non CSV.`
+                  );
+                  if (!confirmed) event.preventDefault();
+                }}
+              >
+                <input type="hidden" name="courier" value={courier} />
+                <input type="hidden" name="fromDate" value={fromDate} />
+                <input type="hidden" name="toDate" value={toDate} />
+                <Button
+                  type="submit"
+                  disabled={pushAllPending || nonCsvCount === 0}
+                  className="whitespace-nowrap"
+                >
+                  {pushAllPending
+                    ? "Pushing to Couriers..."
+                    : `Push All to Couriers (${nonCsvCount})`}
+                </Button>
+              </form>
+            ) : null}
+          </div>
         </div>
 
         {activeTab === "non-invoiced" && (

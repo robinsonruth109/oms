@@ -273,6 +273,7 @@ export default async function ReadyToShipPage({
         bangladeshToday={bangladeshToday}
         canCreateInvoiceBatch={canCreateInvoiceBatch}
         courierMap={courierMap}
+        nonCsvCount={nonCsvCount}
         selectedCourierConfigured={Boolean(
           courier &&
             couriers.find(

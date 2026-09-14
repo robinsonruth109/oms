@@ -71,7 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Order Management",
     items: [
-      { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, roles: ["ADMIN", "NOTE_AGENT"] },
+      { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, roles: ["ADMIN", "AGENT", "NOTE_AGENT"] },
       { href: "/dashboard/all-orders", label: "All Orders", icon: Boxes, roles: ["ADMIN", "AGENT", "NOTE_AGENT"] },
       { href: "/dashboard/pending-orders", label: "Pending Orders", icon: PackageSearch, roles: ["ADMIN", "AGENT"] },
       { href: "/dashboard/call", label: "Calling Panel", icon: PhoneCall, roles: ["ADMIN", "AGENT"] },

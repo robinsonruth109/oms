@@ -68,6 +68,7 @@ model OrderSource {
   integrations   Integration[]
   orders         Order[]
   adsCostItems   AdsCostItem[]
+  metaCampaignSources MetaCampaignSource[]
   reelCategories ReelCategory[]
 }
 
@@ -126,6 +127,7 @@ model ProductParent {
 
   products     Product[]
   adsCostItems AdsCostItem[]
+  metaCampaignMappings MetaCampaignMapping[]
 }
 
 model Courier {
@@ -556,6 +558,161 @@ model AdsCostItem {
   @@index([uploadId])
   @@index([productParentId])
   @@index([sourceId])
+}
+
+
+model MetaAdsConnection {
+  id String @id @default(uuid())
+
+  metaUserId   String @unique
+  metaUserName String?
+
+  accessTokenEncrypted String @db.Text
+  accessTokenIv        String
+  accessTokenTag       String
+  tokenExpiresAt       DateTime?
+
+  status          Boolean @default(true)
+  lastSyncAt      DateTime?
+  lastSyncStatus  String?
+  lastSyncMessage String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts MetaAdAccount[]
+
+  @@index([status])
+  @@index([lastSyncAt])
+}
+
+model MetaAdAccount {
+  id String @id @default(uuid())
+
+  connectionId String
+  connection   MetaAdsConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  metaAccountId String @unique
+  name          String
+  currency      String @default("USD")
+  timezoneName  String?
+  accountStatus Int?
+
+  enabled         Boolean @default(true)
+  lastSyncAt      DateTime?
+  lastSyncStatus  String?
+  lastSyncMessage String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns   MetaCampaign[]
+  dailySpends MetaDailySpend[]
+  syncRuns    MetaAdsSyncRun[]
+
+  @@index([connectionId])
+  @@index([enabled])
+  @@index([lastSyncAt])
+}
+
+model MetaCampaign {
+  id String @id @default(uuid())
+
+  adAccountId String
+  adAccount   MetaAdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  metaCampaignId String
+  campaignName   String
+  status         String?
+  lastSeenAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mapping     MetaCampaignMapping?
+  dailySpends MetaDailySpend[]
+
+  @@unique([adAccountId, metaCampaignId])
+  @@index([campaignName])
+  @@index([lastSeenAt])
+}
+
+model MetaCampaignMapping {
+  id String @id @default(uuid())
+
+  campaignId String @unique
+  campaign   MetaCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  productParentId String
+  productParent   ProductParent @relation(fields: [productParentId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sources MetaCampaignSource[]
+
+  @@index([productParentId])
+}
+
+model MetaCampaignSource {
+  id String @id @default(uuid())
+
+  mappingId String
+  mapping   MetaCampaignMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  sourceId String
+  source   OrderSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([mappingId, sourceId])
+  @@index([sourceId])
+}
+
+model MetaDailySpend {
+  id String @id @default(uuid())
+
+  adAccountId String
+  adAccount   MetaAdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  campaignId String
+  campaign   MetaCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  spendDate            DateTime
+  amountSpent          Decimal @db.Decimal(12, 2)
+  currency             String
+  campaignNameSnapshot String
+  syncedAt             DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([adAccountId, campaignId, spendDate])
+  @@index([campaignId])
+  @@index([spendDate])
+}
+
+model MetaAdsSyncRun {
+  id String @id @default(uuid())
+
+  adAccountId String?
+  adAccount   MetaAdAccount? @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+
+  mode          String
+  fromDate      String
+  toDate        String
+  status        String
+  campaignsSeen Int @default(0)
+  rowsSynced    Int @default(0)
+  message       String? @db.Text
+
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+
+  @@index([adAccountId])
+  @@index([mode])
+  @@index([toDate])
+  @@index([startedAt])
 }
 
 model OrderItem {

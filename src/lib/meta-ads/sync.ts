@@ -68,18 +68,31 @@ async function syncOneAccount(input: {
     );
     const uniqueCampaigns = new Set(validRows.map((row) => String(row.campaign_id)));
 
-    await prisma.$transaction(async (tx) => {
-      await tx.metaDailySpend.deleteMany({
-        where: {
-          adAccountId: input.account.id,
-          spendDate: { gte: parseDate(input.fromDate), lte: parseDate(input.toDate) },
+    // Do not use one long interactive transaction here. A Meta sync can
+    // contain many campaign/day rows and remote Railway latency can easily
+    // exceed Prisma's 5-second interactive transaction timeout.
+    //
+    // Instead, clear only this account/date range and rebuild it with
+    // idempotent campaign + daily-spend upserts. A failed run is marked
+    // FAILED and the next manual/automatic sync safely retries the range.
+    await prisma.metaDailySpend.deleteMany({
+      where: {
+        adAccountId: input.account.id,
+        spendDate: {
+          gte: parseDate(input.fromDate),
+          lte: parseDate(input.toDate),
         },
-      });
+      },
+    });
 
-      for (const row of validRows) {
-        const metaCampaignId = String(row.campaign_id);
-        const campaignName = String(row.campaign_name);
-        const campaign = await tx.metaCampaign.upsert({
+    const campaignIdMap = new Map<string, string>();
+
+    for (const row of validRows) {
+      const metaCampaignId = String(row.campaign_id);
+      const campaignName = String(row.campaign_name);
+
+      if (!campaignIdMap.has(metaCampaignId)) {
+        const campaign = await prisma.metaCampaign.upsert({
           where: {
             adAccountId_metaCampaignId: {
               adAccountId: input.account.id,
@@ -92,22 +105,46 @@ async function syncOneAccount(input: {
             campaignName,
             lastSeenAt: new Date(),
           },
-          update: { campaignName, lastSeenAt: new Date() },
-        });
-
-        await tx.metaDailySpend.create({
-          data: {
-            adAccountId: input.account.id,
-            campaignId: campaign.id,
-            spendDate: parseDate(String(row.date_start)),
-            amountSpent: Number(row.spend || 0),
-            currency: input.account.currency || "USD",
-            campaignNameSnapshot: campaignName,
-            syncedAt: new Date(),
+          update: {
+            campaignName,
+            lastSeenAt: new Date(),
+          },
+          select: {
+            id: true,
           },
         });
+
+        campaignIdMap.set(metaCampaignId, campaign.id);
       }
-    });
+
+      const campaignId = campaignIdMap.get(metaCampaignId)!;
+      const spendDate = parseDate(String(row.date_start));
+
+      await prisma.metaDailySpend.upsert({
+        where: {
+          adAccountId_campaignId_spendDate: {
+            adAccountId: input.account.id,
+            campaignId,
+            spendDate,
+          },
+        },
+        create: {
+          adAccountId: input.account.id,
+          campaignId,
+          spendDate,
+          amountSpent: Number(row.spend || 0),
+          currency: input.account.currency || "USD",
+          campaignNameSnapshot: campaignName,
+          syncedAt: new Date(),
+        },
+        update: {
+          amountSpent: Number(row.spend || 0),
+          currency: input.account.currency || "USD",
+          campaignNameSnapshot: campaignName,
+          syncedAt: new Date(),
+        },
+      });
+    }
 
     const message =
       validRows.length +

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Search } from "lucide-react";
 
 import {
   disconnectMetaConnection,
@@ -86,6 +87,143 @@ function amount(value: number, currency: string) {
   } catch {
     return code + " " + Number(value || 0).toFixed(2);
   }
+}
+
+
+function normalizeParentSearch(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeParentSearchLoose(value: string) {
+  return normalizeParentSearch(value).replace(/[^a-z0-9]/g, "");
+}
+
+function filterParents(parents: Parent[], rawQuery: string) {
+  const q = normalizeParentSearch(rawQuery);
+  const qLoose = normalizeParentSearchLoose(rawQuery);
+
+  if (!q && !qLoose) {
+    return parents.slice(0, 20);
+  }
+
+  const startsWithMatches: Parent[] = [];
+  const containsMatches: Parent[] = [];
+
+  for (const parent of parents) {
+    const sku = normalizeParentSearch(parent.sku);
+    const name = normalizeParentSearch(parent.name);
+    const skuLoose = normalizeParentSearchLoose(parent.sku);
+    const nameLoose = normalizeParentSearchLoose(parent.name);
+
+    const starts =
+      (q && (sku.startsWith(q) || name.startsWith(q))) ||
+      (qLoose &&
+        (skuLoose.startsWith(qLoose) || nameLoose.startsWith(qLoose)));
+
+    const contains =
+      (q && (sku.includes(q) || name.includes(q))) ||
+      (qLoose &&
+        (skuLoose.includes(qLoose) || nameLoose.includes(qLoose)));
+
+    if (starts) {
+      startsWithMatches.push(parent);
+    } else if (contains) {
+      containsMatches.push(parent);
+    }
+  }
+
+  return [...startsWithMatches, ...containsMatches].slice(0, 20);
+}
+
+function SearchableParentPicker({
+  parents,
+  value,
+  onChange,
+}: {
+  parents: Parent[];
+  value: string;
+  onChange: (parentId: string) => void;
+}) {
+  const selectedParent = parents.find((parent) => parent.id === value) || null;
+  const selectedLabel = selectedParent
+    ? selectedParent.sku + " - " + selectedParent.name
+    : "";
+
+  const [query, setQuery] = useState(selectedLabel);
+  const [open, setOpen] = useState(false);
+
+  const filteredParents = useMemo(
+    () => filterParents(parents, query === selectedLabel ? "" : query),
+    [parents, query, selectedLabel]
+  );
+
+  function handleSearch(nextQuery: string) {
+    setQuery(nextQuery);
+    setOpen(true);
+
+    if (value && nextQuery !== selectedLabel) {
+      onChange("");
+    }
+  }
+
+  function selectParent(parent: Parent) {
+    onChange(parent.id);
+    setQuery(parent.sku + " - " + parent.name);
+    setOpen(false);
+  }
+
+  return (
+    <div className="w-72">
+      <div className="flex items-center rounded-xl border bg-white px-3">
+        <Search className="h-4 w-4 shrink-0 text-slate-400" />
+        <input
+          type="text"
+          value={query}
+          onFocus={(event) => {
+            setOpen(true);
+            event.currentTarget.select();
+          }}
+          onBlur={() => setOpen(false)}
+          onChange={(event) => handleSearch(event.target.value)}
+          placeholder="Search parent SKU or product name"
+          className="w-full px-2 py-2 text-sm outline-none"
+        />
+      </div>
+
+      {open ? (
+        <div
+          className="mt-2 max-h-56 overflow-y-auto rounded-2xl border bg-slate-50 shadow-sm"
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {filteredParents.map((parent) => (
+            <button
+              key={parent.id}
+              type="button"
+              onClick={() => selectParent(parent)}
+              className={
+                "flex w-full flex-col items-start border-b px-4 py-3 text-left last:border-b-0 hover:bg-slate-100 " +
+                (parent.id === value ? "bg-slate-100" : "")
+              }
+            >
+              <span className="text-sm font-semibold text-slate-900">
+                {parent.sku}
+              </span>
+              <span className="text-xs text-slate-500">{parent.name}</span>
+            </button>
+          ))}
+
+          {!filteredParents.length ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              No Product Parent found.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function AdsCostSyncClient({
@@ -529,22 +667,13 @@ export default function AdsCostSyncClient({
                     </td>
                     <Td>{amount(campaign.spend, campaign.account.currency)}</Td>
                     <td className="px-4 py-4">
-                      <select
+                      <SearchableParentPicker
+                        parents={parents}
                         value={draft.productParentId}
-                        onChange={(event) =>
-                          patchDraft(campaign.id, {
-                            productParentId: event.target.value,
-                          })
+                        onChange={(productParentId) =>
+                          patchDraft(campaign.id, { productParentId })
                         }
-                        className="w-64 rounded-xl border px-3 py-2 text-sm"
-                      >
-                        <option value="">Select Product Parent</option>
-                        {parents.map((parent) => (
-                          <option key={parent.id} value={parent.id}>
-                            {parent.sku} - {parent.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
                     <td className="px-4 py-4">
                       <div className="max-h-40 w-64 overflow-y-auto rounded-xl border p-2">

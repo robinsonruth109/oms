@@ -1,123 +1,75 @@
-const META_ADS_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-const META_ADS_FIXED_HOUR = 2;
+const SCHEDULER_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 declare global {
-  var __omsMetaAdsHttpSchedulerStarted: boolean | undefined;
-  var __omsMetaAdsLastTriggeredBusinessDate: string | undefined;
+  var __omsInternalSchedulerStarted: boolean | undefined;
 }
 
-function bangladeshClock(now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value])
-  );
-
-  return {
-    date: `${values.year}-${values.month}-${values.day}`,
-    hour: Number(values.hour),
-    minute: Number(values.minute),
-  };
-}
-
-async function triggerMetaAdsAutoSync() {
-  if (
-    process.env.NODE_ENV !== "production" ||
-    !process.env.META_ADS_APP_ID?.trim() ||
-    !process.env.META_ADS_APP_SECRET?.trim()
-  ) {
+async function triggerInternalScheduler() {
+  if (process.env.NODE_ENV !== "production") {
     return;
   }
 
-  const now = bangladeshClock();
+  const secret =
+    process.env.INTERNAL_SCHEDULER_SECRET?.trim() ||
+    process.env.SHOP_SETTINGS_ENCRYPTION_KEY?.trim();
 
-  if (now.hour < META_ADS_FIXED_HOUR) {
-    return;
-  }
-
-  if (globalThis.__omsMetaAdsLastTriggeredBusinessDate === now.date) {
+  if (!secret) {
+    console.error(
+      "[OMSScheduler] INTERNAL_SCHEDULER_SECRET or SHOP_SETTINGS_ENCRYPTION_KEY is required."
+    );
     return;
   }
 
   const port = process.env.PORT || "3000";
-  const endpoint = `http://127.0.0.1:${port}/api/meta-ads/auto-sync`;
+  const endpoint = `http://127.0.0.1:${port}/api/internal/scheduler`;
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${process.env.META_ADS_APP_SECRET}`,
+        authorization: `Bearer ${secret}`,
       },
       cache: "no-store",
     });
 
-    const payload = (await response.json().catch(() => null)) as
-      | { complete?: boolean; message?: string }
-      | null;
-
-    if (response.ok && payload?.complete) {
-      globalThis.__omsMetaAdsLastTriggeredBusinessDate = now.date;
-    }
-
     if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+
       console.error(
-        "[MetaAdsScheduler] Auto-sync endpoint failed:",
+        "[OMSScheduler] Internal scheduler endpoint failed:",
         response.status,
         payload?.message || response.statusText
       );
     }
   } catch (error) {
-    console.error("[MetaAdsScheduler] Auto-sync request failed:", error);
+    console.error("[OMSScheduler] Internal scheduler request failed:", error);
   }
-}
-
-function startMetaAdsHttpScheduler() {
-  if (
-    process.env.NODE_ENV !== "production" ||
-    globalThis.__omsMetaAdsHttpSchedulerStarted
-  ) {
-    return;
-  }
-
-  globalThis.__omsMetaAdsHttpSchedulerStarted = true;
-
-  setTimeout(() => {
-    void triggerMetaAdsAutoSync();
-  }, 30_000);
-
-  const timer = setInterval(() => {
-    void triggerMetaAdsAutoSync();
-  }, META_ADS_CHECK_INTERVAL_MS);
-
-  timer.unref?.();
-
-  console.info(
-    "[MetaAdsScheduler] Started. Fixed schedule: after 2:00 AM Asia/Dhaka; syncs the last 3 completed days."
-  );
 }
 
 export async function register() {
   if (
     process.env.NEXT_RUNTIME !== "nodejs" ||
-    process.env.NODE_ENV !== "production"
+    process.env.NODE_ENV !== "production" ||
+    globalThis.__omsInternalSchedulerStarted
   ) {
     return;
   }
 
-  const { startReadyOrderSheetScheduler } = await import(
-    "@/lib/google-sheets/scheduler"
-  );
+  globalThis.__omsInternalSchedulerStarted = true;
 
-  startReadyOrderSheetScheduler();
-  startMetaAdsHttpScheduler();
+  setTimeout(() => {
+    void triggerInternalScheduler();
+  }, 30_000);
+
+  const timer = setInterval(() => {
+    void triggerInternalScheduler();
+  }, SCHEDULER_CHECK_INTERVAL_MS);
+
+  timer.unref?.();
+
+  console.info(
+    "[OMSScheduler] Started. Ready Order Sheet: 10:30 PM; Meta Ads: after 2:00 AM Asia/Dhaka."
+  );
 }

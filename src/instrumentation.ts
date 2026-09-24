@@ -3,9 +3,12 @@ export async function register() {
     return;
   }
 
-  const { startReadyOrderSheetScheduler } = await import(
-    "@/lib/google-sheets/scheduler"
-  );
+  const [{ startReadyOrderSheetScheduler }, { startMetaAdsScheduler }] =
+    await Promise.all([
+      import("@/lib/google-sheets/scheduler"),
+      import("@/lib/meta-ads/scheduler"),
+    ]);
 
   startReadyOrderSheetScheduler();
+  startMetaAdsScheduler();
 }

@@ -24,7 +24,7 @@ export type MetaCampaignInsight = {
 };
 
 export function metaGraphVersion() {
-  return process.env.META_ADS_GRAPH_VERSION?.trim() || "v26.0";
+  return (\n    process.env.META_ADS_GRAPH_VERSION?.trim() ||\n    process.env.FB_GRAPH_VERSION?.trim() ||\n    "v23.0"\n  );
 }
 
 export function metaRedirectUri(origin: string) {

@@ -117,6 +117,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/finance/daily-costing", label: "Daily Costing", icon: ReceiptText, roles: ["ADMIN"] },
       { href: "/dashboard/finance/salary", label: "Salary Management", icon: CircleDollarSign, roles: ["ADMIN"] },
       { href: "/dashboard/finance/my-salary", label: "My Salary", icon: CircleDollarSign, roles: ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT"] },
+      { href: "/dashboard/ads-cost/sync", label: "Ads Cost Sync", icon: Megaphone, roles: ["ADMIN"] },
       { href: "/dashboard/ads-cost/report", label: "Ads Cost Report", icon: Megaphone, roles: ["ADMIN"] },
       { href: "/dashboard/ads-cost/upload", label: "Ads Cost Upload", icon: FileSpreadsheet, roles: ["ADMIN"] },
       { href: "/dashboard/doller-rates", label: "Dollar Rates", icon: CircleDollarSign, roles: ["ADMIN"] },

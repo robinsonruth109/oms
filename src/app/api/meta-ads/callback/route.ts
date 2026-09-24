@@ -12,6 +12,7 @@ import {
 } from "@/lib/meta-ads/client";
 import { encryptSecret } from "@/lib/shop-settings-crypto";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function target(request: NextRequest, params: Record<string, string>) {
@@ -79,55 +80,72 @@ export async function GET(request: NextRequest) {
 
     const { prisma } = await import("@/lib/prisma");
 
-    await prisma.$transaction(async (tx) => {
-      const connection = await tx.metaAdsConnection.upsert({
-        where: { metaUserId: metaUser.id },
+    // Commit the parent connection first. With Prisma's MariaDB driver adapter,
+    // creating the connection and child ad-account rows inside one interactive
+    // transaction can surface a false FK violation on connectionId.
+    const connection = await prisma.metaAdsConnection.upsert({
+      where: { metaUserId: metaUser.id },
+      create: {
+        metaUserId: metaUser.id,
+        metaUserName: metaUser.name || null,
+        accessTokenEncrypted: encrypted.encrypted,
+        accessTokenIv: encrypted.iv,
+        accessTokenTag: encrypted.tag,
+        tokenExpiresAt,
+        status: true,
+        lastSyncStatus: "CONNECTED",
+        lastSyncMessage: adAccounts.length + " accessible ad account(s) found.",
+      },
+      update: {
+        metaUserName: metaUser.name || null,
+        accessTokenEncrypted: encrypted.encrypted,
+        accessTokenIv: encrypted.iv,
+        accessTokenTag: encrypted.tag,
+        tokenExpiresAt,
+        status: true,
+        lastSyncStatus: "CONNECTED",
+        lastSyncMessage: adAccounts.length + " accessible ad account(s) found.",
+      },
+      select: { id: true },
+    });
+
+    // Re-read after the upsert so the parent row is definitely visible to the
+    // following independent statements before child rows reference it.
+    const persistedConnection = await prisma.metaAdsConnection.findUniqueOrThrow({
+      where: { id: connection.id },
+      select: { id: true },
+    });
+
+    for (const account of adAccounts) {
+      const metaAccountId = String(
+        account.account_id || account.id.replace(/^act_/, "")
+      );
+
+      await prisma.metaAdAccount.upsert({
+        where: { metaAccountId },
         create: {
-          metaUserId: metaUser.id,
-          metaUserName: metaUser.name || null,
-          accessTokenEncrypted: encrypted.encrypted,
-          accessTokenIv: encrypted.iv,
-          accessTokenTag: encrypted.tag,
-          tokenExpiresAt,
-          status: true,
-          lastSyncStatus: "CONNECTED",
-          lastSyncMessage: adAccounts.length + " accessible ad account(s) found.",
+          connection: {
+            connect: { id: persistedConnection.id },
+          },
+          metaAccountId,
+          name: account.name || "Meta Ad Account " + metaAccountId,
+          currency: account.currency || "USD",
+          timezoneName: account.timezone_name || null,
+          accountStatus: account.account_status ?? null,
+          enabled: true,
         },
         update: {
-          metaUserName: metaUser.name || null,
-          accessTokenEncrypted: encrypted.encrypted,
-          accessTokenIv: encrypted.iv,
-          accessTokenTag: encrypted.tag,
-          tokenExpiresAt,
-          status: true,
-          lastSyncStatus: "CONNECTED",
-          lastSyncMessage: adAccounts.length + " accessible ad account(s) found.",
+          connection: {
+            connect: { id: persistedConnection.id },
+          },
+          name: account.name || "Meta Ad Account " + metaAccountId,
+          currency: account.currency || "USD",
+          timezoneName: account.timezone_name || null,
+          accountStatus: account.account_status ?? null,
+          enabled: true,
         },
       });
-
-      for (const account of adAccounts) {
-        const metaAccountId = String(account.account_id || account.id.replace(/^act_/, ""));
-        await tx.metaAdAccount.upsert({
-          where: { metaAccountId },
-          create: {
-            connectionId: connection.id,
-            metaAccountId,
-            name: account.name || "Meta Ad Account " + metaAccountId,
-            currency: account.currency || "USD",
-            timezoneName: account.timezone_name || null,
-            accountStatus: account.account_status ?? null,
-            enabled: true,
-          },
-          update: {
-            connectionId: connection.id,
-            name: account.name || "Meta Ad Account " + metaAccountId,
-            currency: account.currency || "USD",
-            timezoneName: account.timezone_name || null,
-            accountStatus: account.account_status ?? null,
-          },
-        });
-      }
-    });
+    }
 
     return NextResponse.redirect(
       target(request, {

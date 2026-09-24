@@ -6,12 +6,15 @@ export async function register() {
     return;
   }
 
-  const [{ startReadyOrderSheetScheduler }, { startMetaAdsScheduler }] =
-    await Promise.all([
-      import("@/lib/google-sheets/scheduler"),
-      import("@/lib/meta-ads/scheduler"),
-    ]);
-
+  // Load sequentially. Instrumentation is a special Next.js server bundle,
+  // and sequential imports avoid loader races during startup.
+  const { startReadyOrderSheetScheduler } = await import(
+    "@/lib/google-sheets/scheduler"
+  );
   startReadyOrderSheetScheduler();
+
+  const { startMetaAdsScheduler } = await import(
+    "@/lib/meta-ads/scheduler"
+  );
   startMetaAdsScheduler();
 }

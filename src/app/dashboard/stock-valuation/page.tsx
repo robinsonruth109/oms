@@ -1,3 +1,4 @@
+import Link from "next/link";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -79,10 +80,20 @@ export default async function StockValuationPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Stock Valuation</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Physical inventory value from the actual stock owner. Parent Stock is valued once at parent level; Variation Stock is valued per child SKU.
-        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Stock Valuation</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Physical inventory value from the actual stock owner. Parent Stock is valued once at parent level; Variation Stock is valued per child SKU.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/damage-products"
+            className="inline-flex rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700"
+          >
+            Damage Product Entry
+          </Link>
+        </div>
       </section>
 
       <div className="grid gap-4 sm:grid-cols-2">

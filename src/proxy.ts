@@ -25,6 +25,8 @@ function isAllowed(pathname: string, role: string) {
       pathname.startsWith("/dashboard/ready-date-shift/") ||
       pathname === "/dashboard/stock-out" ||
       pathname.startsWith("/dashboard/stock-out/") ||
+      pathname === "/dashboard/damage-products" ||
+      pathname.startsWith("/dashboard/damage-products/") ||
       pathname === "/dashboard/pathao-return-track" ||
       pathname.startsWith("/dashboard/pathao-return-track/") ||
       pathname === "/dashboard/pathao-daily-report" ||

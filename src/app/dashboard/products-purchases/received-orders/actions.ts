@@ -121,8 +121,19 @@ export async function createReceivedOrder(
 
     const totalCnfCharge = packageWeight * cnfRatePerKg;
 
+    // Allocate the paid purchase value proportionally to this physical
+    // receiving batch. Reusing the entire PO payment on every partial receipt
+    // would overstate landed cost and stock valuation.
+    const purchasePaidPerUnit =
+      Number(purchaseOrder.quantity) > 0
+        ? totalPaidBdt / Number(purchaseOrder.quantity)
+        : 0;
+
+    const allocatedPaidAmountBdt =
+      purchasePaidPerUnit * receivedQty;
+
     const grandTotalBdt =
-      totalPaidBdt + otherCostBdt + totalCnfCharge;
+      allocatedPaidAmountBdt + otherCostBdt + totalCnfCharge;
 
     const originalUnitPrice =
       receivedQty > 0 ? grandTotalBdt / receivedQty : 0;
@@ -139,7 +150,7 @@ export async function createReceivedOrder(
           cnfRatePerKg,
           totalCnfCharge,
           otherCostBdt,
-          paidAmountBdt: totalPaidBdt,
+          paidAmountBdt: allocatedPaidAmountBdt,
           grandTotalBdt,
           unitOriginalCost: originalUnitPrice,
           note,

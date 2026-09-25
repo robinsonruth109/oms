@@ -61,7 +61,7 @@ function isCallingStatus(status: string) {
 async function getAuthorizedSession() {
   const session = await getServerSession(authOptions);
 
-  if (!session || !["ADMIN", "MANAGER", "AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "AGENT"].includes(session.user.role)) {
     return null;
   }
 

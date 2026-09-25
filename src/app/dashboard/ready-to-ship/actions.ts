@@ -782,6 +782,8 @@ export async function pushAllToAssignedCouriers(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/stock-control");
+    revalidatePath("/dashboard/products");
 
     const summary = [
       `${submittedCount} submitted`,

@@ -38,6 +38,16 @@ type Props = {
   hideCollectionHeader?: boolean;
 };
 
+const MAX_ORDER_QUANTITY = 99;
+
+function hasStockWarning(product: StorefrontProduct["product"]) {
+  return (
+    product.stockTrackingActive &&
+    product.stockQuantity !== null &&
+    product.stockQuantity <= 0
+  );
+}
+
 function money(value: string | number) {
   return new Intl.NumberFormat("bn-BD", {
     style: "currency",
@@ -184,10 +194,14 @@ function ProductDetailView({
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <p className="text-3xl font-bold text-orange-600">{money(item.product.sellingPrice)}</p>
-              {item.product.quantity > 0 ? (
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">In stock</span>
+              {hasStockWarning(item.product) ? (
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700">
+                  Stock confirmation required
+                </span>
               ) : (
-                <span className="rounded-full bg-red-50 px-3 py-1 text-sm font-semibold text-red-700">Out of stock</span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
+                  Available to order
+                </span>
               )}
             </div>
 
@@ -208,7 +222,7 @@ function ProductDetailView({
                   <strong className="min-w-8 text-center text-lg">{quantity}</strong>
                   <button
                     type="button"
-                    onClick={() => setQuantity((current) => Math.min(Math.max(1, item.product.quantity), current + 1))}
+                    onClick={() => setQuantity((current) => Math.min(MAX_ORDER_QUANTITY, current + 1))}
                     className="rounded-lg p-3 text-slate-700 transition hover:bg-slate-100"
                     aria-label="Increase quantity"
                   >
@@ -219,8 +233,7 @@ function ProductDetailView({
                 <button
                   type="button"
                   onClick={onOrder}
-                  disabled={item.product.quantity <= 0}
-                  className="hidden h-14 flex-1 items-center justify-center gap-3 rounded-xl bg-orange-600 px-6 text-lg font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none sm:flex"
+                  className="hidden h-14 flex-1 items-center justify-center gap-3 rounded-xl bg-orange-600 px-6 text-lg font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-700 sm:flex"
                 >
                   <ShoppingBag className="h-5 w-5" />
                   অর্ডার করুন
@@ -256,7 +269,15 @@ function ProductDetailView({
                 <PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
                 <div>
                   <p className="font-semibold text-slate-900">Product code: {item.product.sku}</p>
-                  <p className="mt-1 text-sm text-slate-500">Available quantity: {item.product.quantity}</p>
+                  <p className={`mt-1 text-sm ${
+                    hasStockWarning(item.product)
+                      ? "font-semibold text-amber-700"
+                      : "text-slate-500"
+                  }`}>
+                    {hasStockWarning(item.product)
+                      ? "Stock is low, but you can still place the order for confirmation."
+                      : "Order availability will be confirmed by our team."}
+                  </p>
                 </div>
               </div>
             </div>
@@ -530,7 +551,10 @@ export default function StorefrontClient({
   };
 
   const openCheckout = (product: StorefrontProduct, initialQty = 1) => {
-    const safeQuantity = Math.max(1, Math.min(initialQty, Math.max(1, product.product.quantity)));
+    const safeQuantity = Math.max(
+      1,
+      Math.min(initialQty, MAX_ORDER_QUANTITY)
+    );
     setSelected(product);
     setQuantity(safeQuantity);
     setError("");
@@ -678,7 +702,7 @@ export default function StorefrontClient({
       <div className={displayMode === "collection" ? "grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4" : "grid justify-center gap-8 [grid-template-columns:repeat(auto-fit,minmax(300px,370px))]"}>
         {visibleProducts.map((item) => {
           const image = getImage(item);
-          const inStock = item.product.quantity > 0;
+          const stockWarning = hasStockWarning(item.product);
 
           return (
             <article
@@ -707,10 +731,10 @@ export default function StorefrontClient({
                 </div>
                 <div
                   className={`absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs font-bold shadow-sm backdrop-blur ${
-                    inStock ? "bg-emerald-500/95 text-white" : "bg-red-500/95 text-white"
+                    stockWarning ? "bg-amber-500/95 text-white" : "bg-emerald-500/95 text-white"
                   }`}
                 >
-                  {inStock ? "স্টকে আছে" : "স্টক শেষ"}
+                  {stockWarning ? "স্টক যাচাই হবে" : "অর্ডার নেওয়া হচ্ছে"}
                 </div>
               </Link>
 
@@ -737,11 +761,10 @@ export default function StorefrontClient({
                   <button
                     type="button"
                     onClick={() => openCheckout(item)}
-                    disabled={!inStock}
-                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 font-black text-white shadow-lg shadow-orange-200 transition hover:bg-orange-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 font-black text-white shadow-lg shadow-orange-200 transition hover:bg-orange-700 active:scale-[0.98]"
                   >
                     <ShoppingBag className="h-4 w-4" />
-                    {inStock ? "অর্ডার করুন" : "স্টক শেষ"}
+                    অর্ডার করুন
                   </button>
                   <Link
                     href={`/product/${encodeURIComponent(item.product.sku)}`}
@@ -825,7 +848,7 @@ export default function StorefrontClient({
               className="relative h-[100svh] snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               {visibleProducts.map((item, index) => {
-                const inStock = item.product.quantity > 0;
+                const stockWarning = hasStockWarning(item.product);
                 const isLoaded = loadedMobileVideos.has(item.reelId);
                 const isActive = index === activeMobileIndex;
                 const shouldMountVideo =
@@ -967,11 +990,10 @@ export default function StorefrontClient({
                         <button
                           type="button"
                           onClick={() => openCheckout(item)}
-                          disabled={!inStock}
-                          className="inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3.5 text-base font-black text-white shadow-[0_10px_30px_rgba(234,88,12,0.4)] transition active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-slate-500 disabled:shadow-none"
+                          className="inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3.5 text-base font-black text-white shadow-[0_10px_30px_rgba(234,88,12,0.4)] transition active:scale-[0.97]"
                         >
                           <ShoppingBag className="h-5 w-5" />
-                          {inStock ? "অর্ডার করুন" : "স্টক শেষ"}
+                          অর্ডার করুন
                         </button>
 
                         <Link
@@ -1030,11 +1052,10 @@ export default function StorefrontClient({
           <button
             type="button"
             onClick={() => openCheckout(products[0], quantity)}
-            disabled={products[0].product.quantity <= 0}
-            className="flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-orange-600 px-6 text-lg font-black text-white shadow-lg shadow-orange-200 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+            className="flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-orange-600 px-6 text-lg font-black text-white shadow-lg shadow-orange-200 transition active:scale-[0.99]"
           >
             <ShoppingBag className="h-5 w-5" />
-            {products[0].product.quantity > 0 ? "অর্ডার করুন" : "স্টক শেষ"}
+            অর্ডার করুন
           </button>
         </div>
       )}
@@ -1079,7 +1100,11 @@ export default function StorefrontClient({
                     <strong>{quantity}</strong>
                     <button
                       type="button"
-                      onClick={() => setQuantity((current) => Math.min(selected.product.quantity, current + 1))}
+                      onClick={() =>
+                        setQuantity((current) =>
+                          Math.min(MAX_ORDER_QUANTITY, current + 1)
+                        )
+                      }
                       className="rounded-lg border p-2"
                     >
                       <Plus className="h-4 w-4" />

@@ -121,7 +121,8 @@ export async function createProduct(
           sku,
           slug: buildProductSlug(sku),
           name: name || sku,
-          quantity,
+          quantity: 1,
+          unitsPerSale: quantity,
           purchasePrice,
           sellingPrice,
           status: true,
@@ -218,7 +219,7 @@ export async function updateProduct(
           sku,
           slug: buildProductSlug(sku),
           name: name || sku,
-          quantity,
+          unitsPerSale: quantity,
           purchasePrice,
           sellingPrice,
           status,
@@ -286,6 +287,7 @@ export async function importProductsCsv(
     let sellIndex = 2;
     let parentIndex = 3;
     let quantityIndex = 4;
+    let unitsPerSaleIndex = -1;
 
     const firstRow = rows[0].map((cell) => String(cell || "").trim().toLowerCase());
 
@@ -298,7 +300,18 @@ export async function importProductsCsv(
     if (hasHeader) {
       startIndex = 1;
       const foundSku = firstRow.findIndex((cell) => cell.includes("sku"));
-      const foundQuantity = firstRow.findIndex((cell) => cell.includes("qty") || cell.includes("quantity"));
+      const foundQuantity = firstRow.findIndex(
+        (cell) =>
+          (cell.includes("qty") || cell.includes("quantity")) &&
+          !cell.includes("unit")
+      );
+      const foundUnitsPerSale = firstRow.findIndex(
+        (cell) =>
+          cell.includes("units per sale") ||
+          cell.includes("units/sale") ||
+          cell.includes("units_per_sale") ||
+          cell.includes("stock consumption")
+      );
       const foundPurchase = firstRow.findIndex((cell) => cell.includes("purchase"));
       const foundSell = firstRow.findIndex((cell) => cell.includes("sell"));
       const foundParent = firstRow.findIndex((cell) => cell.includes("parent"));
@@ -308,6 +321,7 @@ export async function importProductsCsv(
       if (foundSell >= 0) sellIndex = foundSell;
       if (foundParent >= 0) parentIndex = foundParent;
       if (foundQuantity >= 0) quantityIndex = foundQuantity;
+      if (foundUnitsPerSale >= 0) unitsPerSaleIndex = foundUnitsPerSale;
     }
 
     let importedCount = 0;
@@ -322,6 +336,10 @@ export async function importProductsCsv(
         const purchasePrice = toMoney(row[purchaseIndex]);
         const sellingPrice = toMoney(row[sellIndex]);
         const quantity = Number(row[quantityIndex] || 1);
+        const importedUnitsPerSale =
+          unitsPerSaleIndex >= 0
+            ? Number(row[unitsPerSaleIndex] || 0)
+            : 0;
         const parentSku = String(row[parentIndex] || "").trim();
 
         if (!sku) {
@@ -350,7 +368,10 @@ export async function importProductsCsv(
               name: existingProduct.name || sku,
               purchasePrice,
               sellingPrice,
-              quantity: quantity > 0 ? quantity : 1,
+              quantity: quantity > 0 ? quantity : existingProduct.quantity,
+              ...(importedUnitsPerSale > 0
+                ? { unitsPerSale: Math.trunc(importedUnitsPerSale) }
+                : {}),
               status: true,
             },
           });
@@ -366,6 +387,10 @@ export async function importProductsCsv(
               purchasePrice,
               sellingPrice,
               quantity: quantity > 0 ? quantity : 1,
+              unitsPerSale:
+                importedUnitsPerSale > 0
+                  ? Math.trunc(importedUnitsPerSale)
+                  : null,
               status: true,
             },
           });

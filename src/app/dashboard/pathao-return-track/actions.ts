@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { restoreReturnedStock } from "@/lib/inventory";
 import {
   searchAllPathaoCouriersForConsignment,
   type PathaoReturnCourierMatch,
@@ -269,10 +270,6 @@ async function processReturn({
       });
 
       const newOmsStatus = isFullReturn ? "RETURNED" : "PARTIAL_RETURN";
-      const totalRestoredQty = [...selectedMap.values()].reduce(
-        (sum, qty) => sum + qty,
-        0
-      );
 
       const track = await tx.pathaoReturnTrack.create({
         data: {
@@ -286,7 +283,7 @@ async function processReturn({
           previousOmsStatus: order.orderStatus,
           newOmsStatus,
           returnType: isFullReturn ? "FULL" : "PARTIAL",
-          totalRestoredQty,
+          totalRestoredQty: 0,
           processingMethod: method,
           rawPathaoResponse: serializeRawInfo(match.info),
           processedByUserId: user.id,
@@ -298,56 +295,43 @@ async function processReturn({
         name: string;
         quantity: number;
       }[] = [];
+      let totalRestoredQty = 0;
 
       for (const [orderItemId, returnedQty] of selectedMap) {
         const item = orderItemMap.get(orderItemId)!;
+        const restored = await restoreReturnedStock(
+          tx,
+          item.id,
+          returnedQty
+        );
 
-        let product = item.productId
-          ? await tx.product.findUnique({ where: { id: item.productId } })
-          : null;
-
-        if (!product) {
-          product = await tx.product.findUnique({
-            where: { sku: item.productSku },
-          });
-        }
-
-        if (!product) {
-          throw new ReturnProcessError(
-            "ERROR",
-            `Product ${item.productSku} is not linked to Product Master, so stock cannot be restored safely.`
-          );
-        }
-
-        const stockBefore = product.quantity;
-        const updatedProduct = await tx.product.update({
-          where: { id: product.id },
-          data: {
-            quantity: { increment: returnedQty },
-          },
-          select: { quantity: true },
-        });
+        totalRestoredQty += restored.restoredUnits;
 
         await tx.pathaoReturnItem.create({
           data: {
             returnTrackId: track.id,
             orderItemId: item.id,
-            productId: product.id,
+            productId: restored.productId,
             productSkuSnapshot: item.productSku,
             productNameSnapshot: item.productName,
             orderedQty: item.quantity,
             returnedQty,
-            stockBefore,
-            stockAfter: updatedProduct.quantity,
+            stockBefore: restored.stockBefore,
+            stockAfter: restored.stockAfter,
           },
         });
 
         restoredItems.push({
           sku: item.productSku,
           name: item.productName,
-          quantity: returnedQty,
+          quantity: restored.restoredUnits,
         });
       }
+
+      await tx.pathaoReturnTrack.update({
+        where: { id: track.id },
+        data: { totalRestoredQty },
+      });
 
       await tx.order.update({
         where: { id: order.id },
@@ -390,6 +374,7 @@ async function processReturn({
     revalidatePath("/dashboard/all-orders");
     revalidatePath(`/dashboard/all-orders/${orderId}`);
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
     revalidatePath("/dashboard/reports");
     revalidatePath("/dashboard/product-report");
     revalidatePath("/dashboard/pathao-daily-report");

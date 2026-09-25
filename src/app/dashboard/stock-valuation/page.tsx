@@ -1,0 +1,128 @@
+import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function money(value: number) {
+  return new Intl.NumberFormat("en-BD", {
+    style: "currency",
+    currency: "BDT",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+export default async function StockValuationPage() {
+  const parents = await prisma.productParent.findMany({
+    include: {
+      products: {
+        where: { status: true },
+        orderBy: { sku: "asc" },
+      },
+    },
+    orderBy: { sku: "asc" },
+  });
+
+  const rows: Array<{
+    key: string;
+    parentSku: string;
+    sku: string;
+    name: string;
+    mode: string;
+    quantity: number;
+    unitCost: number;
+    value: number;
+    unitsPerSale: string;
+  }> = [];
+
+  for (const parent of parents) {
+    if (parent.stockMode === "PARENT_STOCK") {
+      const quantity = Number(parent.stockQuantity || 0);
+      const unitCost = Number(parent.purchasePrice || 0);
+      rows.push({
+        key: `parent-${parent.id}`,
+        parentSku: parent.sku,
+        sku: parent.products.map((product) => product.sku).join(", ") || "—",
+        name: parent.name,
+        mode: "Parent Stock",
+        quantity,
+        unitCost,
+        value: quantity * unitCost,
+        unitsPerSale:
+          parent.products.map((product) => `${product.sku}: ${product.unitsPerSale}`).join(" · ") || "—",
+      });
+      continue;
+    }
+
+    for (const product of parent.products) {
+      const quantity = Number(product.quantity || 0);
+      const unitCost = Number(product.purchasePrice || 0);
+      rows.push({
+        key: product.id,
+        parentSku: parent.sku,
+        sku: product.sku,
+        name: product.name,
+        mode: "Variation Stock",
+        quantity,
+        unitCost,
+        value: quantity * unitCost,
+        unitsPerSale: String(product.unitsPerSale),
+      });
+    }
+  }
+
+  const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
+  const totalUnits = rows.reduce((sum, row) => sum + row.quantity, 0);
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+        <h1 className="text-2xl font-bold text-slate-900">Stock Valuation</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Physical inventory value from the actual stock owner. Parent Stock is valued once at parent level; Variation Stock is valued per child SKU.
+        </p>
+      </section>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Physical stock units</p>
+          <p className="mt-2 text-3xl font-bold text-slate-900">{totalUnits.toLocaleString("en-BD")}</p>
+        </div>
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Inventory purchase value</p>
+          <p className="mt-2 text-3xl font-bold text-slate-900">{money(totalValue)}</p>
+        </div>
+      </div>
+
+      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead className="bg-slate-50">
+              <tr className="border-b">
+                {["Parent", "SKU / Children", "Name", "Mode", "Units / Sale", "Stock", "Unit Cost", "Stock Value"].map((label) => (
+                  <th key={label} className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key} className="border-b last:border-b-0">
+                  <td className="px-5 py-4 text-sm font-semibold text-slate-900">{row.parentSku}</td>
+                  <td className="max-w-xs px-5 py-4 text-sm text-slate-700">{row.sku}</td>
+                  <td className="px-5 py-4 text-sm text-slate-700">{row.name}</td>
+                  <td className="px-5 py-4 text-sm text-slate-700">{row.mode}</td>
+                  <td className="max-w-sm px-5 py-4 text-sm text-slate-700">{row.unitsPerSale}</td>
+                  <td className="px-5 py-4 text-sm font-medium text-slate-900">{row.quantity.toLocaleString("en-BD")}</td>
+                  <td className="px-5 py-4 text-sm text-slate-700">{money(row.unitCost)}</td>
+                  <td className="px-5 py-4 text-sm font-semibold text-slate-900">{money(row.value)}</td>
+                </tr>
+              ))}
+              {!rows.length ? (
+                <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-500">No active inventory found.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}

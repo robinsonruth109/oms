@@ -15,6 +15,16 @@ function buildProductSlug(sku: string) {
   return sku.trim().toLowerCase();
 }
 
+function toNonNegativeInt(value: unknown, fallback = 0) {
+  const numberValue = Math.floor(Number(value ?? fallback));
+  return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : fallback;
+}
+
+function toPositiveInt(value: unknown, fallback = 1) {
+  const numberValue = Math.floor(Number(value ?? fallback));
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback;
+}
+
 function toMoney(value: unknown) {
   const raw = String(value ?? "")
     .replace(/,/g, "")
@@ -42,7 +52,13 @@ async function ensureAdmin() {
 async function findOrCreateParent(
   tx: any,
   parentSku: string,
-  parentName?: string
+  parentName?: string,
+  inventory?: {
+    stockMode: "VARIANT_STOCK" | "PARENT_STOCK";
+    stockQuantity: number;
+    purchasePrice: number;
+    updateExisting: boolean;
+  }
 ) {
   const existingParent = await tx.productParent.findUnique({
     where: {
@@ -51,13 +67,32 @@ async function findOrCreateParent(
   });
 
   if (existingParent) {
-    return existingParent;
+    if (!inventory?.updateExisting) return existingParent;
+
+    return tx.productParent.update({
+      where: { id: existingParent.id },
+      data: {
+        name: parentName?.trim() || existingParent.name,
+        stockMode: inventory.stockMode,
+        stockQuantity: inventory.stockQuantity,
+        purchasePrice:
+          inventory.stockMode === "PARENT_STOCK"
+            ? inventory.purchasePrice
+            : existingParent.purchasePrice,
+      },
+    });
   }
 
   return tx.productParent.create({
     data: {
       sku: parentSku,
       name: parentName?.trim() || parentSku,
+      stockMode: inventory?.stockMode || "VARIANT_STOCK",
+      stockQuantity: inventory?.stockQuantity || 0,
+      purchasePrice:
+        inventory?.stockMode === "PARENT_STOCK"
+          ? inventory.purchasePrice
+          : null,
       status: true,
     },
   });
@@ -74,7 +109,14 @@ export async function createProduct(
     const parentName = String(formData.get("parentName") || "").trim();
     const sku = String(formData.get("sku") || "").trim();
     const name = String(formData.get("name") || "").trim();
-    const quantity = Number(formData.get("quantity") || 1);
+    const stockMode =
+      String(formData.get("stockMode") || "VARIANT_STOCK") === "PARENT_STOCK"
+        ? "PARENT_STOCK"
+        : "VARIANT_STOCK";
+    const quantity = toNonNegativeInt(formData.get("quantity"), 0);
+    const unitsPerSale = toPositiveInt(formData.get("unitsPerSale"), 1);
+    const parentStockQuantity = toNonNegativeInt(formData.get("parentStockQuantity"), 0);
+    const parentPurchasePrice = toMoney(formData.get("parentPurchasePrice"));
     const purchasePrice = toMoney(formData.get("purchasePrice"));
     const sellingPrice = toMoney(formData.get("sellingPrice"));
 
@@ -85,14 +127,14 @@ export async function createProduct(
       };
     }
 
-    if (quantity <= 0) {
+    if (quantity < 0 || unitsPerSale <= 0 || parentStockQuantity < 0) {
       return {
         success: false,
-        message: "Quantity must be greater than 0.",
+        message: "Stock values cannot be negative and units per sale must be at least 1.",
       };
     }
 
-    if (purchasePrice < 0 || sellingPrice < 0) {
+    if (purchasePrice < 0 || sellingPrice < 0 || parentPurchasePrice < 0) {
       return {
         success: false,
         message: "Prices cannot be negative.",
@@ -113,7 +155,12 @@ export async function createProduct(
     }
 
     await prisma.$transaction(async (tx) => {
-      const parent = await findOrCreateParent(tx, parentSku, parentName);
+      const parent = await findOrCreateParent(tx, parentSku, parentName, {
+        stockMode,
+        stockQuantity: parentStockQuantity,
+        purchasePrice: parentPurchasePrice,
+        updateExisting: false,
+      });
 
       await tx.product.create({
         data: {
@@ -122,6 +169,7 @@ export async function createProduct(
           slug: buildProductSlug(sku),
           name: name || sku,
           quantity,
+          unitsPerSale,
           purchasePrice,
           sellingPrice,
           status: true,
@@ -130,6 +178,7 @@ export async function createProduct(
     });
 
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
 
     return {
       success: true,
@@ -157,7 +206,14 @@ export async function updateProduct(
     const productId = String(formData.get("productId") || "").trim();
     const parentSku = String(formData.get("parentSku") || "").trim();
     const parentName = String(formData.get("parentName") || "").trim();
-    const quantity = Number(formData.get("quantity") || 1);
+    const stockMode =
+      String(formData.get("stockMode") || "VARIANT_STOCK") === "PARENT_STOCK"
+        ? "PARENT_STOCK"
+        : "VARIANT_STOCK";
+    const quantity = toNonNegativeInt(formData.get("quantity"), 0);
+    const unitsPerSale = toPositiveInt(formData.get("unitsPerSale"), 1);
+    const parentStockQuantity = toNonNegativeInt(formData.get("parentStockQuantity"), 0);
+    const parentPurchasePrice = toMoney(formData.get("parentPurchasePrice"));
     const sku = String(formData.get("sku") || "").trim();
     const name = String(formData.get("name") || "").trim();
     const purchasePrice = toMoney(formData.get("purchasePrice"));
@@ -170,10 +226,17 @@ export async function updateProduct(
         message: "Product ID, parent SKU and SKU are required.",
       };
     }
-    if (quantity <= 0) {
+    if (quantity < 0 || unitsPerSale <= 0 || parentStockQuantity < 0) {
       return {
         success: false,
-        message: "Quantity must be greater than 0.",
+        message: "Stock values cannot be negative and units per sale must be at least 1.",
+      };
+    }
+
+    if (purchasePrice < 0 || sellingPrice < 0 || parentPurchasePrice < 0) {
+      return {
+        success: false,
+        message: "Prices cannot be negative.",
       };
     }
 
@@ -207,7 +270,12 @@ export async function updateProduct(
     }
 
     await prisma.$transaction(async (tx) => {
-      const parent = await findOrCreateParent(tx, parentSku, parentName);
+      const parent = await findOrCreateParent(tx, parentSku, parentName, {
+        stockMode,
+        stockQuantity: parentStockQuantity,
+        purchasePrice: parentPurchasePrice,
+        updateExisting: true,
+      });
 
       await tx.product.update({
         where: {
@@ -219,6 +287,7 @@ export async function updateProduct(
           slug: buildProductSlug(sku),
           name: name || sku,
           quantity,
+          unitsPerSale,
           purchasePrice,
           sellingPrice,
           status,
@@ -227,6 +296,7 @@ export async function updateProduct(
     });
 
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
 
     return {
       success: true,
@@ -376,6 +446,7 @@ export async function importProductsCsv(
     });
 
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
 
     return {
       success: true,

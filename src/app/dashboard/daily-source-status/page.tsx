@@ -8,6 +8,9 @@ import {
   getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
 
+const ALL_PAGE_ORDER = "__ALL_PAGE_ORDER__";
+const ALL_WEB_ORDER = "__ALL_WEB_ORDER__";
+
 type PageProps = {
   searchParams?: Promise<{
     from?: string;
@@ -142,7 +145,32 @@ export default async function DailySourceStatusPage({
     },
   };
 
-  if (sourceId) {
+  const groupedSourceLabel =
+    sourceId === ALL_PAGE_ORDER
+      ? "All Page Order"
+      : sourceId === ALL_WEB_ORDER
+        ? "All Web Order"
+        : "";
+
+  if (sourceId === ALL_PAGE_ORDER) {
+    const pageSourceIds = sources
+      .filter((source) => source.type === "MANUAL")
+      .map((source) => source.id);
+
+    where.sourceId = {
+      in: pageSourceIds,
+    };
+  } else if (sourceId === ALL_WEB_ORDER) {
+    const webSourceIds = sources
+      .filter(
+        (source) => source.type === "SHOPIFY" || source.type === "LARAVEL"
+      )
+      .map((source) => source.id);
+
+    where.sourceId = {
+      in: webSourceIds,
+    };
+  } else if (sourceId) {
     where.sourceId = sourceId;
   }
 
@@ -205,8 +233,10 @@ export default async function DailySourceStatusPage({
 
     const parentCode = item.product?.parent?.sku || "N/A";
     const parentName = item.product?.parent?.name || "No Parent";
-    const sourceName = item.order.source.name;
-    const key = `${sourceName}__${parentCode}`;
+    const sourceName = groupedSourceLabel || item.order.source.name;
+    const key = groupedSourceLabel
+      ? `${groupedSourceLabel}__${parentCode}`
+      : `${sourceName}__${parentCode}`;
 
     if (!parentMap.has(key)) {
       parentMap.set(key, {

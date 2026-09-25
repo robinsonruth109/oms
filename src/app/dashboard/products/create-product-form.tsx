@@ -28,7 +28,7 @@ export default function CreateProductForm() {
         <p className="mt-1 text-sm text-slate-500">
           Search or type an existing parent SKU. If it does not exist, the
           system will create the parent automatically, then create the SKU under
-          it.
+          it. Units per Sale means how many physical stock units one sold SKU consumes.
         </p>
       </div>
 
@@ -89,9 +89,7 @@ export default function CreateProductForm() {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="quantity" className="text-sm font-medium text-slate-700">
-              Quantity
-            </label>
+            <label htmlFor="quantity" className="text-sm font-medium text-slate-700">Units per Sale</label>
             <input
               id="quantity"
               name="quantity"

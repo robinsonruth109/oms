@@ -9,6 +9,7 @@ type ReportChildRow = {
   adAccountId: string;
   currency: string;
   spendAmount: number;
+  spendUsd: number;
   spendBdt: number;
   dollarRate: number;
   metaPurchases: number;
@@ -31,8 +32,6 @@ type ReportRow = {
   totalOrders: number;
   confirmed: number;
   cancelled: number;
-  noAnswer: number;
-  phoneOff: number;
   confirmationRate: number;
   costPerOrderBdt: number;
   costPerConfirmedBdt: number;
@@ -43,6 +42,10 @@ type ReportRow = {
 
 function money(value: number) {
   return `৳ ${Number(value || 0).toFixed(2)}`;
+}
+
+function usd(value: number) {
+  return `$ ${Number(value || 0).toFixed(2)}`;
 }
 
 function currencyAmount(value: number, currency: string) {
@@ -93,7 +96,7 @@ export default function AdsCostPerformanceTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="min-w-[2050px] w-full">
+        <table className="min-w-[1900px] w-full">
           <thead className="bg-slate-50">
             <tr className="border-b">
               <Th>Product Parent</Th>
@@ -103,14 +106,13 @@ export default function AdsCostPerformanceTable({
               <Th center>Total Orders</Th>
               <Th center>Confirmed</Th>
               <Th center>Cancelled</Th>
-              <Th center>No Answer</Th>
-              <Th center>Phone Off</Th>
               <Th center>Confirm %</Th>
               <Th center>Meta Purchases</Th>
               <Th center>Purchase Price</Th>
               <Th center>Dollar Rate</Th>
               <Th center>Ads Spend</Th>
               <Th center>Ads Spend BDT</Th>
+              <Th center>Cost / Order USD</Th>
               <Th center>Cost / Order BDT</Th>
               <Th center>Cost / Confirmed BDT</Th>
             </tr>
@@ -169,8 +171,6 @@ export default function AdsCostPerformanceTable({
                     <Td center>{row.totalOrders}</Td>
                     <Td center>{row.confirmed}</Td>
                     <Td center>{row.cancelled}</Td>
-                    <Td center>{row.noAnswer}</Td>
-                    <Td center>{row.phoneOff}</Td>
                     <Td center>{row.confirmationRate.toFixed(2)}%</Td>
                     <Td center>
                       {row.metaPurchases == null
@@ -185,6 +185,11 @@ export default function AdsCostPerformanceTable({
                       {currencyAmount(row.spendAmount, row.currency)}
                     </Td>
                     <Td center>{money(row.spendBdt)}</Td>
+                    <Td center>
+                      {row.confirmed > 0
+                        ? usd(row.spendUsd / row.confirmed)
+                        : "$ 0.00"}
+                    </Td>
                     <Td center>{money(row.costPerOrderBdt)}</Td>
                     <Td center>{money(row.costPerConfirmedBdt)}</Td>
                   </tr>
@@ -214,7 +219,7 @@ export default function AdsCostPerformanceTable({
                         <td className="px-5 py-4 text-sm text-slate-500">
                           Same group mapping
                         </td>
-                        <Dash /><Dash /><Dash /><Dash /><Dash /><Dash />
+                        <Dash /><Dash /><Dash /><Dash />
                         <Td center>{metaCount(child.metaPurchases)}</Td>
                         <Dash />
                         <Td center>
@@ -226,7 +231,7 @@ export default function AdsCostPerformanceTable({
                           {currencyAmount(child.spendAmount, child.currency)}
                         </Td>
                         <Td center>{money(child.spendBdt)}</Td>
-                        <Dash /><Dash />
+                        <Dash /><Dash /><Dash />
                       </tr>
                     ))}
                 </Fragment>
@@ -236,7 +241,7 @@ export default function AdsCostPerformanceTable({
             {!rows.length ? (
               <tr>
                 <td
-                  colSpan={17}
+                  colSpan={16}
                   className="px-6 py-10 text-center text-sm text-slate-500"
                 >
                   {dataSource === "META"

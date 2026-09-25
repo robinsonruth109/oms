@@ -266,50 +266,76 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
         </form>
       </section>
 
-      <section className="grid grid-cols-2 gap-4 xl:grid-cols-7">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Ready Memo Total</p>
-          <p className="mt-2 text-2xl font-bold">{totalOrders}</p>
+      <section className="space-y-4">
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <div className="min-h-[138px] rounded-2xl border border-sky-100 bg-sky-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-sky-700">Ready Memo Total</p>
+            <p className="mt-3 text-3xl font-bold text-sky-950">{totalOrders}</p>
+            <p className="mt-2 text-xs text-sky-600">All RTS memo in selected filter</p>
+          </div>
+
+          <div className="min-h-[138px] rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-blue-700">
+              {selectedDateIsToday ? "Today Memo" : "Selected Date Memo"}
+            </p>
+            <p className="mt-3 text-3xl font-bold text-blue-700">
+              {selectedMemoCount}
+            </p>
+            <p className="mt-2 text-xs text-blue-600">Created on selected date</p>
+          </div>
+
+          <div className="min-h-[138px] rounded-2xl border border-amber-100 bg-amber-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-amber-700">Previous Date Memo</p>
+            <p className="mt-3 text-3xl font-bold text-amber-800">{previousMemoCount}</p>
+            <p className="mt-2 text-xs text-amber-600">Older memo inside current RTS date</p>
+          </div>
+
+          <div className="min-h-[138px] rounded-2xl border border-emerald-100 bg-emerald-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-emerald-700">Pathao Verified</p>
+            <p className="mt-3 text-3xl font-bold text-emerald-700">
+              {verifiedCount}
+            </p>
+            <p className="mt-2 text-xs text-emerald-600">Consignment ID available</p>
+          </div>
         </div>
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">
-            {selectedDateIsToday ? "Today Memo" : "Selected Date Memo"}
-          </p>
-          <p className="mt-2 text-2xl font-bold text-blue-600">
-            {selectedMemoCount}
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Previous Date Memo</p>
-          <p className="mt-2 text-2xl font-bold">{previousMemoCount}</p>
-        </div>
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Stock Out in RTS Memo</p>
-          <p className="mt-2 text-2xl font-bold text-violet-600">
-            {stockOutCohortCount}
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            {stockOutActions.length} stock-out action(s) performed on selected date
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-orange-50 p-4 shadow-sm">
-          <p className="text-sm text-orange-700">Cancelled in RTS Memo</p>
-          <p className="mt-2 text-2xl font-bold text-orange-700">
-            {cancelledCohortCount}
-          </p>
-          <p className="mt-1 text-xs text-orange-500">
-            {cancelledActions.length} cancel action(s) performed on selected date
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-emerald-50 p-4 shadow-sm">
-          <p className="text-sm text-emerald-700">Pathao Verified</p>
-          <p className="mt-2 text-2xl font-bold text-emerald-700">
-            {verifiedCount}
-          </p>
-        </div>
-        <div className="rounded-2xl border bg-red-50 p-4 shadow-sm">
-          <p className="text-sm text-red-700">Missing Consignment ID</p>
-          <p className="mt-2 text-2xl font-bold text-red-700">{missingCount}</p>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3">
+            <h3 className="font-bold text-slate-900">RTS Exceptions</h3>
+            <p className="text-xs text-slate-500">
+              Stock out, cancelled and missing consignment cases for the selected filter.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="min-h-[126px] rounded-2xl border border-violet-100 bg-violet-50 p-4">
+              <p className="text-sm font-medium text-violet-700">Stock Out in RTS Memo</p>
+              <p className="mt-2 text-3xl font-bold text-violet-700">
+                {stockOutCohortCount}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-violet-500">
+                {stockOutActions.length} stock-out action(s) performed on selected date
+              </p>
+            </div>
+
+            <div className="min-h-[126px] rounded-2xl border border-orange-100 bg-orange-50 p-4">
+              <p className="text-sm font-medium text-orange-700">Cancelled in RTS Memo</p>
+              <p className="mt-2 text-3xl font-bold text-orange-700">
+                {cancelledCohortCount}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-orange-500">
+                {cancelledActions.length} cancel action(s) performed on selected date
+              </p>
+            </div>
+
+            <div className="min-h-[126px] rounded-2xl border border-rose-100 bg-rose-50 p-4">
+              <p className="text-sm font-medium text-rose-700">Missing Consignment ID</p>
+              <p className="mt-2 text-3xl font-bold text-rose-700">{missingCount}</p>
+              <p className="mt-1 text-xs leading-5 text-rose-500">
+                Memo still missing a Pathao consignment ID
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -190,7 +190,7 @@ export default async function PublicReelCategoryPage({
                 id: true,
                 name: true,
                 sku: true,
-                quantity: true,
+                unitsPerSale: true,
                 sellingPrice: true,
                 inventoryStock: {
                   select: {
@@ -288,7 +288,7 @@ export default async function PublicReelCategoryPage({
         sku: reel.product.sku,
         parentSku: reel.product.parent.sku,
         parentName: reel.product.parent.name,
-        unitsPerSale: Math.max(1, reel.product.quantity),
+        unitsPerSale: Math.max(1, reel.product.unitsPerSale ?? 1),
         stockTrackingActive:
           reel.product.parent.inventoryMode === "SHARED_PARENT"
             ? Boolean(reel.product.parent.inventoryStock)

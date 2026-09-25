@@ -108,7 +108,9 @@ export async function GET() {
         product.name;
       const price = Number(product.sellingPrice.toString());
       const productUrl = `${siteConfig.url}/product/${encodeURIComponent(product.sku)}`;
-      const availability = product.quantity > 0 ? "in stock" : "out of stock";
+      // OMS allows orders even when tracked inventory is zero/negative.
+      // Do not use Product.quantity as stock: it is Units per Sale.
+      const availability = "in stock";
 
       feedItemCount += 1;
 

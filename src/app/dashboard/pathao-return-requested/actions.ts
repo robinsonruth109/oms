@@ -11,7 +11,7 @@ export type ReturnRequestedActionState = {
   message: string;
 };
 
-const ALLOWED_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
+const ALLOWED_ROLES = ["ADMIN", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
 
 async function requireAccess() {
   const session = await getServerSession(authOptions);

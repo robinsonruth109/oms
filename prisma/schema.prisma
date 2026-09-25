@@ -42,6 +42,7 @@ model User {
   readyToShipDateShifts ReadyToShipDateShift[]
   pathaoReturnTracks PathaoReturnTrack[]
   exchangeCasesCreated ExchangeCase[]
+  productDamageEntriesCreated ProductDamageEntry[] @relation("ProductDamageCreatedBy")
 
   staffEmploymentProfile StaffEmploymentProfile? @relation("StaffEmploymentProfileUser")
   staffEmploymentProfilesCreated StaffEmploymentProfile[] @relation("StaffEmploymentProfileCreatedBy")
@@ -141,7 +142,52 @@ model ProductParent {
   products     Product[]
   adsCostItems AdsCostItem[]
   metaCampaignMappings MetaCampaignMapping[]
+  damageEntries ProductDamageEntry[]
 }
+
+model ProductDamageEntry {
+  id String @id @default(uuid())
+
+  damageDate DateTime
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  skuSnapshot         String
+  productNameSnapshot String
+  parentSkuSnapshot   String
+
+  stockOwnerType StockOwnerType
+  stockOwnerId   String
+
+  enteredQuantity   Int
+  unitsPerSale      Int
+  damagedStockUnits Int
+
+  unitCost    Decimal @db.Decimal(10, 2)
+  damageValue Decimal @db.Decimal(12, 2)
+
+  stockBefore Int
+  stockAfter  Int
+
+  note String? @db.Text
+
+  createdByUserId String?
+  createdBy       User? @relation("ProductDamageCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdByName   String
+
+  createdAt DateTime @default(now())
+
+  @@index([damageDate])
+  @@index([productId])
+  @@index([parentId])
+  @@index([stockOwnerType, stockOwnerId])
+  @@index([createdByUserId])
+}
+
 
 model Courier {
   id        String   @id @default(uuid())
@@ -210,6 +256,7 @@ model Product {
   reelProducts   ReelProduct[]
   pathaoReturnItems PathaoReturnItem[]
   exchangeCaseItems ExchangeCaseItem[]
+  damageEntries ProductDamageEntry[]
 }
 
 model Order {

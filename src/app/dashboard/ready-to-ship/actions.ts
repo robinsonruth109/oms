@@ -365,6 +365,7 @@ export async function createCsvBatch(
 
     const batchNo = makeBatchNo("CSV");
     const submittedAt = new Date();
+    const stockWarnings: string[] = [];
 
     const batch = await prisma.$transaction(async (tx) => {
       const createdBatch = await tx.csvBatch.create({
@@ -399,11 +400,12 @@ export async function createCsvBatch(
           },
         });
 
-        await deductOrderInventory(tx, {
+        const stockResult = await deductOrderInventory(tx, {
           orderId: preparedOrder.orderId,
           createdByUserId: session.user.id,
           referenceType: "CSV_BATCH",
         });
+        stockWarnings.push(...stockResult.warnings);
       }
 
       return createdBatch;
@@ -437,6 +439,9 @@ export async function createCsvBatch(
             .slice(0, 3)
             .map((row) => `${row.invoice} (${row.error})`)
             .join("; ")}`
+        : "",
+      stockWarnings.length
+        ? `Stock warning: ${stockWarnings.slice(0, 4).join(" ")}`
         : "",
     ]
       .filter(Boolean)
@@ -742,11 +747,18 @@ export async function pushAllToAssignedCouriers(
               },
             });
 
-            await deductOrderInventory(tx, {
+            const stockResult = await deductOrderInventory(tx, {
               orderId: preparedOrder.orderId,
               createdByUserId: session.user.id,
               referenceType: "PUSH_ALL",
             });
+            if (stockResult.warnings.length) {
+              detailMessages.push(
+                ...stockResult.warnings.map(
+                  (warning) => `${courier.name}: ${warning}`
+                )
+              );
+            }
 
             await tx.orderAuditEvent.create({
               data: {

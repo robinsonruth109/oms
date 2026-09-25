@@ -16,6 +16,11 @@ enum StockOwnerType {
   PRODUCT_PARENT
 }
 
+enum StockAdjustmentType {
+  ADD
+  REDUCE
+}
+
 model User {
   id        String   @id @default(uuid())
   name      String
@@ -43,6 +48,7 @@ model User {
   pathaoReturnTracks PathaoReturnTrack[]
   exchangeCasesCreated ExchangeCase[]
   productDamageEntriesCreated ProductDamageEntry[] @relation("ProductDamageCreatedBy")
+  productStockAdjustmentsCreated ProductStockAdjustment[] @relation("ProductStockAdjustmentCreatedBy")
 
   staffEmploymentProfile StaffEmploymentProfile? @relation("StaffEmploymentProfileUser")
   staffEmploymentProfilesCreated StaffEmploymentProfile[] @relation("StaffEmploymentProfileCreatedBy")
@@ -143,6 +149,7 @@ model ProductParent {
   adsCostItems AdsCostItem[]
   metaCampaignMappings MetaCampaignMapping[]
   damageEntries ProductDamageEntry[]
+  stockAdjustments ProductStockAdjustment[]
 }
 
 model ProductDamageEntry {
@@ -182,6 +189,53 @@ model ProductDamageEntry {
   createdAt DateTime @default(now())
 
   @@index([damageDate])
+  @@index([productId])
+  @@index([parentId])
+  @@index([stockOwnerType, stockOwnerId])
+  @@index([createdByUserId])
+}
+
+
+model ProductStockAdjustment {
+  id String @id @default(uuid())
+
+  adjustmentDate DateTime
+  adjustmentType StockAdjustmentType
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  skuSnapshot         String
+  productNameSnapshot String
+  parentSkuSnapshot   String
+
+  stockOwnerType StockOwnerType
+  stockOwnerId   String
+
+  enteredQuantity Int
+  unitsPerSale    Int
+  adjustedStockUnits Int
+
+  unitCost        Decimal @db.Decimal(10, 2)
+  adjustmentValue Decimal @db.Decimal(12, 2)
+
+  stockBefore Int
+  stockAfter  Int
+
+  reason String
+  note   String? @db.Text
+
+  createdByUserId String?
+  createdBy       User? @relation("ProductStockAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdByName   String
+
+  createdAt DateTime @default(now())
+
+  @@index([adjustmentDate])
+  @@index([adjustmentType])
   @@index([productId])
   @@index([parentId])
   @@index([stockOwnerType, stockOwnerId])
@@ -257,6 +311,7 @@ model Product {
   pathaoReturnItems PathaoReturnItem[]
   exchangeCaseItems ExchangeCaseItem[]
   damageEntries ProductDamageEntry[]
+  stockAdjustments ProductStockAdjustment[]
 }
 
 model Order {

@@ -8,7 +8,8 @@ type ResolvedTarget = {
     quantity: number;
     averageCost: unknown;
   };
-  unitsPerSale: number;
+  unitsPerSale: number | null;
+  productSku: string;
   targetLabel: string;
 };
 
@@ -48,7 +49,10 @@ async function resolveTarget(
 
   if (!product) return null;
 
-  const unitsPerSale = Math.max(1, Number(product.unitsPerSale || 1));
+  const unitsPerSale =
+    product.unitsPerSale && product.unitsPerSale > 0
+      ? product.unitsPerSale
+      : null;
 
   if (
     product.parent.inventoryMode === "SHARED_PARENT" &&
@@ -57,6 +61,7 @@ async function resolveTarget(
     return {
       stock: product.parent.inventoryStock,
       unitsPerSale,
+      productSku: product.sku,
       targetLabel: product.parent.sku,
     };
   }
@@ -68,6 +73,7 @@ async function resolveTarget(
     return {
       stock: product.inventoryStock,
       unitsPerSale,
+      productSku: product.sku,
       targetLabel: product.sku,
     };
   }
@@ -132,6 +138,13 @@ export async function applyInventorySaleForOrderTx(
 
     const target = await resolveTarget(tx, productId);
     if (!target) continue;
+
+    if (!target.unitsPerSale) {
+      warnings.push(
+        `${target.productSku} has no Units per Sale configured. Stock was not deducted; order flow continued.`
+      );
+      continue;
+    }
 
     const physicalQty =
       Math.max(1, Number(item.quantity || 1)) * target.unitsPerSale;
@@ -340,6 +353,17 @@ export async function applyInventoryReturnForProductTx(
       physicalQty: 0,
       balanceBefore: null,
       balanceAfter: null,
+    };
+  }
+
+  if (!target.unitsPerSale) {
+    return {
+      tracked: true,
+      physicalQty: 0,
+      balanceBefore: target.stock.quantity,
+      balanceAfter: target.stock.quantity,
+      warning:
+        `${target.productSku} has no Units per Sale configured, so return stock could not be restored automatically.`,
     };
   }
 

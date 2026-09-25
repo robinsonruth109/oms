@@ -21,7 +21,7 @@ async function resolveTarget(
     select: {
       id: true,
       sku: true,
-      quantity: true,
+      unitsPerSale: true,
       inventoryStock: {
         select: {
           id: true,
@@ -48,7 +48,7 @@ async function resolveTarget(
 
   if (!product) return null;
 
-  const unitsPerSale = Math.max(1, Number(product.quantity || 1));
+  const unitsPerSale = Math.max(1, Number(product.unitsPerSale || 1));
 
   if (
     product.parent.inventoryMode === "SHARED_PARENT" &&

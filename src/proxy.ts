@@ -32,7 +32,9 @@ function isAllowed(pathname: string, role: string) {
       pathname === "/dashboard/products-purchases/purchase-orders" ||
       pathname.startsWith("/dashboard/products-purchases/purchase-orders/") ||
       pathname === "/dashboard/products-purchases/received-orders" ||
-      pathname.startsWith("/dashboard/products-purchases/received-orders/")
+      pathname.startsWith("/dashboard/products-purchases/received-orders/") ||
+      pathname === "/dashboard/finance/office-daily-costing" ||
+      pathname.startsWith("/dashboard/finance/office-daily-costing/")
     );
   }
 

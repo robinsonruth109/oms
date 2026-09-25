@@ -5,8 +5,7 @@ import { Search } from "lucide-react";
 
 import {
   disconnectMetaConnection,
-  removeMetaCampaignMapping,
-  saveMetaCampaignMapping,
+  saveMetaCampaignMappings,
   syncMetaAdsNow,
   toggleMetaAdAccount,
 } from "./actions";
@@ -53,16 +52,6 @@ type Campaign = {
     sourceIds: string[];
     sources: { id: string; name: string }[];
   } | null;
-  metrics: {
-    totalOrders: number;
-    confirmed: number;
-    cancelled: number;
-    noAnswer: number;
-    phoneOff: number;
-    confirmationRate: number;
-    costPerTotalOrder: number;
-    costPerConfirmed: number;
-  };
 };
 
 type Draft = {
@@ -331,29 +320,68 @@ export default function AdsCostSyncClient({
     }));
   }
 
-  function handleSave(campaignId: string) {
-    const draft = drafts[campaignId] || {
-      productParentId: "",
-      sourceIds: [],
-    };
-    setMessage("");
-    startTransition(async () => {
-      const result = await saveMetaCampaignMapping({
-        campaignId,
-        productParentId: draft.productParentId,
-        sourceIds: draft.sourceIds,
-      });
-      setMessage(result.message);
-      if (result.success) window.location.reload();
-    });
-  }
+  const dirtyMappings = useMemo(() => {
+    function normalizeIds(values: string[]) {
+      return [...new Set(values)].sort();
+    }
 
-  function handleRemove(campaignId: string) {
-    if (!window.confirm("Remove this campaign mapping? Historical Meta spend will be kept.")) {
+    return campaigns
+      .map((campaign) => {
+        const draft = drafts[campaign.id] || {
+          productParentId: "",
+          sourceIds: [],
+        };
+        const originalParentId = campaign.mapping?.productParentId || "";
+        const originalSourceIds = normalizeIds(campaign.mapping?.sourceIds || []);
+        const draftSourceIds = normalizeIds(draft.sourceIds || []);
+
+        const parentChanged = draft.productParentId !== originalParentId;
+        const sourcesChanged =
+          originalSourceIds.length !== draftSourceIds.length ||
+          originalSourceIds.some((id, index) => id !== draftSourceIds[index]);
+
+        return {
+          campaignId: campaign.id,
+          productParentId: draft.productParentId,
+          sourceIds: draftSourceIds,
+          changed: parentChanged || sourcesChanged,
+        };
+      })
+      .filter((row) => row.changed);
+  }, [campaigns, drafts]);
+
+  const invalidDirtyMappings = useMemo(
+    () =>
+      dirtyMappings.filter((row) => {
+        const removing = !row.productParentId && row.sourceIds.length === 0;
+        return !removing && (!row.productParentId || !row.sourceIds.length);
+      }),
+    [dirtyMappings]
+  );
+
+  function handleSaveAllMappings() {
+    if (!dirtyMappings.length) {
+      setMessage("No mapping changes to update.");
       return;
     }
+
+    if (invalidDirtyMappings.length) {
+      setMessage(
+        invalidDirtyMappings.length +
+          " changed campaign(s) need both a Product Parent and at least one Source."
+      );
+      return;
+    }
+
+    setMessage("");
     startTransition(async () => {
-      const result = await removeMetaCampaignMapping(campaignId);
+      const result = await saveMetaCampaignMappings({
+        mappings: dirtyMappings.map((row) => ({
+          campaignId: row.campaignId,
+          productParentId: row.productParentId,
+          sourceIds: row.sourceIds,
+        })),
+      });
       setMessage(result.message);
       if (result.success) window.location.reload();
     });
@@ -585,10 +613,10 @@ export default function AdsCostSyncClient({
             type="submit"
             className="rounded-lg border px-3 py-1.5 font-medium text-slate-700"
           >
-            Apply these dates to performance table
+            Apply dates to campaign spend
           </button>
           <span>
-            Performance below is currently {from} to {to}.
+            Campaign spend below is currently {from} to {to}.
           </span>
         </form>
       </section>
@@ -597,9 +625,9 @@ export default function AdsCostSyncClient({
         <div className="border-b p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Campaign Mapping & Performance</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Campaign Mapping</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Spend is never split between selected Sources. OMS merges the selected Source orders first, then calculates cost per total and confirmed order.
+                Map as many campaigns as you need, then save all changed mappings together from the button at the bottom.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -629,22 +657,13 @@ export default function AdsCostSyncClient({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[1600px] w-full">
+          <table className="min-w-[980px] w-full">
             <thead className="bg-slate-50">
               <tr className="border-b">
                 <Th>Ad Account / Campaign</Th>
                 <Th>Spend</Th>
                 <Th>Product Parent</Th>
                 <Th>Sources (multiple)</Th>
-                <Th center>Total Orders</Th>
-                <Th center>Confirmed</Th>
-                <Th center>Cancelled</Th>
-                <Th center>No Answer</Th>
-                <Th center>Phone Off</Th>
-                <Th center>Confirm %</Th>
-                <Th center>Cost / Order</Th>
-                <Th center>Cost / Confirmed</Th>
-                <Th>Action</Th>
               </tr>
             </thead>
             <tbody>
@@ -705,61 +724,51 @@ export default function AdsCostSyncClient({
                         })}
                       </div>
                     </td>
-                    <Td center>{campaign.metrics.totalOrders}</Td>
-                    <Td center>{campaign.metrics.confirmed}</Td>
-                    <Td center>{campaign.metrics.cancelled}</Td>
-                    <Td center>{campaign.metrics.noAnswer}</Td>
-                    <Td center>{campaign.metrics.phoneOff}</Td>
-                    <Td center>{campaign.metrics.confirmationRate.toFixed(2)}%</Td>
-                    <Td center>
-                      {campaign.metrics.totalOrders
-                        ? amount(campaign.metrics.costPerTotalOrder, campaign.account.currency)
-                        : "-"}
-                    </Td>
-                    <Td center>
-                      {campaign.metrics.confirmed
-                        ? amount(campaign.metrics.costPerConfirmed, campaign.account.currency)
-                        : "-"}
-                    </Td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-col gap-2">
-                        <button
-                          type="button"
-                          disabled={
-                            pending ||
-                            !draft.productParentId ||
-                            !draft.sourceIds.length
-                          }
-                          onClick={() => handleSave(campaign.id)}
-                          className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
-                        >
-                          {campaign.mapping ? "Update Mapping" : "Save Mapping"}
-                        </button>
-                        {campaign.mapping ? (
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() => handleRemove(campaign.id)}
-                            className="rounded-xl border px-3 py-2 text-xs font-semibold text-slate-600"
-                          >
-                            Remove
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
 
               {!visibleCampaigns.length ? (
                 <tr>
-                  <td colSpan={13} className="px-6 py-10 text-center text-sm text-slate-500">
+                  <td colSpan={4} className="px-6 py-10 text-center text-sm text-slate-500">
                     No campaigns found. Connect Meta and run Sync Now first.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              {dirtyMappings.length} unsaved mapping change{dirtyMappings.length === 1 ? "" : "s"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Map campaigns anywhere in the list. Nothing is written until you press Update All Mappings.
+            </p>
+            {invalidDirtyMappings.length ? (
+              <p className="mt-1 text-xs font-medium text-red-600">
+                {invalidDirtyMappings.length} changed campaign(s) are incomplete.
+              </p>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSaveAllMappings}
+            disabled={
+              pending ||
+              !dirtyMappings.length ||
+              Boolean(invalidDirtyMappings.length)
+            }
+            className="min-h-11 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {pending
+              ? "Updating Mappings..."
+              : "Update All Mappings" +
+                (dirtyMappings.length ? " (" + dirtyMappings.length + ")" : "")}
+          </button>
         </div>
       </section>
 

@@ -122,6 +122,7 @@ export async function applyInventorySaleForOrderTx(
       targetLabel: string;
     }
   >();
+  const warnings: string[] = [];
 
   for (const item of order.items) {
     let productId = item.productId;
@@ -161,7 +162,6 @@ export async function applyInventorySaleForOrderTx(
     }
   }
 
-  const warnings: string[] = [];
   let movements = 0;
 
   for (const row of grouped.values()) {
@@ -275,7 +275,7 @@ export async function applyInventoryPurchaseReceiptTx(
   }
 
   // Purchase received quantity is always physical base-unit quantity.
-  // It is NOT multiplied by Product.quantity / Units per Sale.
+  // It is NOT multiplied by Units per Sale.
   const incomingQty = Math.max(0, Number(received.receivedQty || 0));
   const incomingCost = Number(received.unitOriginalCost || 0);
   const oldQty = Number(before.quantity || 0);

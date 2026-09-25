@@ -63,7 +63,9 @@ export type PublicReelItem = {
     sku: string;
     parentSku: string;
     parentName: string;
-    quantity: number;
+    unitsPerSale: number;
+    stockTrackingActive: boolean;
+    stockQuantity: number | null;
     sellingPrice: string;
   };
 
@@ -127,6 +129,16 @@ type CheckoutResponse = {
   field?: string;
   order?: CreatedOrder;
 };
+
+const MAX_ORDER_QUANTITY = 99;
+
+function hasStockWarning(product: PublicReelItem["product"]) {
+  return (
+    product.stockTrackingActive &&
+    product.stockQuantity !== null &&
+    product.stockQuantity <= 0
+  );
+}
 
 const CHECKOUT_FIELD_NAMES: CheckoutField[] = [
   "customerName",
@@ -1041,19 +1053,10 @@ export default function ReelFeed({
                             reel
                           );
                         }}
-                        disabled={
-                          reel.product
-                            .quantity <=
-                          0
-                        }
-                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-500"
+                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white transition hover:bg-emerald-600"
                       >
                         <ShoppingBag className="h-4 w-4" />
-
-                        {reel.product
-                          .quantity > 0
-                          ? "অর্ডার করুন"
-                          : "স্টক শেষ"}
+                        অর্ডার করুন
                       </button>
                     </div>
                   </div>
@@ -1368,11 +1371,16 @@ function ProductModal({
               )}
             </p>
 
-            <p className="mt-2 text-sm text-slate-500">
-              {reel.product
-                .quantity > 0
-                ? `${reel.product.quantity} available`
-                : "Currently out of stock"}
+            <p
+              className={`mt-2 text-sm ${
+                hasStockWarning(reel.product)
+                  ? "font-semibold text-amber-700"
+                  : "text-slate-500"
+              }`}
+            >
+              {hasStockWarning(reel.product)
+                ? "Stock confirmation required — ordering is still open."
+                : "Available to order"}
             </p>
           </div>
 
@@ -1406,29 +1414,26 @@ function ProductModal({
               </p>
             </div>
 
-            <p className="text-right text-xs text-slate-500">
-              {reel.product
-                .quantity > 0
-                ? `${reel.product.quantity} available`
-                : "Out of stock"}
+            <p
+              className={`text-right text-xs ${
+                hasStockWarning(reel.product)
+                  ? "font-semibold text-amber-700"
+                  : "text-slate-500"
+              }`}
+            >
+              {hasStockWarning(reel.product)
+                ? "Stock will be confirmed"
+                : "Order available"}
             </p>
           </div>
 
           <button
             type="button"
             onClick={onBuyNow}
-            disabled={
-              reel.product
-                .quantity <= 0
-            }
-            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-400"
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white transition hover:bg-emerald-600"
           >
             <ShoppingBag className="h-4 w-4" />
-
-            {reel.product
-              .quantity > 0
-              ? "অর্ডার করুন"
-              : "স্টক শেষ"}
+            অর্ডার করুন
           </button>
         </div>
       </div>
@@ -1620,7 +1625,7 @@ function CheckoutModal({
       Math.max(
         1,
         Math.min(
-          reel.product.quantity,
+          MAX_ORDER_QUANTITY,
           nextQuantity
         )
       );
@@ -1685,8 +1690,7 @@ function CheckoutModal({
 
     if (
       form.quantity < 1 ||
-      form.quantity >
-        reel.product.quantity
+      form.quantity > MAX_ORDER_QUANTITY
     ) {
       nextErrors.quantity =
         "পণ্যের সঠিক পরিমাণ নির্বাচন করুন।";

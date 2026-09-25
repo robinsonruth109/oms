@@ -56,40 +56,40 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const ALL_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
+const ALL_ROLES = ["ADMIN", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["ADMIN", "MANAGER"] },
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["ADMIN"] },
       { href: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck, roles: ALL_ROLES },
-      { href: "/dashboard/attendance/report", label: "Attendance Report", icon: BarChart3, roles: ["ADMIN"] },
+      { href: "/dashboard/attendance/report", label: "Attendance Report", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/attendance/violations", label: "Attendance Violations", icon: AlertTriangle, roles: ["ADMIN"] },
     ],
   },
   {
     label: "Order Management",
     items: [
-      { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, roles: ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT"] },
+      { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag, roles: ["ADMIN", "AGENT", "NOTE_AGENT"] },
       { href: "/dashboard/all-orders", label: "All Orders", icon: Boxes, roles: ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT"] },
-      { href: "/dashboard/pending-orders", label: "Pending Orders", icon: PackageSearch, roles: ["ADMIN", "MANAGER", "AGENT"] },
-      { href: "/dashboard/call", label: "Calling Panel", icon: PhoneCall, roles: ["ADMIN", "MANAGER", "AGENT"] },
-      { href: "/dashboard/exchange", label: "Exchange Panel", icon: ArrowRightLeft, roles: ALL_ROLES },
+      { href: "/dashboard/pending-orders", label: "Pending Orders", icon: PackageSearch, roles: ["ADMIN", "AGENT"] },
+      { href: "/dashboard/call", label: "Calling Panel", icon: PhoneCall, roles: ["ADMIN", "AGENT"] },
+      { href: "/dashboard/exchange", label: "Exchange Panel", icon: ArrowRightLeft, roles: ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"] },
       { href: "/dashboard/ready-to-ship", label: "Ready to Ship", icon: Truck, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
       { href: "/dashboard/ready-date-shift", label: "Ready Date Shift", icon: CalendarClock, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
       { href: "/dashboard/post-print-actions", label: "Post Print Actions", icon: ReceiptText, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
-      { href: "/dashboard/stock-out", label: "Stock Out", icon: PackageX, roles: ["ADMIN"] },
+      { href: "/dashboard/stock-out", label: "Stock Out", icon: PackageX, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/cancelled", label: "Cancelled", icon: Ban, roles: ["ADMIN"] },
       { href: "/dashboard/ready-orders-download", label: "Ready Orders Download", icon: FileSpreadsheet, roles: ["ADMIN"] },
       { href: "/dashboard/sheet-sync", label: "Ready Order Sheet Sync", icon: FileSpreadsheet, roles: ["ADMIN"] },
-      { href: "/dashboard/stock-out-import", label: "Stock Out Import", icon: RotateCcw, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
+      { href: "/dashboard/stock-out-import", label: "Stock Out Import", icon: RotateCcw, roles: ["ADMIN", "PACKAGING_AGENT"] },
     ],
   },
   {
     label: "Pathao",
     items: [
-      { href: "/dashboard/pathao-orders", label: "Pathao Order Control", icon: Truck, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
+      { href: "/dashboard/pathao-orders", label: "Pathao Order Control", icon: Truck, roles: ["ADMIN", "PACKAGING_AGENT"] },
       { href: "/dashboard/pathao-return-requested", label: "Return Requested", icon: RotateCcw, roles: ALL_ROLES },
       { href: "/dashboard/pathao-return-track", label: "Pathao Return Track", icon: RotateCcw, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
       { href: "/dashboard/pathao-daily-report", label: "Pathao Daily Report", icon: BarChart3, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
@@ -104,14 +104,14 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/stock-valuation", label: "Stock Valuation", icon: Boxes, roles: ["ADMIN"] },
       { href: "/dashboard/reel-categories", label: "Reel Categories", icon: PanelsTopLeft, roles: ["ADMIN"] },
       { href: "/dashboard/reel-products", label: "Reel Products", icon: PackageOpen, roles: ["ADMIN"] },
-      { href: "/dashboard/products-purchases/purchase-orders", label: "Purchase Orders", icon: BriefcaseBusiness, roles: ["ADMIN"] },
-      { href: "/dashboard/products-purchases/received-orders", label: "Received Orders", icon: PackageCheck, roles: ["ADMIN"] },
+      { href: "/dashboard/products-purchases/purchase-orders", label: "Purchase Orders", icon: BriefcaseBusiness, roles: ["ADMIN", "MANAGER"] },
+      { href: "/dashboard/products-purchases/received-orders", label: "Received Orders", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },
     ],
   },
   {
     label: "Reports & Finance",
     items: [
-      { href: "/dashboard/live-call-report", label: "Live Call Report", icon: PhoneCall, roles: ["ADMIN", "MANAGER", "AGENT"] },
+      { href: "/dashboard/live-call-report", label: "Live Call Report", icon: PhoneCall, roles: ["ADMIN", "AGENT"] },
       { href: "/dashboard/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN"] },
       { href: "/dashboard/daily-source-status", label: "Daily Source Status", icon: Activity, roles: ["ADMIN"] },
       { href: "/dashboard/product-report", label: "Product Report", icon: ListChecks, roles: ["ADMIN"] },

@@ -2,12 +2,40 @@ import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 
 function roleHome(role: string) {
+  if (role === "MANAGER") return "/dashboard/all-orders";
   if (role === "NOTE_AGENT") return "/dashboard/orders";
   if (role === "PACKAGING_AGENT") return "/dashboard/ready-to-ship";
   return "/dashboard";
 }
 
 function isAllowed(pathname: string, role: string) {
+  if (role === "MANAGER") {
+    return (
+      pathname === "/dashboard/attendance/report" ||
+      pathname.startsWith("/dashboard/attendance/report/") ||
+      pathname === "/dashboard/all-orders" ||
+      pathname.startsWith("/dashboard/all-orders/") ||
+      pathname === "/dashboard/exchange" ||
+      pathname.startsWith("/dashboard/exchange/") ||
+      pathname === "/dashboard/ready-to-ship" ||
+      pathname.startsWith("/dashboard/ready-to-ship/") ||
+      pathname === "/dashboard/post-print-actions" ||
+      pathname.startsWith("/dashboard/post-print-actions/") ||
+      pathname === "/dashboard/ready-date-shift" ||
+      pathname.startsWith("/dashboard/ready-date-shift/") ||
+      pathname === "/dashboard/stock-out" ||
+      pathname.startsWith("/dashboard/stock-out/") ||
+      pathname === "/dashboard/pathao-return-track" ||
+      pathname.startsWith("/dashboard/pathao-return-track/") ||
+      pathname === "/dashboard/pathao-daily-report" ||
+      pathname.startsWith("/dashboard/pathao-daily-report/") ||
+      pathname === "/dashboard/products-purchases/purchase-orders" ||
+      pathname.startsWith("/dashboard/products-purchases/purchase-orders/") ||
+      pathname === "/dashboard/products-purchases/received-orders" ||
+      pathname.startsWith("/dashboard/products-purchases/received-orders/")
+    );
+  }
+
   if (role === "NOTE_AGENT") {
     return (
       pathname === "/dashboard/orders" ||
@@ -54,7 +82,10 @@ export async function proxy(request: NextRequest) {
   const role = String(token.role || "");
   const pathname = request.nextUrl.pathname;
 
-  if (pathname === "/dashboard" && (role === "NOTE_AGENT" || role === "PACKAGING_AGENT")) {
+  if (
+    pathname === "/dashboard" &&
+    (role === "MANAGER" || role === "NOTE_AGENT" || role === "PACKAGING_AGENT")
+  ) {
     return NextResponse.redirect(new URL(roleHome(role), request.url));
   }
 

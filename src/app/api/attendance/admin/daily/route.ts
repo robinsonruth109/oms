@@ -48,7 +48,7 @@ async function getCurrentUserRole() {
 }
 
 function isAdminRole(role: string | null) {
-  return role === "ADMIN" || role === "SUPER_ADMIN";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPER_ADMIN";
 }
 
 export async function GET(request: NextRequest) {

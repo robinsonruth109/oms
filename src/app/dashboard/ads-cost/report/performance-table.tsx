@@ -9,7 +9,6 @@ type ReportChildRow = {
   adAccountId: string;
   currency: string;
   spendAmount: number;
-  spendUsd: number;
   spendBdt: number;
   dollarRate: number;
   metaPurchases: number;
@@ -26,6 +25,7 @@ type ReportRow = {
   currency: string;
   sourceNames: string[];
   spendAmount: number;
+  spendUsd: number;
   spendBdt: number;
   dollarRate: number;
   purchasePrice: number;

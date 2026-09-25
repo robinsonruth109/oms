@@ -47,7 +47,7 @@ function percent(ready: number, total: number) {
 export default async function LiveCallReportPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user || !["ADMIN", "AGENT"].includes(session.user.role)) {
+  if (!session?.user || !["ADMIN", "MANAGER", "AGENT"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 

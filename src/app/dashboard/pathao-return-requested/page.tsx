@@ -18,7 +18,7 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const ALLOWED_ROLES = ["ADMIN", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
+const ALLOWED_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
 const FINAL_RETURN_EVENTS = new Set([
   "order.return-id-created",
   "order.return-in-transit",

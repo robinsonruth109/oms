@@ -14,6 +14,7 @@ const ALL_EXCHANGE_ROLES = [
   "AGENT",
   "NOTE_AGENT",
   "PACKAGING_AGENT",
+  "MANAGER",
 ];
 
 type Props = { params: Promise<{ caseId: string }> };
@@ -159,7 +160,7 @@ export default async function ExchangeCasePage({ params }: Props) {
             <p><b>Pathao:</b> {exchange.pathaoOrderStatus || exchange.pathaoOrderStatusSlug || exchange.exchangeOrder.pathaoOrderStatus || "Waiting for webhook"}</p>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            {["ADMIN", "PACKAGING_AGENT"].includes(session.user.role) ? (
+            {["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role) ? (
               <Link
                 href="/dashboard/ready-to-ship?tab=non-invoiced"
                 className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white"

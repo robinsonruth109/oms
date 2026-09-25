@@ -23,6 +23,7 @@ const ALL_EXCHANGE_ROLES = [
   "AGENT",
   "NOTE_AGENT",
   "PACKAGING_AGENT",
+  "MANAGER",
 ];
 
 type Props = {

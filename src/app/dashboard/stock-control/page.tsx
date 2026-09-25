@@ -158,7 +158,7 @@ export default async function StockControlPage({
           id: product.id,
           sku: product.sku,
           name: product.name,
-          unitsPerSale: product.quantity,
+          unitsPerSale: product.unitsPerSale,
           purchasePrice: String(product.purchasePrice),
           sellingPrice: String(product.sellingPrice),
           stock: product.inventoryStock

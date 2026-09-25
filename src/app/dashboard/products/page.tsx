@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth";
 import CreateProductForm from "./create-product-form";
 import CsvImportForm from "./csv-import-form";
 import EditProductForm from "./edit-product-form";
@@ -15,6 +18,12 @@ export const revalidate = 0;
 export default async function ProductsPage({
   searchParams,
 }: ProductsPageProps) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user || !["ADMIN", "MANAGER"].includes(session.user.role)) {
+    redirect("/dashboard");
+  }
+  const canManageMaster = session.user.role === "ADMIN";
+
   const params = (await searchParams) || {};
   const q = (params.q || "").trim();
   const edit = (params.edit || "").trim();
@@ -62,7 +71,7 @@ export default async function ProductsPage({
       },
       take: 100,
     }),
-    edit
+    edit && canManageMaster
       ? prisma.product.findUnique({
           where: {
             id: edit,
@@ -77,11 +86,26 @@ export default async function ProductsPage({
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Product Master</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Manage parent and variation inventory. Parent Stock shares one physical
-          quantity across child SKUs; Variation Stock keeps inventory per child.
-        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Product Master</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Manage parent and variation inventory. Parent Stock shares one physical
+              quantity across child SKUs; Variation Stock keeps inventory per child.
+            </p>
+            {!canManageMaster ? (
+              <p className="mt-2 text-xs font-medium text-amber-700">
+                Manager view: master-data create/edit/import is Admin-only. Stock adjustment is available.
+              </p>
+            ) : null}
+          </div>
+          <Link
+            href="/dashboard/stock-adjustments"
+            className="inline-flex rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+          >
+            Adjust Stock
+          </Link>
+        </div>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
@@ -102,7 +126,7 @@ export default async function ProductsPage({
         </form>
       </section>
 
-      {editProduct ? (
+      {canManageMaster && editProduct ? (
         <EditProductForm
           product={{
             id: editProduct.id,
@@ -124,10 +148,12 @@ export default async function ProductsPage({
         />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <CreateProductForm />
-        <CsvImportForm />
-      </div>
+      {canManageMaster ? (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <CreateProductForm />
+          <CsvImportForm />
+        </div>
+      ) : null}
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         <div className="border-b px-5 py-4 sm:px-6">
@@ -146,12 +172,32 @@ export default async function ProductsPage({
                   <p className="text-sm text-slate-500">{product.name}</p>
                 </div>
 
-                <Link
-                  href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
-                >
-                  Edit
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/dashboard/stock-adjustments?q=${encodeURIComponent(product.sku)}`}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
+                  >
+                    Adjust
+                  </Link>
+                  {canManageMaster ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        href={`/dashboard/stock-adjustments?q=${encodeURIComponent(product.sku)}`}
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
+                      >
+                        Adjust
+                      </Link>
+                      {canManageMaster ? (
+                        <Link
+                          href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
+                        >
+                          Edit
+                        </Link>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -273,12 +319,22 @@ export default async function ProductsPage({
                     {product.status ? "Active" : "Inactive"}
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <Link
-                      href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
-                    >
-                      Edit
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        href={`/dashboard/stock-adjustments?q=${encodeURIComponent(product.sku)}`}
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
+                      >
+                        Adjust
+                      </Link>
+                      {canManageMaster ? (
+                        <Link
+                          href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
+                        >
+                          Edit
+                        </Link>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

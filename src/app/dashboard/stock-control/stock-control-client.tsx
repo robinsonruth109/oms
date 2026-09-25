@@ -19,7 +19,7 @@ type ProductRow = {
   id: string;
   sku: string;
   name: string;
-  unitsPerSale: number;
+  unitsPerSale: number | null;
   purchasePrice: string;
   sellingPrice: string;
   stock: StockData | null;
@@ -56,12 +56,16 @@ function StockEditorForm({
   mode,
   current,
   label,
+  unitsPerSale,
+  sharedProducts,
 }: {
   parentId: string;
   productId?: string;
   mode: "SHARED_PARENT" | "VARIANT";
   current: StockData | null;
   label: string;
+  unitsPerSale?: number | null;
+  sharedProducts?: ProductRow[];
 }) {
   const [state, formAction, pending] = useActionState(
     saveStockSetup,
@@ -82,6 +86,61 @@ function StockEditorForm({
             : "Not activated. Saving the first count starts stock tracking from that moment."}
         </p>
       </div>
+
+      {mode === "SHARED_PARENT" && sharedProducts?.length ? (
+        <div className="rounded-2xl border bg-slate-50 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Child SKU Units per Sale
+          </p>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {sharedProducts.map((product) => (
+              <label
+                key={product.id}
+                className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm"
+              >
+                <span>
+                  <strong>{product.sku}</strong>
+                  <span className="ml-2 text-xs text-slate-400">
+                    {product.name}
+                  </span>
+                </span>
+                <input
+                  name={`unit__${product.id}`}
+                  type="number"
+                  min="1"
+                  step="1"
+                  defaultValue={product.unitsPerSale ?? 1}
+                  className="w-24 rounded-lg border px-2 py-1.5 text-right outline-none"
+                  required
+                />
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Example: A-1 = 1, A-2 = 2, A-3 = 5. Existing legacy quantity is not copied automatically.
+          </p>
+        </div>
+      ) : null}
+
+      {mode === "VARIANT" ? (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Units per Sale
+          </label>
+          <input
+            name="unitsPerSale"
+            type="number"
+            min="1"
+            step="1"
+            defaultValue={unitsPerSale ?? 1}
+            className="w-full rounded-xl border px-3 py-2 text-sm outline-none"
+            required
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Normally 1 for a separately stocked variation.
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -259,6 +318,7 @@ export default function StockControlClient({
                     mode="SHARED_PARENT"
                     current={parent.stock}
                     label={`${parent.sku} Shared Physical Stock`}
+                    sharedProducts={parent.products}
                   />
                 </div>
               ) : null}
@@ -279,7 +339,9 @@ export default function StockControlClient({
                             {product.sku} — {product.name}
                           </p>
                           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                            <span>Units / Sale: {product.unitsPerSale}</span>
+                            <span>
+                              Units / Sale: {product.unitsPerSale ?? "Not set"}
+                            </span>
                             <span>Product Master Cost: {money(product.purchasePrice)}</span>
                             <span>Sell: {money(product.sellingPrice)}</span>
                           </div>
@@ -291,6 +353,7 @@ export default function StockControlClient({
                           mode="VARIANT"
                           current={product.stock}
                           label={product.sku}
+                          unitsPerSale={product.unitsPerSale}
                         />
                       </div>
                     ))}
@@ -317,7 +380,7 @@ export default function StockControlClient({
                           </td>
                           <td className="px-4 py-3 text-sm">{product.name}</td>
                           <td className="px-4 py-3 text-sm">
-                            {product.unitsPerSale}
+                            {product.unitsPerSale ?? "Not set"}
                           </td>
                           <td className="px-4 py-3 text-sm">
                             {money(product.sellingPrice)}

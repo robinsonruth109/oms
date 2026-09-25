@@ -16,7 +16,7 @@ export async function GET(
   context: { params: Promise<{ batchId: string }> }
 ) {
   const session = await getServerSession(authOptions);
-  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
     return new Response("Unauthorized", { status: 401 });
   }
 

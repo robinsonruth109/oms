@@ -27,7 +27,7 @@ function safeDate(value: string | undefined, fallback: string) {
 export default async function ReadyDateShiftPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
 
-  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 

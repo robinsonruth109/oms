@@ -88,7 +88,7 @@ export async function createProduct(
     if (quantity <= 0) {
       return {
         success: false,
-        message: "Quantity must be greater than 0.",
+        message: "Units per Sale must be greater than 0.",
       };
     }
 
@@ -173,7 +173,7 @@ export async function updateProduct(
     if (quantity <= 0) {
       return {
         success: false,
-        message: "Quantity must be greater than 0.",
+        message: "Units per Sale must be greater than 0.",
       };
     }
 

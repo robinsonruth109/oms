@@ -15,6 +15,10 @@ import {
   getBangladeshDateInputValue,
   getBangladeshTodayRange,
 } from "@/lib/bangladesh-time";
+import {
+  assertOrdersHaveStock,
+  deductOrderStock,
+} from "@/lib/inventory";
 
 type BatchActionState = {
   success: boolean;
@@ -294,6 +298,11 @@ export async function createCsvBatch(
 
     const preparedIds = prepared.map((row) => row.orderId);
 
+    // Stock is validated before the external Pathao request. Physical inventory
+    // is only deducted after Pathao accepts the request and the OMS transaction
+    // marks the order as submitted/CSV.
+    await assertOrdersHaveStock(prisma, preparedIds);
+
     // Claim orders before calling external API. If the button is clicked twice
     // concurrently, only the first request will be eligible for a new submission.
     const claimed = await prisma.order.updateMany({
@@ -383,6 +392,8 @@ export async function createCsvBatch(
       });
 
       for (const preparedOrder of prepared) {
+        await deductOrderStock(tx, preparedOrder.orderId, "CSV_BATCH");
+
         await tx.order.update({
           where: { id: preparedOrder.orderId },
           data: {
@@ -625,6 +636,21 @@ export async function pushAllToAssignedCouriers(
         validPrepared,
         PUSH_ALL_CHUNK_SIZE
       )) {
+        try {
+          await assertOrdersHaveStock(
+            prisma,
+            preparedChunk.map((row) => row.orderId)
+          );
+        } catch (error) {
+          failedCount += preparedChunk.length;
+          detailMessages.push(
+            `${courier.name}: ${preparedChunk.length} order(s) skipped because inventory validation failed — ${
+              error instanceof Error ? error.message : "Insufficient stock."
+            }`
+          );
+          continue;
+        }
+
         const claimedPrepared: PreparedPathaoOrder[] = [];
 
         // Claim each order independently. This avoids one agent/button click
@@ -719,6 +745,8 @@ export async function pushAllToAssignedCouriers(
           });
 
           for (const preparedOrder of claimedPrepared) {
+            await deductOrderStock(tx, preparedOrder.orderId, "PUSH_ALL_COURIERS");
+
             await tx.order.update({
               where: { id: preparedOrder.orderId },
               data: {

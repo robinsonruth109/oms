@@ -6,6 +6,16 @@ datasource db {
   provider = "mysql"
 }
 
+enum ProductStockMode {
+  VARIANT_STOCK
+  PARENT_STOCK
+}
+
+enum StockOwnerType {
+  PRODUCT
+  PRODUCT_PARENT
+}
+
 model User {
   id        String   @id @default(uuid())
   name      String
@@ -121,6 +131,9 @@ model ProductParent {
   id        String   @id @default(uuid())
   sku       String   @unique
   name      String
+  stockMode ProductStockMode @default(VARIANT_STOCK)
+  stockQuantity Int @default(0)
+  purchasePrice Decimal? @db.Decimal(10, 2)
   status    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -185,6 +198,7 @@ model Product {
   slug          String?  @unique
   name          String
   quantity      Int      @default(1)
+  unitsPerSale  Int      @default(1)
   purchasePrice Decimal  @db.Decimal(10, 2)
   sellingPrice  Decimal  @db.Decimal(10, 2)
   status        Boolean  @default(true)
@@ -729,6 +743,13 @@ model OrderItem {
   unitPrice   Decimal @db.Decimal(10, 2)
   lineTotal   Decimal @db.Decimal(10, 2)
 
+  stockDeductedAt      DateTime?
+  stockDeductionSource String?
+  stockOwnerType       StockOwnerType?
+  stockOwnerId         String?
+  stockUnitsPerSale    Int?
+  stockDeductedUnits   Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -737,6 +758,7 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@index([productSku])
+  @@index([stockDeductedAt])
 }
 
 model InvoiceBatch {

@@ -1,5 +1,3 @@
-import { prisma } from "@/lib/prisma";
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -12,6 +10,11 @@ function money(value: number) {
 }
 
 export default async function StockValuationPage() {
+  // Keep Prisma out of module scope so Next.js build-time page collection does
+  // not require DATABASE_URL. The database client is created only when this
+  // dynamic dashboard page is actually requested.
+  const { prisma } = await import("@/lib/prisma");
+
   const parents = await prisma.productParent.findMany({
     include: {
       products: {

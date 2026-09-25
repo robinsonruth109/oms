@@ -192,10 +192,21 @@ export default async function PublicReelCategoryPage({
                 sku: true,
                 quantity: true,
                 sellingPrice: true,
+                inventoryStock: {
+                  select: {
+                    quantity: true,
+                  },
+                },
                 parent: {
                   select: {
                     sku: true,
                     name: true,
+                    inventoryMode: true,
+                    inventoryStock: {
+                      select: {
+                        quantity: true,
+                      },
+                    },
                   },
                 },
               },
@@ -277,7 +288,19 @@ export default async function PublicReelCategoryPage({
         sku: reel.product.sku,
         parentSku: reel.product.parent.sku,
         parentName: reel.product.parent.name,
-        quantity: reel.product.quantity,
+        unitsPerSale: Math.max(1, reel.product.quantity),
+        stockTrackingActive:
+          reel.product.parent.inventoryMode === "SHARED_PARENT"
+            ? Boolean(reel.product.parent.inventoryStock)
+            : reel.product.parent.inventoryMode === "VARIANT"
+              ? Boolean(reel.product.inventoryStock)
+              : false,
+        stockQuantity:
+          reel.product.parent.inventoryMode === "SHARED_PARENT"
+            ? reel.product.parent.inventoryStock?.quantity ?? null
+            : reel.product.parent.inventoryMode === "VARIANT"
+              ? reel.product.inventoryStock?.quantity ?? null
+              : null,
         sellingPrice:
           reel.product.sellingPrice.toString(),
       },
@@ -332,9 +355,10 @@ export default async function PublicReelCategoryPage({
           price: Number(reel.product.sellingPrice),
           priceCurrency: "BDT",
           availability:
-            reel.product.quantity > 0
-              ? "https://schema.org/InStock"
-              : "https://schema.org/OutOfStock",
+            reel.product.stockTrackingActive &&
+            (reel.product.stockQuantity ?? 0) <= 0
+              ? "https://schema.org/PreOrder"
+              : "https://schema.org/InStock",
         },
       },
     })),

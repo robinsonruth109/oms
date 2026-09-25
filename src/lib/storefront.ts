@@ -123,7 +123,13 @@ function serializeProduct(row: {
     slug: string | null;
     quantity: number;
     sellingPrice: { toString(): string };
-    parent: { sku: string; name: string };
+    inventoryStock: { quantity: number } | null;
+    parent: {
+      sku: string;
+      name: string;
+      inventoryMode: "SHARED_PARENT" | "VARIANT" | null;
+      inventoryStock: { quantity: number } | null;
+    };
   };
   gallery: Array<{
     id: string;
@@ -152,7 +158,19 @@ function serializeProduct(row: {
       slug: row.product.slug,
       parentSku: row.product.parent.sku,
       parentName: row.product.parent.name,
-      quantity: row.product.quantity,
+      unitsPerSale: Math.max(1, row.product.quantity),
+      stockTrackingActive:
+        row.product.parent.inventoryMode === "SHARED_PARENT"
+          ? Boolean(row.product.parent.inventoryStock)
+          : row.product.parent.inventoryMode === "VARIANT"
+            ? Boolean(row.product.inventoryStock)
+            : false,
+      stockQuantity:
+        row.product.parent.inventoryMode === "SHARED_PARENT"
+          ? row.product.parent.inventoryStock?.quantity ?? null
+          : row.product.parent.inventoryMode === "VARIANT"
+            ? row.product.inventoryStock?.quantity ?? null
+            : null,
       sellingPrice: row.product.sellingPrice.toString(),
     },
     gallery: row.gallery.map((media) => ({
@@ -303,7 +321,19 @@ export async function loadStorefrontPage({
               slug: true,
               quantity: true,
               sellingPrice: true,
-              parent: { select: { sku: true, name: true } },
+              inventoryStock: {
+                select: { quantity: true },
+              },
+              parent: {
+                select: {
+                  sku: true,
+                  name: true,
+                  inventoryMode: true,
+                  inventoryStock: {
+                    select: { quantity: true },
+                  },
+                },
+              },
             },
           },
           gallery: {

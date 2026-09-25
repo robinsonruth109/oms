@@ -13,7 +13,9 @@ export type StorefrontProduct = {
     slug: string | null;
     parentSku: string;
     parentName: string;
-    quantity: number;
+    unitsPerSale: number;
+    stockTrackingActive: boolean;
+    stockQuantity: number | null;
     sellingPrice: string;
   };
   gallery: Array<{

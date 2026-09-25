@@ -13,7 +13,7 @@ type Props = {
 
 export default async function PathaoOrderControlPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
-  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 

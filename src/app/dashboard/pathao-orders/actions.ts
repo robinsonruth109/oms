@@ -10,7 +10,7 @@ type ActionState = { success: boolean; message: string };
 
 async function requireAccess() {
   const session = await getServerSession(authOptions);
-  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
     throw new Error("Unauthorized");
   }
 }

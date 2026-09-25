@@ -128,6 +128,26 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
     },
   });
 
+  const cancelledActions = await prisma.postPrintActionLog.findMany({
+    where: {
+      actionType: "CANCELLED",
+      createdAt: {
+        gte: bangladeshDateStartUtc(selectedDate),
+        lte: bangladeshDateEndUtc(selectedDate),
+      },
+      ...(selectedCourier
+        ? {
+            order: {
+              courier: selectedCourier,
+            },
+          }
+        : {}),
+    },
+    select: {
+      orderId: true,
+    },
+  });
+
   const selectedDateIsToday =
     selectedDate === getBangladeshDateInputValue();
 
@@ -194,6 +214,10 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
     (order) => order.orderStatus === "STOCK_OUT"
   ).length;
 
+  const cancelledCohortCount = orders.filter(
+    (order) => order.orderStatus === "CANCELLED"
+  ).length;
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
@@ -242,7 +266,7 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
         </form>
       </section>
 
-      <section className="grid grid-cols-2 gap-4 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-4 xl:grid-cols-7">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Ready Memo Total</p>
           <p className="mt-2 text-2xl font-bold">{totalOrders}</p>
@@ -266,6 +290,15 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
           </p>
           <p className="mt-1 text-xs text-slate-400">
             {stockOutActions.length} stock-out action(s) performed on selected date
+          </p>
+        </div>
+        <div className="rounded-2xl border bg-orange-50 p-4 shadow-sm">
+          <p className="text-sm text-orange-700">Cancelled in RTS Memo</p>
+          <p className="mt-2 text-2xl font-bold text-orange-700">
+            {cancelledCohortCount}
+          </p>
+          <p className="mt-1 text-xs text-orange-500">
+            {cancelledActions.length} cancel action(s) performed on selected date
           </p>
         </div>
         <div className="rounded-2xl border bg-emerald-50 p-4 shadow-sm">

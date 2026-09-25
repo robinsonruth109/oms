@@ -938,6 +938,7 @@ enum PostPrintActionMethod {
 
 enum Role {
   ADMIN
+  MANAGER
   AGENT
   NOTE_AGENT
   PACKAGING_AGENT

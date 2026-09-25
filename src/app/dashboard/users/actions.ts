@@ -18,6 +18,7 @@ export type DeleteUserResult = {
 
 const ALLOWED_ROLES: Role[] = [
   "ADMIN",
+  "MANAGER",
   "AGENT",
   "NOTE_AGENT",
   "PACKAGING_AGENT",
@@ -195,4 +196,77 @@ export async function deleteUser(userId: string): Promise<DeleteUserResult> {
         "This user is still referenced by protected OMS records and cannot be deleted safely.",
     };
   }
+}
+
+
+export type UpdateUserRoleResult = {
+  success: boolean;
+  message: string;
+};
+
+export async function updateUserRole(
+  userId: string,
+  nextRoleValue: string
+): Promise<UpdateUserRoleResult> {
+  const session = await requireAdminSession();
+
+  if (!session) {
+    return { success: false, message: "Unauthorized action." };
+  }
+
+  const id = String(userId || "").trim();
+  const nextRole = String(nextRoleValue || "").trim();
+
+  if (!id || !isRole(nextRole)) {
+    return { success: false, message: "Invalid user or role." };
+  }
+
+  if (id === session.user.id) {
+    return {
+      success: false,
+      message: "You cannot change the role of your own logged-in admin account.",
+    };
+  }
+
+  const { prisma } = await import("@/lib/prisma");
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, role: true },
+  });
+
+  if (!user) {
+    return { success: false, message: "User not found." };
+  }
+
+  if (user.role === nextRole) {
+    return {
+      success: true,
+      message: `${user.name} is already ${nextRole.replaceAll("_", " ")}.`,
+    };
+  }
+
+  if (user.role === "ADMIN" && nextRole !== "ADMIN") {
+    const adminCount = await prisma.user.count({
+      where: { role: "ADMIN", status: true },
+    });
+
+    if (adminCount <= 1) {
+      return {
+        success: false,
+        message: "The last active ADMIN cannot be changed to another role.",
+      };
+    }
+  }
+
+  await prisma.user.update({
+    where: { id },
+    data: { role: nextRole },
+  });
+
+  revalidatePath("/dashboard/users");
+
+  return {
+    success: true,
+    message: `${user.name} role changed from ${user.role.replaceAll("_", " ")} to ${nextRole.replaceAll("_", " ")}.`,
+  };
 }

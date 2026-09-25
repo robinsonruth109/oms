@@ -1,6 +1,7 @@
 import { BadgeCheck, UserCog, UserRound } from "lucide-react";
 import CreateUserForm from "./create-user-form";
 import DeleteUserButton from "./delete-user-button";
+import ChangeUserRole from "./change-user-role";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,14 @@ function RoleBadge({ role }: { role: string }) {
     return (
       <span className="inline-flex items-center rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
         ADMIN
+      </span>
+    );
+  }
+
+  if (role === "MANAGER") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
+        MANAGER
       </span>
     );
   }
@@ -52,7 +61,7 @@ export default async function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Manage Users</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Create and manage admins, calling agents, note agents and packaging agents.
+            Create users, assign roles, and promote existing staff to Manager when needed.
           </p>
         </div>
 
@@ -111,7 +120,13 @@ export default async function UsersPage() {
               </div>
             </div>
 
-            <div className="mt-4 border-t pt-4">
+            <div className="mt-4 space-y-3 border-t pt-4">
+              <ChangeUserRole
+                userId={user.id}
+                userName={user.name}
+                currentRole={user.role}
+                disabled={user.id === session?.user?.id}
+              />
               <DeleteUserButton
                 userId={user.id}
                 userName={user.name}
@@ -187,11 +202,19 @@ export default async function UsersPage() {
                   </td>
 
                   <td className="px-6 py-4">
-                    <DeleteUserButton
-                      userId={user.id}
-                      userName={user.name}
-                      disabled={user.id === session?.user?.id}
-                    />
+                    <div className="flex min-w-[320px] items-start gap-2">
+                      <ChangeUserRole
+                        userId={user.id}
+                        userName={user.name}
+                        currentRole={user.role}
+                        disabled={user.id === session?.user?.id}
+                      />
+                      <DeleteUserButton
+                        userId={user.id}
+                        userName={user.name}
+                        disabled={user.id === session?.user?.id}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

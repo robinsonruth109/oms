@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { applyStockMovement } from "@/lib/inventory";
 
 type CreateReceivedOrderInput = {
   purchaseOrderId: string;
@@ -126,43 +127,57 @@ export async function createReceivedOrder(
     const originalUnitPrice =
       receivedQty > 0 ? grandTotalBdt / receivedQty : 0;
 
-    await prisma.purchaseReceivedOrder.create({
-        data: {
-            purchaseOrderId,
-            receiveDate: new Date(`${receiveDate}T00:00:00`),
-
-            receivedQty,
-
-            packageWeight,
-            cnfRatePerKg,
-            totalCnfCharge,
-
-            otherCostBdt,
-            paidAmountBdt: totalPaidBdt,
-            grandTotalBdt,
-            unitOriginalCost: originalUnitPrice,
-
-            note,
-        },
-        });
-
     const finalReceivedQty = alreadyReceivedQty + receivedQty;
 
-    await prisma.purchaseOrder.update({
-      where: {
-        id: purchaseOrderId,
-      },
-      data: {
-        status:
-          finalReceivedQty >= Number(purchaseOrder.quantity)
-            ? "RECEIVED"
-            : "PARTIAL_RECEIVED",
-      },
-    });
+    const stockResult = await prisma.$transaction(async (tx) => {
+      const received = await tx.purchaseReceivedOrder.create({
+        data: {
+          purchaseOrderId,
+          receiveDate: new Date(`${receiveDate}T00:00:00`),
+          receivedQty,
+          packageWeight,
+          cnfRatePerKg,
+          totalCnfCharge,
+          otherCostBdt,
+          paidAmountBdt: totalPaidBdt,
+          grandTotalBdt,
+          unitOriginalCost: originalUnitPrice,
+          note,
+        },
+      });
+
+      await tx.purchaseOrder.update({
+        where: { id: purchaseOrderId },
+        data: {
+          status:
+            finalReceivedQty >= Number(purchaseOrder.quantity)
+              ? "RECEIVED"
+              : "PARTIAL_RECEIVED",
+        },
+      });
+
+      const inventory = await applyStockMovement(tx, {
+        productId: purchaseOrder.productId,
+        movementType: "PURCHASE_RECEIVED",
+        quantityDelta: receivedQty,
+        unitCost: originalUnitPrice,
+        idempotencyKey: "PURCHASE_RECEIVED:" + received.id,
+        referenceType: "PURCHASE_RECEIVED",
+        referenceId: received.id,
+        note:
+          "Purchase received: " +
+          receivedQty +
+          " physical unit(s), weighted-average landed cost update.",
+        createdByUserId: session.user.id,
+      });
+
+      return inventory;
+    }, { timeout: 30_000 });
 
     revalidatePath(
       "/dashboard/products-purchases/received-orders"
     );
+    revalidatePath("/dashboard/inventory");
 
     revalidatePath(
       `/dashboard/products-purchases/purchase-orders/${purchaseOrderId}`
@@ -170,7 +185,13 @@ export async function createReceivedOrder(
 
     return {
       success: true,
-      message: "Received order saved successfully.",
+      message:
+        "Received order saved successfully." +
+        (stockResult.applied
+          ? " Tracked inventory increased."
+          : stockResult.reason === "TRACKING_NOT_ACTIVE"
+            ? " Inventory was not changed because stock tracking is not active for this Product Parent."
+            : ""),
     };
   } catch (error) {
     return {

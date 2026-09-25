@@ -1,4 +1,5 @@
 "use server";
+import { deductOrderInventory } from "@/lib/inventory";
 
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
@@ -364,6 +365,7 @@ export async function createCsvBatch(
 
     const batchNo = makeBatchNo("CSV");
     const submittedAt = new Date();
+    const stockWarnings: string[] = [];
 
     const batch = await prisma.$transaction(async (tx) => {
       const createdBatch = await tx.csvBatch.create({
@@ -397,6 +399,13 @@ export async function createCsvBatch(
             pathaoRawResponse: JSON.stringify(pathaoResponse),
           },
         });
+
+        const stockResult = await deductOrderInventory(tx, {
+          orderId: preparedOrder.orderId,
+          createdByUserId: session.user.id,
+          referenceType: "CSV_BATCH",
+        });
+        stockWarnings.push(...stockResult.warnings);
       }
 
       return createdBatch;
@@ -416,6 +425,7 @@ export async function createCsvBatch(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/inventory");
 
     const warnings = [
       missingFromCourier > 0
@@ -429,6 +439,9 @@ export async function createCsvBatch(
             .slice(0, 3)
             .map((row) => `${row.invoice} (${row.error})`)
             .join("; ")}`
+        : "",
+      stockWarnings.length
+        ? `Stock warning: ${stockWarnings.slice(0, 4).join(" ")}`
         : "",
     ]
       .filter(Boolean)
@@ -734,6 +747,19 @@ export async function pushAllToAssignedCouriers(
               },
             });
 
+            const stockResult = await deductOrderInventory(tx, {
+              orderId: preparedOrder.orderId,
+              createdByUserId: session.user.id,
+              referenceType: "PUSH_ALL",
+            });
+            if (stockResult.warnings.length) {
+              detailMessages.push(
+                ...stockResult.warnings.map(
+                  (warning) => `${courier.name}: ${warning}`
+                )
+              );
+            }
+
             await tx.orderAuditEvent.create({
               data: {
                 orderId: preparedOrder.orderId,
@@ -760,6 +786,7 @@ export async function pushAllToAssignedCouriers(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/inventory");
 
     const summary = [
       `${submittedCount} submitted`,

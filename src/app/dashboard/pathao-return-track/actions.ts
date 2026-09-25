@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { restoreReturnedInventory } from "@/lib/inventory";
 import {
   searchAllPathaoCouriersForConsignment,
   type PathaoReturnCourierMatch,
@@ -269,7 +270,7 @@ async function processReturn({
       });
 
       const newOmsStatus = isFullReturn ? "RETURNED" : "PARTIAL_RETURN";
-      const totalRestoredQty = [...selectedMap.values()].reduce(
+      const selectedReturnedSoldQty = [...selectedMap.values()].reduce(
         (sum, qty) => sum + qty,
         0
       );
@@ -286,7 +287,9 @@ async function processReturn({
           previousOmsStatus: order.orderStatus,
           newOmsStatus,
           returnType: isFullReturn ? "FULL" : "PARTIAL",
-          totalRestoredQty,
+          // Updated below after inventory rules convert sold SKU quantities
+          // into physical stock units. Starts at 0 for untracked historical returns.
+          totalRestoredQty: 0,
           processingMethod: method,
           rawPathaoResponse: serializeRawInfo(match.info),
           processedByUserId: user.id,
@@ -319,14 +322,21 @@ async function processReturn({
           );
         }
 
-        const stockBefore = product.quantity;
-        const updatedProduct = await tx.product.update({
-          where: { id: product.id },
-          data: {
-            quantity: { increment: returnedQty },
-          },
-          select: { quantity: true },
+        const inventoryResult = await restoreReturnedInventory(tx, {
+          orderId: order.id,
+          orderItemId: item.id,
+          productId: product.id,
+          returnedSoldQty: returnedQty,
+          returnReference: consignmentId,
+          createdByUserId: user.id,
         });
+
+        const physicalRestored =
+          inventoryResult.applied &&
+          inventoryResult.balanceBefore != null &&
+          inventoryResult.balanceAfter != null
+            ? inventoryResult.balanceAfter - inventoryResult.balanceBefore
+            : 0;
 
         await tx.pathaoReturnItem.create({
           data: {
@@ -337,17 +347,27 @@ async function processReturn({
             productNameSnapshot: item.productName,
             orderedQty: item.quantity,
             returnedQty,
-            stockBefore,
-            stockAfter: updatedProduct.quantity,
+            stockBefore: inventoryResult.balanceBefore ?? 0,
+            stockAfter: inventoryResult.balanceAfter ?? 0,
           },
         });
 
         restoredItems.push({
           sku: item.productSku,
           name: item.productName,
-          quantity: returnedQty,
+          quantity: physicalRestored,
         });
       }
+
+      const totalRestoredQty = restoredItems.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
+
+      await tx.pathaoReturnTrack.update({
+        where: { id: track.id },
+        data: { totalRestoredQty },
+      });
 
       await tx.order.update({
         where: { id: order.id },
@@ -374,6 +394,7 @@ async function processReturn({
             newStatus: newOmsStatus,
             restoredItems,
             totalRestoredQty,
+            selectedReturnedSoldQty,
           },
         },
       });
@@ -393,6 +414,7 @@ async function processReturn({
     revalidatePath("/dashboard/reports");
     revalidatePath("/dashboard/product-report");
     revalidatePath("/dashboard/pathao-daily-report");
+    revalidatePath("/dashboard/inventory");
     revalidatePath("/dashboard");
 
     return {

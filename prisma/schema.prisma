@@ -122,12 +122,20 @@ model ProductParent {
   sku       String   @unique
   name      String
   status    Boolean  @default(true)
+
+  inventoryMode      InventoryMode @default(LEGACY)
+  stockTrackingActive Boolean      @default(false)
+  stockActivatedAt    DateTime?
+  stockQuantity       Int          @default(0)
+  averageCost         Decimal      @default(0) @db.Decimal(12, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  products     Product[]
-  adsCostItems AdsCostItem[]
+  products             Product[]
+  adsCostItems          AdsCostItem[]
   metaCampaignMappings MetaCampaignMapping[]
+  stockMovements        StockMovement[] @relation("ParentStockMovements")
 }
 
 model Courier {
@@ -184,18 +192,61 @@ model Product {
   sku           String   @unique
   slug          String?  @unique
   name          String
+  // Quantity is the number of physical stock units consumed by one sold SKU.
+  // Example: A-3 has quantity=5, so selling one A-3 deducts 5 shared parent units.
   quantity      Int      @default(1)
   purchasePrice Decimal  @db.Decimal(10, 2)
   sellingPrice  Decimal  @db.Decimal(10, 2)
+
+  // Used only when the parent inventory mode is CHILD_VARIANT.
+  stockQuantity Int      @default(0)
+  averageCost   Decimal  @default(0) @db.Decimal(12, 2)
+
   status        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  orderItems     OrderItem[]
-  purchaseOrders PurchaseOrder[]
-  reelProducts   ReelProduct[]
+  orderItems        OrderItem[]
+  purchaseOrders    PurchaseOrder[]
+  reelProducts      ReelProduct[]
   pathaoReturnItems PathaoReturnItem[]
   exchangeCaseItems ExchangeCaseItem[]
+  stockMovements    StockMovement[] @relation("ProductStockMovements")
+}
+
+model StockMovement {
+  id String @id @default(uuid())
+
+  productParentId String
+  productParent   ProductParent @relation("ParentStockMovements", fields: [productParentId], references: [id], onDelete: Restrict)
+
+  // NULL for SHARED_PARENT movements; set for CHILD_VARIANT movements.
+  productId String?
+  product   Product? @relation("ProductStockMovements", fields: [productId], references: [id], onDelete: Restrict)
+
+  movementType StockMovementType
+  quantityDelta Int
+  balanceBefore Int
+  balanceAfter  Int
+
+  unitCost          Decimal? @db.Decimal(12, 2)
+  averageCostBefore Decimal  @default(0) @db.Decimal(12, 2)
+  averageCostAfter  Decimal  @default(0) @db.Decimal(12, 2)
+  stockValueAfter   Decimal  @default(0) @db.Decimal(14, 2)
+
+  referenceType String?
+  referenceId   String?
+  idempotencyKey String @unique
+  note            String? @db.Text
+  createdByUserId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([productParentId])
+  @@index([productId])
+  @@index([movementType])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
 }
 
 model Order {
@@ -925,6 +976,20 @@ enum OrderSourceType {
   SHOPIFY
   LARAVEL
   MANUAL
+}
+
+enum InventoryMode {
+  LEGACY
+  SHARED_PARENT
+  CHILD_VARIANT
+}
+
+enum StockMovementType {
+  OPENING
+  PURCHASE_RECEIVED
+  CSV_DISPATCH
+  PATHAO_RETURN
+  MANUAL_ADJUSTMENT
 }
 
 enum IntegrationPlatform {

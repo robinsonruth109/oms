@@ -181,12 +181,26 @@ export async function updateProduct(
       where: {
         id: productId,
       },
+      include: {
+        parent: true,
+      },
     });
 
     if (!currentProduct) {
       return {
         success: false,
         message: "Product not found.",
+      };
+    }
+
+    if (
+      currentProduct.parent.sku !== parentSku &&
+      currentProduct.parent.stockTrackingActive
+    ) {
+      return {
+        success: false,
+        message:
+          "Tracked inventory cannot be moved to another Parent SKU. Adjust/close stock tracking first.",
       };
     }
 
@@ -337,7 +351,20 @@ export async function importProductsCsv(
           where: {
             sku,
           },
+          include: {
+            parent: true,
+          },
         });
+
+        if (
+          existingProduct &&
+          existingProduct.parentId !== parent.id &&
+          (existingProduct.parent.stockTrackingActive ||
+            parent.stockTrackingActive)
+        ) {
+          skippedCount += 1;
+          continue;
+        }
 
         if (existingProduct) {
           await tx.product.update({
@@ -379,7 +406,7 @@ export async function importProductsCsv(
 
     return {
       success: true,
-      message: `CSV import complete. Created: ${importedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}.`,
+      message: `CSV import complete. Created: ${importedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}. Tracked SKUs are never moved between parents by CSV.`,
     };
   } catch (error) {
     return {

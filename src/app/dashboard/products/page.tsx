@@ -79,8 +79,7 @@ export default async function ProductsPage({
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">Product Master</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Manage parent SKU and child SKU products. Search, update, import CSV,
-          and use them in manual order entry.
+          Manage parent and child SKUs. Quantity is now Units per Sale; real stock is controlled from Inventory & Valuation after activation.
         </p>
       </section>
 
@@ -156,7 +155,7 @@ export default async function ProductsPage({
                   <p className="font-medium text-slate-800">{product.parent.sku}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Qty</p>
+                  <p className="text-slate-400">Units / Sale</p>
                   <p className="font-medium text-slate-800">{product.quantity}</p>
                 </div>
                 <div>
@@ -199,6 +198,9 @@ export default async function ProductsPage({
                   Qty
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Current Stock
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Purchase
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -227,6 +229,28 @@ export default async function ProductsPage({
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     {product.quantity}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    {!product.parent.stockTrackingActive ? (
+                      <span className="text-slate-400">Not activated</span>
+                    ) : (
+                      <span
+                        className={
+                          (product.parent.inventoryMode === "SHARED_PARENT"
+                            ? product.parent.stockQuantity
+                            : product.stockQuantity) <= 0
+                            ? "font-semibold text-red-600"
+                            : "font-semibold text-slate-800"
+                        }
+                      >
+                        {product.parent.inventoryMode === "SHARED_PARENT"
+                          ? product.parent.stockQuantity
+                          : product.stockQuantity}
+                        {product.parent.inventoryMode === "SHARED_PARENT"
+                          ? " shared"
+                          : ""}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     ৳ {Number(product.purchasePrice).toFixed(2)}

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { applyInventoryPurchaseReceiptTx } from "@/lib/inventory";
 
 type CreateReceivedOrderInput = {
   purchaseOrderId: string;
@@ -126,39 +127,43 @@ export async function createReceivedOrder(
     const originalUnitPrice =
       receivedQty > 0 ? grandTotalBdt / receivedQty : 0;
 
-    await prisma.purchaseReceivedOrder.create({
-        data: {
-            purchaseOrderId,
-            receiveDate: new Date(`${receiveDate}T00:00:00`),
-
-            receivedQty,
-
-            packageWeight,
-            cnfRatePerKg,
-            totalCnfCharge,
-
-            otherCostBdt,
-            paidAmountBdt: totalPaidBdt,
-            grandTotalBdt,
-            unitOriginalCost: originalUnitPrice,
-
-            note,
-        },
-        });
-
     const finalReceivedQty = alreadyReceivedQty + receivedQty;
 
-    await prisma.purchaseOrder.update({
-      where: {
-        id: purchaseOrderId,
-      },
-      data: {
-        status:
-          finalReceivedQty >= Number(purchaseOrder.quantity)
-            ? "RECEIVED"
-            : "PARTIAL_RECEIVED",
-      },
-    });
+    const inventoryResult = await prisma.$transaction(async (tx) => {
+      const receivedOrder = await tx.purchaseReceivedOrder.create({
+        data: {
+          purchaseOrderId,
+          receiveDate: new Date(`${receiveDate}T00:00:00`),
+          receivedQty,
+          packageWeight,
+          cnfRatePerKg,
+          totalCnfCharge,
+          otherCostBdt,
+          paidAmountBdt: totalPaidBdt,
+          grandTotalBdt,
+          unitOriginalCost: originalUnitPrice,
+          note,
+        },
+      });
+
+      await tx.purchaseOrder.update({
+        where: {
+          id: purchaseOrderId,
+        },
+        data: {
+          status:
+            finalReceivedQty >= Number(purchaseOrder.quantity)
+              ? "RECEIVED"
+              : "PARTIAL_RECEIVED",
+        },
+      });
+
+      return applyInventoryPurchaseReceiptTx(
+        tx,
+        receivedOrder.id,
+        session.user.id
+      );
+    }, { timeout: 30_000 });
 
     revalidatePath(
       "/dashboard/products-purchases/received-orders"
@@ -167,10 +172,16 @@ export async function createReceivedOrder(
     revalidatePath(
       `/dashboard/products-purchases/purchase-orders/${purchaseOrderId}`
     );
+    revalidatePath("/dashboard/stock-control");
+    revalidatePath("/dashboard/products");
 
     return {
       success: true,
-      message: "Received order saved successfully.",
+      message: inventoryResult.tracked
+        ? `Received order saved and active stock increased.${
+            inventoryResult.warning ? ` ${inventoryResult.warning}` : ""
+          }`
+        : "Received order saved. This product is not stock-activated yet, so inventory was not changed.",
     };
   } catch (error) {
     return {

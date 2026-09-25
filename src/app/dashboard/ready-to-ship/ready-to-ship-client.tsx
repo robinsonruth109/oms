@@ -56,6 +56,7 @@ type Props = {
 const initialState = {
   success: false,
   message: "",
+  warning: false,
   batchId: undefined as string | undefined,
   downloadUrl: undefined as string | undefined,
 };
@@ -138,15 +139,18 @@ export default function ReadyToShipClient({
       : invoiceState;
   const flashMessage = activeFlash.message;
   const flashSuccess = activeFlash.success;
+  const flashWarning = Boolean(activeFlash.warning);
 
   return (
     <div className="space-y-6">
       {flashMessage && (
         <div
           className={`rounded-2xl px-4 py-3 text-sm ${
-            flashSuccess
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-red-50 text-red-700"
+            flashWarning
+              ? "border border-amber-200 bg-amber-50 text-amber-800"
+              : flashSuccess
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-red-50 text-red-700"
           }`}
         >
           {flashMessage}
@@ -176,7 +180,7 @@ export default function ReadyToShipClient({
                     ? courierMap[courier] || courier
                     : "all assigned couriers";
                   const confirmed = window.confirm(
-                    `Push ALL ${nonCsvCount} Non CSV order(s) matching the current filters to ${label}?\n\nOMS will group orders by their assigned courier and submit each group through that courier's Pathao API account. Invalid or unconfigured orders will remain in Non CSV.`
+                    `Push ALL ${nonCsvCount} Non CSV order(s) matching the current filters to ${label}?\n\nOMS will group orders by their assigned courier and submit each group through that courier's Pathao API account. Invalid or unconfigured orders will remain in Non CSV.\n\nLOW STOCK WILL NOT BLOCK SUBMISSION. If required stock is higher than available stock, OMS will still push the order and the stock balance may become negative.`
                   );
                   if (!confirmed) event.preventDefault();
                 }}
@@ -246,6 +250,10 @@ export default function ReadyToShipClient({
 
         {activeTab === "non-csv" && (
           <div className="border-b bg-slate-50 px-5 py-4 sm:px-6">
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <strong>Stock warning only:</strong> low stock will not stop courier submission.
+              After Pathao accepts the order, OMS will deduct the required quantity and stock can go below zero if needed.
+            </div>
             {!courier ? (
               <div className="mb-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Select one courier from the filter before creating a Pathao CSV batch. The backend will only submit orders belonging to that selected courier.

@@ -16,13 +16,14 @@ import {
   getBangladeshTodayRange,
 } from "@/lib/bangladesh-time";
 import {
-  assertOrdersHaveStock,
   deductOrderStock,
+  getOrderStockWarnings,
 } from "@/lib/inventory";
 
 type BatchActionState = {
   success: boolean;
   message: string;
+  warning?: boolean;
   batchId?: string;
   downloadUrl?: string;
 };
@@ -298,10 +299,9 @@ export async function createCsvBatch(
 
     const preparedIds = prepared.map((row) => row.orderId);
 
-    // Stock is validated before the external Pathao request. Physical inventory
-    // is only deducted after Pathao accepts the request and the OMS transaction
-    // marks the order as submitted/CSV.
-    await assertOrdersHaveStock(prisma, preparedIds);
+    // Low stock is a warning only. Orders are still submitted to Pathao and
+    // stock is allowed to become negative after a successful submission.
+    const stockWarnings = await getOrderStockWarnings(prisma, preparedIds);
 
     // Claim orders before calling external API. If the button is clicked twice
     // concurrently, only the first request will be eligible for a new submission.
@@ -431,6 +431,15 @@ export async function createCsvBatch(
     revalidatePath("/dashboard/stock-valuation");
 
     const warnings = [
+      stockWarnings.length
+        ? `LOW STOCK WARNING: ${stockWarnings
+            .slice(0, 5)
+            .map(
+              (row) =>
+                `${row.ownerLabel}: available ${row.available}, required ${row.required}, resulting stock ${row.resultingStock}`
+            )
+            .join("; ")}${stockWarnings.length > 5 ? ` (+${stockWarnings.length - 5} more)` : ""}. Orders were still pushed and stock was deducted.`
+        : "",
       missingFromCourier > 0
         ? `${missingFromCourier} selected order(s) did not belong to the selected courier/eligible tab and were ignored.`
         : "",
@@ -449,6 +458,7 @@ export async function createCsvBatch(
 
     return {
       success: true,
+      warning: stockWarnings.length > 0,
       message: `Pathao accepted ${preparedIds.length} order(s) for ${
         courier.name
       }. CSV batch ${batch.batchNo} created. Consignment IDs will be stored when Pathao sends webhook updates.${
@@ -553,6 +563,7 @@ export async function pushAllToAssignedCouriers(
     let failedCount = 0;
     let skippedConfigurationCount = ordersWithoutCourier.length;
     let batchCount = 0;
+    let lowStockWarningCount = 0;
     const detailMessages: string[] = [];
 
     if (ordersWithoutCourier.length) {
@@ -638,19 +649,22 @@ export async function pushAllToAssignedCouriers(
         validPrepared,
         PUSH_ALL_CHUNK_SIZE
       )) {
-        try {
-          await assertOrdersHaveStock(
-            prisma,
-            preparedChunk.map((row) => row.orderId)
-          );
-        } catch (error) {
-          failedCount += preparedChunk.length;
+        const stockWarnings = await getOrderStockWarnings(
+          prisma,
+          preparedChunk.map((row) => row.orderId)
+        );
+
+        if (stockWarnings.length) {
+          lowStockWarningCount += stockWarnings.length;
           detailMessages.push(
-            `${courier.name}: ${preparedChunk.length} order(s) skipped because inventory validation failed — ${
-              error instanceof Error ? error.message : "Insufficient stock."
-            }`
+            `${courier.name}: LOW STOCK — ${stockWarnings
+              .slice(0, 3)
+              .map(
+                (row) =>
+                  `${row.ownerLabel} ${row.available}→${row.resultingStock}`
+              )
+              .join(", ")}${stockWarnings.length > 3 ? ` (+${stockWarnings.length - 3} more)` : ""}. Submission continued.`
           );
-          continue;
         }
 
         const claimedPrepared: PreparedPathaoOrder[] = [];
@@ -802,6 +816,9 @@ export async function pushAllToAssignedCouriers(
         ? `${skippedConfigurationCount} skipped/unconfigured`
         : "",
       failedCount ? `${failedCount} failed` : "",
+      lowStockWarningCount
+        ? `${lowStockWarningCount} low-stock warning(s); negative stock allowed`
+        : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -810,6 +827,7 @@ export async function pushAllToAssignedCouriers(
 
     return {
       success: submittedCount > 0 && failedCount === 0,
+      warning: lowStockWarningCount > 0,
       message:
         submittedCount > 0
           ? `Push All finished: ${summary}.${details ? ` ${details}` : ""}`

@@ -56,9 +56,21 @@ function ownerFor(product: any, orderQty: number) {
   };
 }
 
-export async function assertOrdersHaveStock(db: any, orderIds: string[]) {
+export type InventoryStockWarning = {
+  ownerType: "PRODUCT" | "PRODUCT_PARENT";
+  ownerId: string;
+  ownerLabel: string;
+  available: number;
+  required: number;
+  resultingStock: number;
+};
+
+export async function getOrderStockWarnings(
+  db: any,
+  orderIds: string[]
+): Promise<InventoryStockWarning[]> {
   const uniqueIds = [...new Set(orderIds.filter(Boolean))];
-  if (!uniqueIds.length) return;
+  if (!uniqueIds.length) return [];
 
   const items = await db.orderItem.findMany({
     where: {
@@ -102,13 +114,12 @@ export async function assertOrdersHaveStock(db: any, orderIds: string[]) {
     }
   }
 
-  for (const row of requirements.values()) {
-    if (row.available < row.required) {
-      throw new InventoryError(
-        `Insufficient stock for ${row.ownerLabel}. Required ${row.required}, available ${row.available}.`
-      );
-    }
-  }
+  return Array.from(requirements.values())
+    .filter((row) => row.available < row.required)
+    .map((row) => ({
+      ...row,
+      resultingStock: row.available - row.required,
+    }));
 }
 
 export async function deductOrderStock(
@@ -152,37 +163,19 @@ export async function deductOrderStock(
     if (claimed.count !== 1) continue;
 
     if (owner.ownerType === "PRODUCT_PARENT") {
-      const updated = await tx.productParent.updateMany({
-        where: {
-          id: owner.ownerId,
-          stockQuantity: { gte: owner.requiredUnits },
-        },
+      await tx.productParent.update({
+        where: { id: owner.ownerId },
         data: {
           stockQuantity: { decrement: owner.requiredUnits },
         },
       });
-
-      if (updated.count !== 1) {
-        throw new InventoryError(
-          `Insufficient stock for ${owner.ownerLabel}. Required ${owner.requiredUnits}.`
-        );
-      }
     } else {
-      const updated = await tx.product.updateMany({
-        where: {
-          id: owner.ownerId,
-          quantity: { gte: owner.requiredUnits },
-        },
+      await tx.product.update({
+        where: { id: owner.ownerId },
         data: {
           quantity: { decrement: owner.requiredUnits },
         },
       });
-
-      if (updated.count !== 1) {
-        throw new InventoryError(
-          `Insufficient stock for ${owner.ownerLabel}. Required ${owner.requiredUnits}.`
-        );
-      }
     }
 
     deductedUnits += owner.requiredUnits;

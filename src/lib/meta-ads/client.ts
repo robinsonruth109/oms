@@ -19,6 +19,7 @@ export type MetaCampaignInsight = {
   campaign_id?: string;
   campaign_name?: string;
   spend?: string;
+  actions?: { action_type?: string; value?: string }[];
   date_start?: string;
   date_stop?: string;
 };
@@ -123,7 +124,7 @@ export async function getCampaignInsights(input: {
   first.searchParams.set("level", "campaign");
   first.searchParams.set(
     "fields",
-    "account_id,account_name,campaign_id,campaign_name,spend,date_start,date_stop"
+    "account_id,account_name,campaign_id,campaign_name,spend,actions,date_start,date_stop"
   );
   first.searchParams.set("time_increment", "1");
   first.searchParams.set("limit", "500");

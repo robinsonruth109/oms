@@ -18,6 +18,27 @@ function validateRange(fromDate: string, toDate: string) {
   if (days > 31) throw new Error("Meta Ads sync is limited to 31 days per run.");
 }
 
+function metaPurchaseCount(
+  actions: { action_type?: string; value?: string }[] | undefined
+) {
+  const rows = actions || [];
+  const priority = [
+    "omni_purchase",
+    "purchase",
+    "offsite_conversion.fb_pixel_purchase",
+  ];
+
+  for (const actionType of priority) {
+    const match = rows.find((row) => row.action_type === actionType);
+    if (match) {
+      const value = Number(match.value || 0);
+      return Number.isFinite(value) ? value : 0;
+    }
+  }
+
+  return 0;
+}
+
 function tokenFromConnection(connection: {
   accessTokenEncrypted: string;
   accessTokenIv: string;
@@ -133,12 +154,14 @@ async function syncOneAccount(input: {
           campaignId,
           spendDate,
           amountSpent: Number(row.spend || 0),
+          metaPurchases: metaPurchaseCount(row.actions),
           currency: input.account.currency || "USD",
           campaignNameSnapshot: campaignName,
           syncedAt: new Date(),
         },
         update: {
           amountSpent: Number(row.spend || 0),
+          metaPurchases: metaPurchaseCount(row.actions),
           currency: input.account.currency || "USD",
           campaignNameSnapshot: campaignName,
           syncedAt: new Date(),

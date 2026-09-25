@@ -188,7 +188,10 @@ model Product {
   sku           String   @unique
   slug          String?  @unique
   name          String
+  // Legacy quantity is preserved for backward compatibility only.
+  // Live inventory is InventoryStock; package consumption is unitsPerSale.
   quantity      Int      @default(1)
+  unitsPerSale  Int?
   purchasePrice Decimal  @db.Decimal(10, 2)
   sellingPrice  Decimal  @db.Decimal(10, 2)
   status        Boolean  @default(true)

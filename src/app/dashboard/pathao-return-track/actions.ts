@@ -294,6 +294,7 @@ async function processReturn({
         name: string;
         quantity: number;
       }[] = [];
+      const inventoryWarnings: string[] = [];
 
       for (const [orderItemId, returnedQty] of selectedMap) {
         const item = orderItemMap.get(orderItemId)!;
@@ -322,6 +323,10 @@ async function processReturn({
           pathaoReturnTrackId: track.id,
           actorUserId: user.id,
         });
+
+        if (inventoryEffect.warning) {
+          inventoryWarnings.push(inventoryEffect.warning);
+        }
 
         await tx.pathaoReturnItem.create({
           data: {
@@ -388,6 +393,7 @@ async function processReturn({
         returnType: isFullReturn ? ("FULL" as const) : ("PARTIAL" as const),
         omsStatus: newOmsStatus,
         restoredQty: totalRestoredQty,
+        inventoryWarnings,
       };
     });
 
@@ -404,7 +410,11 @@ async function processReturn({
     return {
       success: true,
       action: "PROCESSED",
-      message: `${transactionResult.returnType === "FULL" ? "Full" : "Partial"} return processed for ${transactionResult.invoiceId}. Active inventory restored: ${transactionResult.restoredQty} physical pcs. Products not yet activated for stock tracking were left unchanged.`,
+      message: `${transactionResult.returnType === "FULL" ? "Full" : "Partial"} return processed for ${transactionResult.invoiceId}. Active inventory restored: ${transactionResult.restoredQty} physical pcs. Products not yet activated for stock tracking were left unchanged.${
+        transactionResult.inventoryWarnings.length
+          ? ` Warning: ${transactionResult.inventoryWarnings.join(" ")}`
+          : ""
+      }`,
       processed: {
         invoiceId: transactionResult.invoiceId,
         consignmentId,

@@ -30,6 +30,35 @@ function cleanIds(values: string[]) {
   );
 }
 
+function mappingSignature(productParentId: string, sourceIds: string[]) {
+  return String(productParentId || "").trim() +
+    "::" +
+    cleanIds(sourceIds).sort().join(",");
+}
+
+async function cleanupReportGroup(groupId: string | null | undefined) {
+  const id = String(groupId || "").trim();
+  if (!id) return;
+
+  const mappings = await prisma.metaCampaignMapping.findMany({
+    where: { reportGroupId: id },
+    select: { id: true },
+  });
+
+  if (mappings.length > 1) return;
+
+  if (mappings.length === 1) {
+    await prisma.metaCampaignMapping.update({
+      where: { id: mappings[0].id },
+      data: { reportGroupId: null },
+    });
+  }
+
+  await prisma.metaCampaignReportGroup.deleteMany({
+    where: { id },
+  });
+}
+
 export async function saveMetaCampaignMapping(input: {
   campaignId: string;
   productParentId: string;
@@ -80,6 +109,7 @@ export async function saveMetaCampaignMapping(input: {
     });
 
     revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
     return {
       success: true,
       message: "Campaign mapping saved. Meta spend remains one amount; sources are merged only for order calculations.",
@@ -166,16 +196,46 @@ export async function saveMetaCampaignMappings(input: {
     let saved = 0;
     let removed = 0;
 
+    const existingMappings = await prisma.metaCampaignMapping.findMany({
+      where: { campaignId: { in: campaignIds } },
+      include: { sources: true },
+    });
+    const existingByCampaign = new Map(
+      existingMappings.map((mapping) => [mapping.campaignId, mapping])
+    );
+    const groupsToCleanup = new Set<string>();
+
     await prisma.$transaction(async (tx) => {
       for (const row of rows) {
         const removing = !row.productParentId && row.sourceIds.length === 0;
 
         if (removing) {
+          const existing = existingByCampaign.get(row.campaignId);
+          if (existing?.reportGroupId) groupsToCleanup.add(existing.reportGroupId);
+
           const result = await tx.metaCampaignMapping.deleteMany({
             where: { campaignId: row.campaignId },
           });
           removed += result.count;
           continue;
+        }
+
+        const existing = existingByCampaign.get(row.campaignId);
+        const oldSignature = existing
+          ? mappingSignature(
+              existing.productParentId,
+              existing.sources.map((item) => item.sourceId)
+            )
+          : "";
+        const nextSignature = mappingSignature(
+          row.productParentId,
+          row.sourceIds
+        );
+        const shouldDisconnectGroup =
+          Boolean(existing?.reportGroupId) && oldSignature !== nextSignature;
+
+        if (shouldDisconnectGroup && existing?.reportGroupId) {
+          groupsToCleanup.add(existing.reportGroupId);
         }
 
         const mapping = await tx.metaCampaignMapping.upsert({
@@ -186,6 +246,7 @@ export async function saveMetaCampaignMappings(input: {
           },
           update: {
             productParentId: row.productParentId,
+            ...(shouldDisconnectGroup ? { reportGroupId: null } : {}),
           },
         });
 
@@ -205,7 +266,12 @@ export async function saveMetaCampaignMappings(input: {
       }
     });
 
+    for (const groupId of groupsToCleanup) {
+      await cleanupReportGroup(groupId);
+    }
+
     revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
 
     return {
       success: true,
@@ -218,6 +284,184 @@ export async function saveMetaCampaignMappings(input: {
         error instanceof Error
           ? error.message
           : "Failed to update campaign mappings.",
+    };
+  }
+}
+
+
+export async function connectMetaCampaignToExisting(input: {
+  campaignId: string;
+  targetCampaignId: string;
+}): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+
+    const campaignId = String(input.campaignId || "").trim();
+    const targetCampaignId = String(input.targetCampaignId || "").trim();
+
+    if (!campaignId || !targetCampaignId || campaignId === targetCampaignId) {
+      return {
+        success: false,
+        message: "Choose a different existing campaign to connect.",
+      };
+    }
+
+    const mappings = await prisma.metaCampaignMapping.findMany({
+      where: {
+        campaignId: { in: [campaignId, targetCampaignId] },
+      },
+      include: {
+        sources: true,
+        campaign: {
+          include: {
+            adAccount: {
+              select: { currency: true },
+            },
+          },
+        },
+      },
+    });
+
+    const current = mappings.find((row) => row.campaignId === campaignId);
+    const target = mappings.find((row) => row.campaignId === targetCampaignId);
+
+    if (!current || !target) {
+      return {
+        success: false,
+        message: "Both campaigns must be mapped before they can be connected.",
+      };
+    }
+
+    const currentSignature = mappingSignature(
+      current.productParentId,
+      current.sources.map((item) => item.sourceId)
+    );
+    const targetSignature = mappingSignature(
+      target.productParentId,
+      target.sources.map((item) => item.sourceId)
+    );
+
+    if (currentSignature !== targetSignature) {
+      return {
+        success: false,
+        message:
+          "Connected campaigns must use the same Product Parent and exactly the same Sources.",
+      };
+    }
+
+    const currentCurrency = String(current.campaign.adAccount.currency || "").toUpperCase();
+    const targetCurrency = String(target.campaign.adAccount.currency || "").toUpperCase();
+
+    if (currentCurrency !== targetCurrency) {
+      return {
+        success: false,
+        message: "Connected campaigns must use the same ad-account currency.",
+      };
+    }
+
+    if (
+      current.reportGroupId &&
+      target.reportGroupId &&
+      current.reportGroupId === target.reportGroupId
+    ) {
+      return {
+        success: true,
+        message: "These campaigns are already connected.",
+      };
+    }
+
+    const previousGroupId = current.reportGroupId;
+
+    let targetGroupId = target.reportGroupId;
+    if (!targetGroupId) {
+      const created = await prisma.metaCampaignReportGroup.create({
+        data: {},
+        select: { id: true },
+      });
+      targetGroupId = created.id;
+
+      await prisma.metaCampaignMapping.update({
+        where: { id: target.id },
+        data: { reportGroupId: targetGroupId },
+      });
+    }
+
+    await prisma.metaCampaignMapping.update({
+      where: { id: current.id },
+      data: { reportGroupId: targetGroupId },
+    });
+
+    if (previousGroupId && previousGroupId !== targetGroupId) {
+      await cleanupReportGroup(previousGroupId);
+    }
+
+    revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
+
+    return {
+      success: true,
+      message: "Campaign connected. The Ads Cost Report will count OMS orders once for this group.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to connect campaign.",
+    };
+  }
+}
+
+export async function disconnectMetaCampaignReportGroup(
+  campaignId: string
+): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+
+    const id = String(campaignId || "").trim();
+    if (!id) {
+      return { success: false, message: "Campaign ID is required." };
+    }
+
+    const mapping = await prisma.metaCampaignMapping.findUnique({
+      where: { campaignId: id },
+      select: {
+        id: true,
+        reportGroupId: true,
+      },
+    });
+
+    if (!mapping?.reportGroupId) {
+      return {
+        success: true,
+        message: "Campaign is not connected to another campaign.",
+      };
+    }
+
+    const groupId = mapping.reportGroupId;
+
+    await prisma.metaCampaignMapping.update({
+      where: { id: mapping.id },
+      data: { reportGroupId: null },
+    });
+
+    await cleanupReportGroup(groupId);
+
+    revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
+
+    return {
+      success: true,
+      message: "Campaign disconnected from the reporting group.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to disconnect campaign.",
     };
   }
 }
@@ -236,6 +480,7 @@ export async function removeMetaCampaignMapping(
     });
 
     revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
     return { success: true, message: "Campaign mapping removed." };
   } catch (error) {
     return {
@@ -258,6 +503,7 @@ export async function toggleMetaAdAccount(
     });
 
     revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
     return {
       success: true,
       message: enabled ? "Ad account enabled." : "Ad account disabled.",
@@ -323,6 +569,7 @@ export async function disconnectMetaConnection(
     ]);
 
     revalidatePath("/dashboard/ads-cost/sync");
+    revalidatePath("/dashboard/ads-cost/report");
     return {
       success: true,
       message: "Meta connection disconnected. Historical spend and mappings were kept.",

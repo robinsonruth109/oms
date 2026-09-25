@@ -9,6 +9,7 @@ import {
   validatePathaoOrder,
 } from "@/lib/pathao/orders";
 import type { PreparedPathaoOrder } from "@/lib/pathao/types";
+import { applyInventorySaleForOrderTx } from "@/lib/inventory";
 import {
   bangladeshDateEndUtc,
   bangladeshDateStartUtc,
@@ -364,6 +365,7 @@ export async function createCsvBatch(
 
     const batchNo = makeBatchNo("CSV");
     const submittedAt = new Date();
+    const stockWarnings: string[] = [];
 
     const batch = await prisma.$transaction(async (tx) => {
       const createdBatch = await tx.csvBatch.create({
@@ -397,10 +399,17 @@ export async function createCsvBatch(
             pathaoRawResponse: JSON.stringify(pathaoResponse),
           },
         });
+
+        const inventory = await applyInventorySaleForOrderTx(
+          tx,
+          preparedOrder.orderId,
+          session.user.id
+        );
+        stockWarnings.push(...inventory.warnings);
       }
 
       return createdBatch;
-    });
+    }, { timeout: 30_000 });
 
     // Validation failures remain Non CSV and can be corrected/retried.
     for (const row of invalid) {
@@ -416,6 +425,8 @@ export async function createCsvBatch(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/stock-control");
+    revalidatePath("/dashboard/products");
 
     const warnings = [
       missingFromCourier > 0
@@ -429,6 +440,9 @@ export async function createCsvBatch(
             .slice(0, 3)
             .map((row) => `${row.invoice} (${row.error})`)
             .join("; ")}`
+        : "",
+      stockWarnings.length
+        ? `Stock warning: ${[...new Set(stockWarnings)].slice(0, 5).join(" ")}`
         : "",
     ]
       .filter(Boolean)
@@ -541,6 +555,7 @@ export async function pushAllToAssignedCouriers(
     let skippedConfigurationCount = ordersWithoutCourier.length;
     let batchCount = 0;
     const detailMessages: string[] = [];
+    const stockWarnings: string[] = [];
 
     if (ordersWithoutCourier.length) {
       detailMessages.push(
@@ -750,6 +765,13 @@ export async function pushAllToAssignedCouriers(
                 actorLabel: session.user.name || session.user.username || "OMS user",
               },
             });
+
+            const inventory = await applyInventorySaleForOrderTx(
+              tx,
+              preparedOrder.orderId,
+              session.user.id
+            );
+            stockWarnings.push(...inventory.warnings);
           }
         }, { timeout: 30_000 });
 
@@ -773,6 +795,12 @@ export async function pushAllToAssignedCouriers(
     ]
       .filter(Boolean)
       .join(" · ");
+
+    if (stockWarnings.length) {
+      detailMessages.push(
+        `Stock warning: ${[...new Set(stockWarnings)].slice(0, 5).join(" ")}`
+      );
+    }
 
     const details = detailMessages.slice(0, 6).join(" ");
 

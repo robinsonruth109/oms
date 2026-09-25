@@ -5,7 +5,6 @@ import { authOptions } from "@/lib/auth";
 import {
   bangladeshDateEndUtc,
   bangladeshDateStartUtc,
-  formatBangladeshDate,
   getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
 
@@ -21,6 +20,21 @@ type Props = {
   }>;
 };
 
+const PRIMARY_STATUS_COLUMNS = [
+  "order.paid",
+  "order.return-in-transit",
+  "In Transit",
+  "At the Sorting HUB",
+  "On Hold",
+  "Delivered",
+  "Assigned for Delivery",
+  "Received at Last Mile HUB",
+  "order.return-id-created",
+  "order.returned-to-merchant",
+  "order.updated",
+  "Pickup Failed",
+] as const;
+
 function validDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -32,10 +46,65 @@ function taka(value: unknown) {
   })}`;
 }
 
-function statusLabel(order: {
+function normalizeStatus(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function canonicalPathaoStatus(order: {
   pathaoOrderStatus: string | null;
   pathaoOrderStatusSlug: string | null;
 }) {
+  const aliases = new Map<string, string>([
+    ["order.paid", "order.paid"],
+    ["paid", "order.paid"],
+
+    ["order.return-in-transit", "order.return-in-transit"],
+    ["return in transit", "order.return-in-transit"],
+    ["return-in-transit", "order.return-in-transit"],
+
+    ["in transit", "In Transit"],
+    ["order.in-transit", "In Transit"],
+
+    ["at the sorting hub", "At the Sorting HUB"],
+    ["order.at-the-sorting-hub", "At the Sorting HUB"],
+
+    ["on hold", "On Hold"],
+    ["order.on-hold", "On Hold"],
+
+    ["delivered", "Delivered"],
+    ["order.delivered", "Delivered"],
+
+    ["assigned for delivery", "Assigned for Delivery"],
+    ["order.assigned-for-delivery", "Assigned for Delivery"],
+
+    ["received at last mile hub", "Received at Last Mile HUB"],
+    ["order.received-at-last-mile-hub", "Received at Last Mile HUB"],
+
+    ["order.return-id-created", "order.return-id-created"],
+    ["return id created", "order.return-id-created"],
+
+    ["order.returned-to-merchant", "order.returned-to-merchant"],
+    ["returned to merchant", "order.returned-to-merchant"],
+
+    ["order.updated", "order.updated"],
+
+    ["pickup failed", "Pickup Failed"],
+    ["order.pickup-failed", "Pickup Failed"],
+  ]);
+
+  const candidates = [order.pathaoOrderStatus, order.pathaoOrderStatusSlug];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeStatus(candidate);
+    if (!normalized) continue;
+    const alias = aliases.get(normalized);
+    if (alias) return alias;
+  }
+
   return (
     String(order.pathaoOrderStatus || "").trim() ||
     String(order.pathaoOrderStatusSlug || "").trim() ||
@@ -75,7 +144,7 @@ function statusCardClass(label: string) {
     };
   }
 
-  if (value.includes("pending") || value.includes("await")) {
+  if (value.includes("hold") || value.includes("pending") || value.includes("await")) {
     return {
       card: "border-amber-100 bg-amber-50",
       label: "text-amber-700",
@@ -147,14 +216,9 @@ export default async function PathaoDeliveryReportPage({
       },
       select: {
         id: true,
-        invoiceId: true,
-        orderId: true,
-        externalOrderId: true,
-        readyToShipAt: true,
         totalAmount: true,
         deliveryCharge: true,
         pathaoDeliveryFee: true,
-        pathaoConsignmentId: true,
         pathaoOrderStatus: true,
         pathaoOrderStatusSlug: true,
         source: {
@@ -164,39 +228,115 @@ export default async function PathaoDeliveryReportPage({
             type: true,
           },
         },
-        pathaoCourier: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
         items: {
           select: {
             id: true,
             productSku: true,
             productName: true,
             quantity: true,
-            unitPrice: true,
-            lineTotal: true,
+            product: {
+              select: {
+                sku: true,
+                name: true,
+                parent: {
+                  select: {
+                    sku: true,
+                    name: true,
+                  },
+                },
+              },
+            },
           },
-          orderBy: { createdAt: "asc" },
         },
       },
       orderBy: [{ readyToShipAt: "desc" }, { createdAt: "desc" }],
     }),
   ]);
 
-  const statusCounts = Array.from(
-    orders
-      .reduce((map, order) => {
-        const label = statusLabel(order);
-        map.set(label, (map.get(label) || 0) + 1);
-        return map;
-      }, new Map<string, number>())
-      .entries()
-  )
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  const productStatusQuantity = new Map<string, number>();
+  const extraStatuses = new Set<string>();
+
+  type ProductReportRow = {
+    key: string;
+    parentCode: string;
+    parentName: string;
+    childSku: string;
+    productName: string;
+    sourceId: string;
+    sourceName: string;
+    sourceType: string;
+    totalQty: number;
+    statuses: Map<string, number>;
+  };
+
+  const productRowMap = new Map<string, ProductReportRow>();
+
+  for (const order of orders) {
+    const status = canonicalPathaoStatus(order);
+
+    if (!PRIMARY_STATUS_COLUMNS.includes(status as (typeof PRIMARY_STATUS_COLUMNS)[number])) {
+      extraStatuses.add(status);
+    }
+
+    for (const item of order.items) {
+      const quantity = Math.max(0, Number(item.quantity || 0));
+      if (!quantity) continue;
+
+      productStatusQuantity.set(
+        status,
+        (productStatusQuantity.get(status) || 0) + quantity
+      );
+
+      const parentCode = item.product?.parent.sku || "UNLINKED";
+      const parentName = item.product?.parent.name || "Product parent not linked";
+      const childSku = item.product?.sku || item.productSku;
+      const productName = item.product?.name || item.productName;
+      const key = [parentCode, childSku, order.source.id].join("::");
+
+      const row =
+        productRowMap.get(key) ||
+        {
+          key,
+          parentCode,
+          parentName,
+          childSku,
+          productName,
+          sourceId: order.source.id,
+          sourceName: order.source.name,
+          sourceType: order.source.type,
+          totalQty: 0,
+          statuses: new Map<string, number>(),
+        };
+
+      row.totalQty += quantity;
+      row.statuses.set(status, (row.statuses.get(status) || 0) + quantity);
+      productRowMap.set(key, row);
+    }
+  }
+
+  const statusColumns = [
+    ...PRIMARY_STATUS_COLUMNS,
+    ...Array.from(extraStatuses).sort((a, b) => a.localeCompare(b)),
+  ];
+
+  const productRows = Array.from(productRowMap.values()).sort(
+    (a, b) =>
+      a.parentCode.localeCompare(b.parentCode) ||
+      a.childSku.localeCompare(b.childSku) ||
+      a.sourceName.localeCompare(b.sourceName)
+  );
+
+  const totalProductQty = productRows.reduce(
+    (sum, row) => sum + row.totalQty,
+    0
+  );
+
+  const statusCounts = statusColumns
+    .map((label) => ({
+      label,
+      count: productStatusQuantity.get(label) || 0,
+    }))
+    .filter((row) => row.count > 0);
 
   const totalAmount = orders.reduce(
     (sum, order) => sum + Number(order.totalAmount || 0),
@@ -218,7 +358,7 @@ export default async function PathaoDeliveryReportPage({
           Pathao Delivery Report
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Delivery status and product report by Ready to Ship date, Source and Pathao courier.
+          Product quantity by Pathao delivery status, filtered by Ready to Ship date, Source and courier.
         </p>
       </section>
 
@@ -282,13 +422,17 @@ export default async function PathaoDeliveryReportPage({
         </form>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-sky-100 bg-sky-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-sky-700">Pathao Orders</p>
           <p className="mt-2 text-3xl font-bold text-sky-900">{orders.length}</p>
-          <p className="mt-1 text-xs text-sky-600">
-            Consignment-created orders in selected filter
-          </p>
+          <p className="mt-1 text-xs text-sky-600">Orders in selected filter</p>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-cyan-700">Product Qty</p>
+          <p className="mt-2 text-3xl font-bold text-cyan-900">{totalProductQty}</p>
+          <p className="mt-1 text-xs text-cyan-600">Total item quantity</p>
         </div>
 
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
@@ -296,7 +440,6 @@ export default async function PathaoDeliveryReportPage({
           <p className="mt-2 text-2xl font-bold text-indigo-900">
             {taka(totalAmount)}
           </p>
-          <p className="mt-1 text-xs text-indigo-600">OMS total amount</p>
         </div>
 
         <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5 shadow-sm">
@@ -304,7 +447,6 @@ export default async function PathaoDeliveryReportPage({
           <p className="mt-2 text-2xl font-bold text-amber-900">
             {taka(totalDeliveryCharge)}
           </p>
-          <p className="mt-1 text-xs text-amber-600">Customer delivery charge</p>
         </div>
 
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 shadow-sm">
@@ -312,17 +454,16 @@ export default async function PathaoDeliveryReportPage({
           <p className="mt-2 text-2xl font-bold text-emerald-900">
             {taka(totalPathaoFee)}
           </p>
-          <p className="mt-1 text-xs text-emerald-600">Synced Pathao delivery fee</p>
         </div>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            Delivery Status Summary
+            Product Quantity by Pathao Status
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Live Pathao status-wise quantity for the selected report range.
+            Each number is product/item quantity, not order count.
           </p>
         </div>
 
@@ -346,7 +487,7 @@ export default async function PathaoDeliveryReportPage({
 
           {!statusCounts.length ? (
             <div className="rounded-2xl border border-dashed p-6 text-sm text-slate-500 sm:col-span-2 lg:col-span-3 xl:col-span-4">
-              No Pathao delivery status found for the selected filters.
+              No product quantity found for the selected filters.
             </div>
           ) : null}
         </div>
@@ -355,133 +496,120 @@ export default async function PathaoDeliveryReportPage({
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         <div className="border-b px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            Product Delivery List
+            Product Delivery Status Report
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            {orders.length} Pathao order(s) · {from} to {to}
+            Grouped by Parent Code, Child SKU and Source · {from} to {to}
           </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[1280px] w-full text-sm">
+          <table
+            className="w-full text-sm"
+            style={{ minWidth: `${760 + statusColumns.length * 145}px` }}
+          >
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-5 py-3">Invoice</th>
-                <th className="px-5 py-3">Products</th>
-                <th className="px-5 py-3">Source</th>
-                <th className="px-5 py-3">Courier</th>
-                <th className="px-5 py-3">RTS Date</th>
-                <th className="px-5 py-3">Pathao Status</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3 text-right">Delivery Charge</th>
-                <th className="px-5 py-3 text-right">Pathao Fee</th>
-                <th className="px-5 py-3">Consignment</th>
+                <th className="sticky left-0 z-20 min-w-[150px] bg-slate-50 px-4 py-3">
+                  Parent Code
+                </th>
+                <th className="min-w-[170px] px-4 py-3">Child SKU</th>
+                <th className="min-w-[260px] px-4 py-3">Product Name</th>
+                <th className="min-w-[190px] px-4 py-3">Source</th>
+                <th className="min-w-[90px] px-4 py-3 text-center">Total Qty</th>
+                {statusColumns.map((status) => (
+                  <th
+                    key={status}
+                    className="min-w-[145px] whitespace-normal px-3 py-3 text-center"
+                  >
+                    {status}
+                  </th>
+                ))}
               </tr>
             </thead>
+
             <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-t align-top">
-                  <td className="px-5 py-4 font-semibold text-slate-900">
-                    {order.invoiceId ||
-                      order.orderId ||
-                      order.externalOrderId ||
-                      order.id}
-                  </td>
+              {productRows.map((row, index) => {
+                const previous = index > 0 ? productRows[index - 1] : null;
+                const firstForParent = previous?.parentCode !== row.parentCode;
 
-                  <td className="px-5 py-4">
-                    <div className="space-y-1">
-                      {order.items.map((item) => (
-                        <div key={item.id}>
-                          <span className="font-medium text-slate-800">
-                            {item.productName}
-                          </span>
-                          <span className="ml-1 text-xs text-slate-500">
-                            ({item.productSku}) × {item.quantity}
-                          </span>
-                        </div>
-                      ))}
-                      {!order.items.length ? (
-                        <span className="text-slate-400">No product item</span>
-                      ) : null}
-                    </div>
-                  </td>
+                return (
+                  <tr key={row.key} className="border-t align-top hover:bg-slate-50/60">
+                    <td className="sticky left-0 z-10 bg-white px-4 py-4">
+                      {firstForParent ? (
+                        <>
+                          <p className="font-bold text-slate-900">{row.parentCode}</p>
+                          <p className="mt-1 text-xs text-slate-500">{row.parentName}</p>
+                        </>
+                      ) : (
+                        <span className="text-slate-300">↳</span>
+                      )}
+                    </td>
 
-                  <td className="px-5 py-4">
-                    <p className="font-medium text-slate-800">{order.source.name}</p>
-                    <p className="text-xs text-slate-400">{order.source.type}</p>
-                  </td>
+                    <td className="px-4 py-4 font-semibold text-slate-900">
+                      {row.childSku}
+                    </td>
 
-                  <td className="px-5 py-4">
-                    {order.pathaoCourier?.name || "N/A"}
-                  </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-slate-800">{row.productName}</p>
+                    </td>
 
-                  <td className="px-5 py-4">
-                    {formatBangladeshDate(order.readyToShipAt)}
-                  </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-slate-800">{row.sourceName}</p>
+                      <p className="mt-1 text-xs text-slate-400">{row.sourceType}</p>
+                    </td>
 
-                  <td className="px-5 py-4">
-                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                      {statusLabel(order)}
-                    </span>
-                  </td>
+                    <td className="px-4 py-4 text-center text-lg font-bold text-slate-900">
+                      {row.totalQty}
+                    </td>
 
-                  <td className="px-5 py-4 text-right font-semibold">
-                    {taka(order.totalAmount)}
-                  </td>
+                    {statusColumns.map((status) => {
+                      const qty = row.statuses.get(status) || 0;
+                      return (
+                        <td
+                          key={status}
+                          className={
+                            "px-3 py-4 text-center font-semibold " +
+                            (qty ? "text-slate-900" : "text-slate-300")
+                          }
+                        >
+                          {qty}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
 
-                  <td className="px-5 py-4 text-right font-semibold text-amber-700">
-                    {taka(order.deliveryCharge)}
-                  </td>
-
-                  <td className="px-5 py-4 text-right text-emerald-700">
-                    {order.pathaoDeliveryFee == null
-                      ? "—"
-                      : taka(order.pathaoDeliveryFee)}
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <a
-                      href={`https://merchant.pathao.com/courier/orders/${encodeURIComponent(
-                        order.pathaoConsignmentId || ""
-                      )}?isShowingActive=1`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-xs font-medium text-blue-600 hover:underline"
-                    >
-                      {order.pathaoConsignmentId}
-                    </a>
-                  </td>
-                </tr>
-              ))}
-
-              {!orders.length ? (
+              {!productRows.length ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={5 + statusColumns.length}
                     className="px-5 py-12 text-center text-slate-500"
                   >
-                    No Pathao orders found for this date range and filter.
+                    No product delivery data found for this date range and filter.
                   </td>
                 </tr>
               ) : null}
             </tbody>
 
-            {orders.length ? (
+            {productRows.length ? (
               <tfoot className="border-t-2 bg-slate-50">
                 <tr>
-                  <td colSpan={6} className="px-5 py-4 text-right font-bold text-slate-900">
-                    Total
+                  <td colSpan={4} className="px-4 py-4 text-right font-bold text-slate-900">
+                    Total Product Qty
                   </td>
-                  <td className="px-5 py-4 text-right font-bold text-slate-900">
-                    {taka(totalAmount)}
+                  <td className="px-4 py-4 text-center text-lg font-bold text-slate-900">
+                    {totalProductQty}
                   </td>
-                  <td className="px-5 py-4 text-right font-bold text-amber-700">
-                    {taka(totalDeliveryCharge)}
-                  </td>
-                  <td className="px-5 py-4 text-right font-bold text-emerald-700">
-                    {taka(totalPathaoFee)}
-                  </td>
-                  <td />
+                  {statusColumns.map((status) => (
+                    <td
+                      key={status}
+                      className="px-3 py-4 text-center font-bold text-slate-900"
+                    >
+                      {productStatusQuantity.get(status) || 0}
+                    </td>
+                  ))}
                 </tr>
               </tfoot>
             ) : null}

@@ -6,6 +6,12 @@
 ALTER TABLE `ProductParent`
   ADD COLUMN `inventoryMode` ENUM('SHARED_PARENT', 'VARIANT') NULL;
 
+-- Existing Product.quantity values were assumptions / legacy stock values.
+-- Do not copy them into Units per Sale. Admin must explicitly confirm each
+-- child SKU's physical consumption before live inventory is activated.
+ALTER TABLE `Product`
+  ADD COLUMN `unitsPerSale` INTEGER NULL;
+
 CREATE TABLE `InventoryStock` (
   `id` VARCHAR(191) NOT NULL,
   `parentId` VARCHAR(191) NULL,

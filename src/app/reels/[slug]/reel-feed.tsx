@@ -1998,12 +1998,16 @@ function CheckoutModal({
                     পরিমাণ
                   </h3>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    উপলব্ধ:{" "}
-                    {
-                      reel.product
-                        .quantity
-                    }
+                  <p
+                    className={`mt-1 text-xs ${
+                      hasStockWarning(reel.product)
+                        ? "font-semibold text-amber-700"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {hasStockWarning(reel.product)
+                      ? "স্টক কম/শেষ হলেও অর্ডার নেওয়া হবে"
+                      : "অর্ডার নেওয়া হচ্ছে"}
                   </p>
                 </div>
 
@@ -2042,9 +2046,7 @@ function CheckoutModal({
                       );
                     }}
                     disabled={
-                      form.quantity >=
-                        reel.product
-                          .quantity ||
+                      form.quantity >= MAX_ORDER_QUANTITY ||
                       isSubmitting
                     }
                     className="flex h-11 w-11 items-center justify-center text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
@@ -2493,11 +2495,7 @@ function CheckoutModal({
 
             <button
               type="submit"
-              disabled={
-                isSubmitting ||
-                reel.product
-                  .quantity <= 0
-              }
+              disabled={isSubmitting}
               className="inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-base font-bold text-white shadow-sm transition hover:bg-orange-700 focus:outline-none focus:ring-4 focus:ring-orange-200 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
               {isSubmitting ? (

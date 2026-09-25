@@ -529,13 +529,9 @@ export async function POST(request: Request) {
           throw new Error("REEL_NOT_FOUND");
         }
 
-        if (reel.product.quantity < 1) {
-          throw new Error("PRODUCT_OUT_OF_STOCK");
-        }
-
-        if (quantity > reel.product.quantity) {
-          throw new Error("QUANTITY_EXCEEDS_STOCK");
-        }
+        // Inventory never blocks order creation. Stock is deducted later only
+        // when the order successfully leaves Non CSV. Zero/negative stock is
+        // an internal warning, not an order-flow blocker.
 
         const unitPrice = Number(
           reel.product.sellingPrice.toString()

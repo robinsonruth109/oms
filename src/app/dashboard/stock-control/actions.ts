@@ -82,6 +82,33 @@ export async function saveStockSetup(
           );
         }
 
+        const activeProducts = parent.products.filter(
+          (product) => product.status
+        );
+
+        if (!activeProducts.length) {
+          throw new Error(
+            "This parent has no active child SKU to configure."
+          );
+        }
+
+        for (const product of activeProducts) {
+          const unitsPerSale = Math.trunc(
+            numberValue(formData.get(`unit__${product.id}`))
+          );
+
+          if (unitsPerSale < 1) {
+            throw new Error(
+              `Units per Sale is required for ${product.sku} before shared stock can be activated.`
+            );
+          }
+
+          await tx.product.update({
+            where: { id: product.id },
+            data: { unitsPerSale },
+          });
+        }
+
         await tx.productParent.update({
           where: { id: parent.id },
           data: { inventoryMode: "SHARED_PARENT" },
@@ -173,6 +200,21 @@ export async function saveStockSetup(
       if (!product) {
         throw new Error("Selected child SKU does not belong to this parent.");
       }
+
+      const unitsPerSale = Math.trunc(
+        numberValue(formData.get("unitsPerSale"))
+      );
+
+      if (unitsPerSale < 1) {
+        throw new Error(
+          `Units per Sale must be at least 1 for ${product.sku}.`
+        );
+      }
+
+      await tx.product.update({
+        where: { id: product.id },
+        data: { unitsPerSale },
+      });
 
       await tx.productParent.update({
         where: { id: parent.id },

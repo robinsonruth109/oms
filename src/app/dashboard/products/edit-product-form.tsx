@@ -33,7 +33,8 @@ export default function EditProductForm({ product }: EditProductFormProps) {
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-slate-900">Edit Product</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Update product price, SKU, parent SKU, name or status.
+          Update product price, SKU, parent SKU, name, Units per Sale, or status.
+          Real available stock is changed only from Stock Control & Valuation.
         </p>
       </div>
 
@@ -97,7 +98,7 @@ export default function EditProductForm({ product }: EditProductFormProps) {
           </div>
           <div className="space-y-2">
             <label htmlFor="quantity" className="text-sm font-medium text-slate-700">
-              Quantity
+              Units per Sale
             </label>
             <input
               id="quantity"

@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { applyInventoryReturnForProductTx } from "@/lib/inventory";
 import {
   searchAllPathaoCouriersForConsignment,
   type PathaoReturnCourierMatch,
@@ -269,11 +270,6 @@ async function processReturn({
       });
 
       const newOmsStatus = isFullReturn ? "RETURNED" : "PARTIAL_RETURN";
-      const totalRestoredQty = [...selectedMap.values()].reduce(
-        (sum, qty) => sum + qty,
-        0
-      );
-
       const track = await tx.pathaoReturnTrack.create({
         data: {
           returnConsignmentId: consignmentId,
@@ -286,7 +282,7 @@ async function processReturn({
           previousOmsStatus: order.orderStatus,
           newOmsStatus,
           returnType: isFullReturn ? "FULL" : "PARTIAL",
-          totalRestoredQty,
+          totalRestoredQty: 0,
           processingMethod: method,
           rawPathaoResponse: serializeRawInfo(match.info),
           processedByUserId: user.id,
@@ -319,13 +315,12 @@ async function processReturn({
           );
         }
 
-        const stockBefore = product.quantity;
-        const updatedProduct = await tx.product.update({
-          where: { id: product.id },
-          data: {
-            quantity: { increment: returnedQty },
-          },
-          select: { quantity: true },
+        const inventoryEffect = await applyInventoryReturnForProductTx(tx, {
+          productId: product.id,
+          returnedOrderQty: returnedQty,
+          orderItemId: item.id,
+          pathaoReturnTrackId: track.id,
+          actorUserId: user.id,
         });
 
         await tx.pathaoReturnItem.create({
@@ -337,17 +332,27 @@ async function processReturn({
             productNameSnapshot: item.productName,
             orderedQty: item.quantity,
             returnedQty,
-            stockBefore,
-            stockAfter: updatedProduct.quantity,
+            stockBefore: inventoryEffect.balanceBefore ?? 0,
+            stockAfter: inventoryEffect.balanceAfter ?? 0,
           },
         });
 
         restoredItems.push({
           sku: item.productSku,
           name: item.productName,
-          quantity: returnedQty,
+          quantity: inventoryEffect.physicalQty,
         });
       }
+
+      const totalRestoredQty = restoredItems.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
+
+      await tx.pathaoReturnTrack.update({
+        where: { id: track.id },
+        data: { totalRestoredQty },
+      });
 
       await tx.order.update({
         where: { id: order.id },
@@ -390,6 +395,7 @@ async function processReturn({
     revalidatePath("/dashboard/all-orders");
     revalidatePath(`/dashboard/all-orders/${orderId}`);
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-control");
     revalidatePath("/dashboard/reports");
     revalidatePath("/dashboard/product-report");
     revalidatePath("/dashboard/pathao-daily-report");
@@ -398,7 +404,7 @@ async function processReturn({
     return {
       success: true,
       action: "PROCESSED",
-      message: `${transactionResult.returnType === "FULL" ? "Full" : "Partial"} return processed for ${transactionResult.invoiceId}. Stock restored: ${transactionResult.restoredQty} pcs.`,
+      message: `${transactionResult.returnType === "FULL" ? "Full" : "Partial"} return processed for ${transactionResult.invoiceId}. Active inventory restored: ${transactionResult.restoredQty} physical pcs. Products not yet activated for stock tracking were left unchanged.`,
       processed: {
         invoiceId: transactionResult.invoiceId,
         consignmentId,

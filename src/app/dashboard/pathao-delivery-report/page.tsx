@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { authOptions } from "@/lib/auth";
+import ProductDeliveryStatusTable from "./product-delivery-status-table";
 import {
   bangladeshDateEndUtc,
   bangladeshDateStartUtc,
@@ -331,6 +332,86 @@ export default async function PathaoDeliveryReportPage({
     0
   );
 
+  type ProductGroup = {
+    key: string;
+    parentCode: string;
+    parentName: string;
+    sourceId: string;
+    sourceName: string;
+    sourceType: string;
+    totalQty: number;
+    statuses: Map<string, number>;
+    skuRows: {
+      key: string;
+      childSku: string;
+      productName: string;
+      totalQty: number;
+      statuses: Record<string, number>;
+    }[];
+  };
+
+  const productGroupMap = new Map<string, ProductGroup>();
+
+  for (const row of productRows) {
+    const groupKey = [row.parentCode, row.sourceId].join("::");
+    const group =
+      productGroupMap.get(groupKey) ||
+      {
+        key: groupKey,
+        parentCode: row.parentCode,
+        parentName: row.parentName,
+        sourceId: row.sourceId,
+        sourceName: row.sourceName,
+        sourceType: row.sourceType,
+        totalQty: 0,
+        statuses: new Map<string, number>(),
+        skuRows: [],
+      };
+
+    group.totalQty += row.totalQty;
+
+    for (const [status, qty] of row.statuses) {
+      group.statuses.set(status, (group.statuses.get(status) || 0) + qty);
+    }
+
+    group.skuRows.push({
+      key: row.key,
+      childSku: row.childSku,
+      productName: row.productName,
+      totalQty: row.totalQty,
+      statuses: Object.fromEntries(row.statuses),
+    });
+
+    productGroupMap.set(groupKey, group);
+  }
+
+  const productGroups = Array.from(productGroupMap.values())
+    .map((group) => ({
+      key: group.key,
+      parentCode: group.parentCode,
+      parentName: group.parentName,
+      sourceName: group.sourceName,
+      sourceType: group.sourceType,
+      totalQty: group.totalQty,
+      statuses: Object.fromEntries(group.statuses),
+      skuRows: group.skuRows.sort((a, b) =>
+        a.childSku.localeCompare(b.childSku)
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        b.totalQty - a.totalQty ||
+        a.parentCode.localeCompare(b.parentCode) ||
+        a.sourceName.localeCompare(b.sourceName)
+    );
+
+  const statusTotals = Object.fromEntries(
+    statusColumns.map((status) => [
+      status,
+      productStatusQuantity.get(status) || 0,
+    ])
+  );
+
   const statusCounts = statusColumns
     .map((label) => ({
       label,
@@ -493,129 +574,13 @@ export default async function PathaoDeliveryReportPage({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="border-b px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Product Delivery Status Report
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Grouped by Parent Code, Child SKU and Source · {from} to {to}
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table
-            className="w-full text-sm"
-            style={{ minWidth: `${760 + statusColumns.length * 145}px` }}
-          >
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="sticky left-0 z-20 min-w-[150px] bg-slate-50 px-4 py-3">
-                  Parent Code
-                </th>
-                <th className="min-w-[170px] px-4 py-3">Child SKU</th>
-                <th className="min-w-[260px] px-4 py-3">Product Name</th>
-                <th className="min-w-[190px] px-4 py-3">Source</th>
-                <th className="min-w-[90px] px-4 py-3 text-center">Total Qty</th>
-                {statusColumns.map((status) => (
-                  <th
-                    key={status}
-                    className="min-w-[145px] whitespace-normal px-3 py-3 text-center"
-                  >
-                    {status}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {productRows.map((row, index) => {
-                const previous = index > 0 ? productRows[index - 1] : null;
-                const firstForParent = previous?.parentCode !== row.parentCode;
-
-                return (
-                  <tr key={row.key} className="border-t align-top hover:bg-slate-50/60">
-                    <td className="sticky left-0 z-10 bg-white px-4 py-4">
-                      {firstForParent ? (
-                        <>
-                          <p className="font-bold text-slate-900">{row.parentCode}</p>
-                          <p className="mt-1 text-xs text-slate-500">{row.parentName}</p>
-                        </>
-                      ) : (
-                        <span className="text-slate-300">↳</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-4 font-semibold text-slate-900">
-                      {row.childSku}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <p className="font-medium text-slate-800">{row.productName}</p>
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <p className="font-medium text-slate-800">{row.sourceName}</p>
-                      <p className="mt-1 text-xs text-slate-400">{row.sourceType}</p>
-                    </td>
-
-                    <td className="px-4 py-4 text-center text-lg font-bold text-slate-900">
-                      {row.totalQty}
-                    </td>
-
-                    {statusColumns.map((status) => {
-                      const qty = row.statuses.get(status) || 0;
-                      return (
-                        <td
-                          key={status}
-                          className={
-                            "px-3 py-4 text-center font-semibold " +
-                            (qty ? "text-slate-900" : "text-slate-300")
-                          }
-                        >
-                          {qty}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-
-              {!productRows.length ? (
-                <tr>
-                  <td
-                    colSpan={5 + statusColumns.length}
-                    className="px-5 py-12 text-center text-slate-500"
-                  >
-                    No product delivery data found for this date range and filter.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-
-            {productRows.length ? (
-              <tfoot className="border-t-2 bg-slate-50">
-                <tr>
-                  <td colSpan={4} className="px-4 py-4 text-right font-bold text-slate-900">
-                    Total Product Qty
-                  </td>
-                  <td className="px-4 py-4 text-center text-lg font-bold text-slate-900">
-                    {totalProductQty}
-                  </td>
-                  {statusColumns.map((status) => (
-                    <td
-                      key={status}
-                      className="px-3 py-4 text-center font-bold text-slate-900"
-                    >
-                      {productStatusQuantity.get(status) || 0}
-                    </td>
-                  ))}
-                </tr>
-              </tfoot>
-            ) : null}
-          </table>
-        </div>
-      </section>
+      <ProductDeliveryStatusTable
+        groups={productGroups}
+        statusColumns={statusColumns}
+        statusTotals={statusTotals}
+        totalProductQty={totalProductQty}
+        dateLabel={`${from} to ${to}`}
+      />
     </div>
   );
 }

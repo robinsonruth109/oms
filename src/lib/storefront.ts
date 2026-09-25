@@ -121,7 +121,7 @@ function serializeProduct(row: {
     name: string;
     sku: string;
     slug: string | null;
-    quantity: number;
+    unitsPerSale: number | null;
     sellingPrice: { toString(): string };
     inventoryStock: { quantity: number } | null;
     parent: {
@@ -158,7 +158,7 @@ function serializeProduct(row: {
       slug: row.product.slug,
       parentSku: row.product.parent.sku,
       parentName: row.product.parent.name,
-      unitsPerSale: Math.max(1, row.product.quantity),
+      unitsPerSale: Math.max(1, row.product.unitsPerSale ?? 1),
       stockTrackingActive:
         row.product.parent.inventoryMode === "SHARED_PARENT"
           ? Boolean(row.product.parent.inventoryStock)
@@ -319,7 +319,7 @@ export async function loadStorefrontPage({
               name: true,
               sku: true,
               slug: true,
-              quantity: true,
+              unitsPerSale: true,
               sellingPrice: true,
               inventoryStock: {
                 select: { quantity: true },

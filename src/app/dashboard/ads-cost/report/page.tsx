@@ -6,6 +6,7 @@ import {
   bangladeshDateStartUtc,
   getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
+import AdsCostPerformanceTable from "./performance-table";
 
 const ALL_PAGE_ORDER = "__ALL_PAGE_ORDER__";
 const ALL_WEB_ORDER = "__ALL_WEB_ORDER__";
@@ -18,6 +19,18 @@ type PageProps = {
     adAccountId?: string;
     dataSource?: string;
   }>;
+};
+
+type ReportChildRow = {
+  id: string;
+  campaignName: string;
+  adAccountName: string;
+  adAccountId: string;
+  currency: string;
+  spendAmount: number;
+  spendBdt: number;
+  dollarRate: number;
+  metaPurchases: number;
 };
 
 type ReportRow = {
@@ -47,6 +60,9 @@ type ReportRow = {
   costPerConfirmedBdt: number;
   orderIds: string[];
   confirmedOrderIds: string[];
+  isGroup: boolean;
+  metaPurchases: number | null;
+  children: ReportChildRow[];
 };
 
 function money(value: number) {
@@ -389,8 +405,60 @@ export default async function AdsCostReportPage({
           })
         : [];
 
+    type EligibleCampaign = (typeof eligibleCampaigns)[number];
+
+    const reportUnits = new Map<string, EligibleCampaign[]>();
+
     for (const campaign of eligibleCampaigns) {
       const mapping = campaign.mapping!;
+      const signature =
+        mapping.productParentId +
+        "::" +
+        mapping.sources
+          .map((item) => item.sourceId)
+          .sort()
+          .join(",");
+
+      const unitKey = mapping.reportGroupId
+        ? `GROUP__${mapping.reportGroupId}__${signature}`
+        : `CAMPAIGN__${campaign.id}`;
+
+      const unit = reportUnits.get(unitKey) || [];
+      unit.push(campaign);
+      reportUnits.set(unitKey, unit);
+    }
+
+    function campaignSpend(campaign: EligibleCampaign) {
+      let spendAmount = 0;
+      let spendUsd = 0;
+      let spendBdt = 0;
+      let metaPurchases = 0;
+
+      for (const spend of campaign.dailySpends) {
+        const amountSpent = Number(spend.amountSpent);
+        spendAmount += amountSpent;
+        metaPurchases += Number(spend.metaPurchases || 0);
+
+        if (String(spend.currency).toUpperCase() === "USD") {
+          spendUsd += amountSpent;
+          const dateKey = getBangladeshDateInputValue(spend.spendDate);
+          const rate = dollarRateMap.get(dateKey)?.averageRate || 0;
+          spendBdt += amountSpent * rate;
+        }
+      }
+
+      return {
+        spendAmount,
+        spendUsd,
+        spendBdt,
+        metaPurchases,
+        dollarRate: spendUsd > 0 ? spendBdt / spendUsd : 0,
+      };
+    }
+
+    for (const [unitKey, unitCampaigns] of reportUnits) {
+      const firstCampaign = unitCampaigns[0];
+      const mapping = firstCampaign.mapping!;
       const campaignSourceIds = new Set(
         mapping.sources.map((item) => item.sourceId)
       );
@@ -404,42 +472,67 @@ export default async function AdsCostReportPage({
       );
 
       const status = buildStatusMetrics(matchingOrders);
+      const childRows: ReportChildRow[] = unitCampaigns.map((campaign) => {
+        const spend = campaignSpend(campaign);
 
-      let spendAmount = 0;
-      let spendUsd = 0;
-      let spendBdt = 0;
+        return {
+          id: campaign.id,
+          campaignName: campaign.campaignName,
+          adAccountName: campaign.adAccount.name,
+          adAccountId: campaign.adAccount.metaAccountId,
+          currency: campaign.adAccount.currency || "USD",
+          spendAmount: spend.spendAmount,
+          spendBdt: spend.spendBdt,
+          dollarRate: spend.dollarRate,
+          metaPurchases: spend.metaPurchases,
+        };
+      });
 
-      for (const spend of campaign.dailySpends) {
-        const amountSpent = Number(spend.amountSpent);
-        spendAmount += amountSpent;
-
-        if (String(spend.currency).toUpperCase() === "USD") {
-          spendUsd += amountSpent;
-          const dateKey = getBangladeshDateInputValue(spend.spendDate);
-          const rate = dollarRateMap.get(dateKey)?.averageRate || 0;
-          spendBdt += amountSpent * rate;
-        }
-      }
-
-      const dollarRate =
-        spendUsd > 0 ? spendBdt / spendUsd : 0;
+      const spendAmount = childRows.reduce(
+        (sum, child) => sum + child.spendAmount,
+        0
+      );
+      const spendUsd = unitCampaigns.reduce(
+        (sum, campaign) => sum + campaignSpend(campaign).spendUsd,
+        0
+      );
+      const spendBdt = childRows.reduce(
+        (sum, child) => sum + child.spendBdt,
+        0
+      );
+      const isGroup = childRows.length > 1;
+      const uniqueAccountNames = Array.from(
+        new Set(childRows.map((child) => child.adAccountName))
+      );
+      const uniqueAccountIds = Array.from(
+        new Set(childRows.map((child) => child.adAccountId))
+      );
+      const campaignName = isGroup
+        ? childRows.length <= 3
+          ? childRows.map((child) => child.campaignName).join(" & ")
+          : childRows
+              .slice(0, 2)
+              .map((child) => child.campaignName)
+              .join(" & ") +
+            ` & +${childRows.length - 2} more`
+        : firstCampaign.campaignName;
 
       rows.push({
-        id: `META__${campaign.id}`,
+        id: `META__${unitKey}`,
         dataSource: "META",
         productParentId: mapping.productParentId,
         parentSku: mapping.productParent.sku,
         parentName: mapping.productParent.name,
-        campaignName: campaign.campaignName,
-        adAccountName: campaign.adAccount.name,
-        adAccountId: campaign.adAccount.metaAccountId,
-        currency: campaign.adAccount.currency || "USD",
+        campaignName,
+        adAccountName: uniqueAccountNames.join(", "),
+        adAccountId: uniqueAccountIds.join(", "),
+        currency: firstCampaign.adAccount.currency || "USD",
         sourceNames: mapping.sources.map((item) => item.source.name),
         sourceIds: mapping.sources.map((item) => item.sourceId),
         spendAmount,
         spendUsd,
         spendBdt,
-        dollarRate,
+        dollarRate: spendUsd > 0 ? spendBdt / spendUsd : 0,
         purchasePrice: purchasePriceFor(mapping.productParent.sku),
         ...status,
         costPerOrderBdt:
@@ -450,6 +543,11 @@ export default async function AdsCostReportPage({
         confirmedOrderIds: matchingOrders
           .filter((order) => order.orderStatus === "READY_TO_SHIP")
           .map((order) => order.id),
+        isGroup,
+        metaPurchases: isGroup
+          ? null
+          : childRows[0]?.metaPurchases || 0,
+        children: isGroup ? childRows : [],
       });
     }
   } else {
@@ -611,6 +709,9 @@ export default async function AdsCostReportPage({
         confirmedOrderIds: matchingOrders
           .filter((order) => order.orderStatus === "READY_TO_SHIP")
           .map((order) => order.id),
+        isGroup: false,
+        metaPurchases: null,
+        children: [],
       });
     }
   }
@@ -771,115 +872,13 @@ export default async function AdsCostReportPage({
         />
       </section>
 
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="border-b px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Campaign Performance Report
-          </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Orders are matched by OMS order-created date. Confirmed means the
-            current OMS status is READY_TO_SHIP.
-          </p>
-        </div>
+      <AdsCostPerformanceTable rows={rows} dataSource={dataSource} />
 
-        <div className="overflow-x-auto">
-          <table className="min-w-[1900px] w-full">
-            <thead className="bg-slate-50">
-              <tr className="border-b">
-                <Th>Product Parent</Th>
-                <Th>Campaign</Th>
-                <Th>Ad Account</Th>
-                <Th>Mapped Sources</Th>
-                <Th center>Total Orders</Th>
-                <Th center>Confirmed</Th>
-                <Th center>Cancelled</Th>
-                <Th center>No Answer</Th>
-                <Th center>Phone Off</Th>
-                <Th center>Confirm %</Th>
-                <Th center>Purchase Price</Th>
-                <Th center>Dollar Rate</Th>
-                <Th center>Ads Spend</Th>
-                <Th center>Ads Spend BDT</Th>
-                <Th center>Cost / Order BDT</Th>
-                <Th center>Cost / Confirmed BDT</Th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b align-top last:border-b-0"
-                >
-                  <td className="px-5 py-4 text-sm">
-                    <p className="font-semibold text-slate-900">
-                      {row.parentSku}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {row.parentName}
-                    </p>
-                  </td>
-
-                  <Td>{row.campaignName}</Td>
-
-                  <Td>
-                    <p>{row.adAccountName}</p>
-                    {row.adAccountId ? (
-                      <p className="mt-1 text-xs text-slate-400">
-                        {row.adAccountId}
-                      </p>
-                    ) : null}
-                  </Td>
-
-                  <Td>
-                    <div className="max-w-64">
-                      {row.sourceNames.join(", ")}
-                    </div>
-                  </Td>
-
-                  <Td center>{row.totalOrders}</Td>
-                  <Td center>{row.confirmed}</Td>
-                  <Td center>{row.cancelled}</Td>
-                  <Td center>{row.noAnswer}</Td>
-                  <Td center>{row.phoneOff}</Td>
-                  <Td center>{row.confirmationRate.toFixed(2)}%</Td>
-                  <Td center>{money(row.purchasePrice)}</Td>
-                  <Td center>
-                    {row.dollarRate > 0
-                      ? money(row.dollarRate)
-                      : "No Rate"}
-                  </Td>
-                  <Td center>
-                    {currencyAmount(row.spendAmount, row.currency)}
-                  </Td>
-                  <Td center>{money(row.spendBdt)}</Td>
-                  <Td center>{money(row.costPerOrderBdt)}</Td>
-                  <Td center>{money(row.costPerConfirmedBdt)}</Td>
-                </tr>
-              ))}
-
-              {!rows.length ? (
-                <tr>
-                  <td
-                    colSpan={16}
-                    className="px-6 py-10 text-center text-sm text-slate-500"
-                  >
-                    {dataSource === "META"
-                      ? "No mapped Meta campaign spend found for this filter. Sync Meta spend and map campaigns first."
-                      : "No CSV ads-cost data found for this filter."}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {dataSource === "META" && rows.length > 1 ? (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          Campaign order attribution is mapping-based. If multiple campaigns
-          use the same Product Parent and the same mapped Sources, their row
-          order counts can overlap. Summary order counts are de-duplicated.
+      {dataSource === "META" ? (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
+          Connected campaigns share one OMS order pool in the parent row, so
+          orders are not duplicated. Expand a connected row to see each Meta
+          campaign&apos;s own spend and attributed Meta Purchases.
         </section>
       ) : null}
     </div>

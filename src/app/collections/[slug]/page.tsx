@@ -129,9 +129,10 @@ export default async function CollectionPage({ params }: PageProps) {
           price: Number.isFinite(price) ? price : 0,
           priceCurrency: "BDT",
           availability:
-            item.product.quantity > 0
-              ? "https://schema.org/InStock"
-              : "https://schema.org/OutOfStock",
+            item.product.stockTrackingActive &&
+            (item.product.stockQuantity ?? 0) <= 0
+              ? "https://schema.org/PreOrder"
+              : "https://schema.org/InStock",
         },
       };
     });

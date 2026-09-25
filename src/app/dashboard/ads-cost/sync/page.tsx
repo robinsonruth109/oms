@@ -108,83 +108,9 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
   const mappedCampaigns = campaigns.filter(
     (campaign) => campaign.mapping && campaign.mapping.sources.length
   );
-  const allSourceIds = Array.from(
-    new Set(
-      mappedCampaigns.flatMap((campaign) =>
-        campaign.mapping!.sources.map((item) => item.sourceId)
-      )
-    )
-  );
-  const allParentIds = Array.from(
-    new Set(
-      mappedCampaigns.map((campaign) => campaign.mapping!.productParentId)
-    )
-  );
-
-  const orders =
-    allSourceIds.length && allParentIds.length
-      ? await prisma.order.findMany({
-          where: {
-            orderKind: "NORMAL",
-            createdAt: {
-              gte: fromRange.start,
-              lte: toRange.end,
-            },
-            sourceId: { in: allSourceIds },
-            items: {
-              some: {
-                product: {
-                  parentId: { in: allParentIds },
-                },
-              },
-            },
-          },
-          select: {
-            id: true,
-            sourceId: true,
-            orderStatus: true,
-            items: {
-              select: {
-                product: {
-                  select: {
-                    parentId: true,
-                  },
-                },
-              },
-            },
-          },
-        })
-      : [];
 
   const campaignRows = campaigns.map((campaign) => {
     const mapping = campaign.mapping;
-    const sourceIds = new Set(
-      mapping?.sources.map((item) => item.sourceId) || []
-    );
-
-    const matchingOrders = mapping
-      ? orders.filter(
-          (order) =>
-            sourceIds.has(order.sourceId) &&
-            order.items.some(
-              (item) => item.product?.parentId === mapping.productParentId
-            )
-        )
-      : [];
-
-    const totalOrders = matchingOrders.length;
-    const confirmed = matchingOrders.filter(
-      (order) => order.orderStatus === "READY_TO_SHIP"
-    ).length;
-    const cancelled = matchingOrders.filter(
-      (order) => order.orderStatus === "CANCELLED"
-    ).length;
-    const noAnswer = matchingOrders.filter(
-      (order) => order.orderStatus === "NO_ANSWER"
-    ).length;
-    const phoneOff = matchingOrders.filter(
-      (order) => order.orderStatus === "PHONE_OFF"
-    ).length;
     const spend = campaign.dailySpends.reduce(
       (sum, row) => sum + Number(row.amountSpent),
       0
@@ -215,16 +141,6 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
             })),
           }
         : null,
-      metrics: {
-        totalOrders,
-        confirmed,
-        cancelled,
-        noAnswer,
-        phoneOff,
-        confirmationRate: totalOrders > 0 ? (confirmed / totalOrders) * 100 : 0,
-        costPerTotalOrder: totalOrders > 0 ? spend / totalOrders : 0,
-        costPerConfirmed: confirmed > 0 ? spend / confirmed : 0,
-      },
     };
   });
 

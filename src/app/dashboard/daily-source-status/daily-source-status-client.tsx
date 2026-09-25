@@ -2,6 +2,9 @@
 
 import { Fragment, useState } from "react";
 
+const ALL_PAGE_ORDER = "__ALL_PAGE_ORDER__";
+const ALL_WEB_ORDER = "__ALL_WEB_ORDER__";
+
 type StatusBucket = {
   totalInvoice: number;
   ready: number;
@@ -107,6 +110,8 @@ export default function DailySourceStatusClient({
               className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
             >
               <option value="">All Sources</option>
+              <option value={ALL_PAGE_ORDER}>All Page Order</option>
+              <option value={ALL_WEB_ORDER}>All Web Order</option>
               {sources.map((source) => (
                 <option key={source.id} value={source.id}>
                   {source.name} ({source.type})

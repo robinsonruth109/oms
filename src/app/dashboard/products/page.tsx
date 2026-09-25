@@ -180,22 +180,12 @@ export default async function ProductsPage({
                     Adjust
                   </Link>
                   {canManageMaster ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href={`/dashboard/stock-adjustments?q=${encodeURIComponent(product.sku)}`}
-                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
-                      >
-                        Adjust
-                      </Link>
-                      {canManageMaster ? (
-                        <Link
-                          href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
-                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
-                        >
-                          Edit
-                        </Link>
-                      ) : null}
-                    </div>
+                    <Link
+                      href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
+                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
+                    >
+                      Edit
+                    </Link>
                   ) : null}
                 </div>
               </div>

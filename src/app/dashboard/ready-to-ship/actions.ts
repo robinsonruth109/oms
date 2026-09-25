@@ -1,4 +1,5 @@
 "use server";
+import { deductOrderInventory } from "@/lib/inventory";
 
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
@@ -397,6 +398,12 @@ export async function createCsvBatch(
             pathaoRawResponse: JSON.stringify(pathaoResponse),
           },
         });
+
+        await deductOrderInventory(tx, {
+          orderId: preparedOrder.orderId,
+          createdByUserId: session.user.id,
+          referenceType: "CSV_BATCH",
+        });
       }
 
       return createdBatch;
@@ -416,6 +423,7 @@ export async function createCsvBatch(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/inventory");
 
     const warnings = [
       missingFromCourier > 0
@@ -734,6 +742,12 @@ export async function pushAllToAssignedCouriers(
               },
             });
 
+            await deductOrderInventory(tx, {
+              orderId: preparedOrder.orderId,
+              createdByUserId: session.user.id,
+              referenceType: "PUSH_ALL",
+            });
+
             await tx.orderAuditEvent.create({
               data: {
                 orderId: preparedOrder.orderId,
@@ -760,6 +774,7 @@ export async function pushAllToAssignedCouriers(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/inventory");
 
     const summary = [
       `${submittedCount} submitted`,

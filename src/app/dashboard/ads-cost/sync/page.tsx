@@ -80,6 +80,20 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
               sources: {
                 include: { source: true },
               },
+              reportGroup: {
+                include: {
+                  mappings: {
+                    include: {
+                      campaign: {
+                        select: {
+                          id: true,
+                          campaignName: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
           dailySpends: {
@@ -139,6 +153,14 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
               id: item.source.id,
               name: item.source.name,
             })),
+            reportGroupId: mapping.reportGroupId,
+            linkedCampaigns:
+              mapping.reportGroup?.mappings
+                .filter((item) => item.campaignId !== campaign.id)
+                .map((item) => ({
+                  id: item.campaign.id,
+                  campaignName: item.campaign.campaignName,
+                })) || [],
           }
         : null,
     };

@@ -4,6 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { Search } from "lucide-react";
 
 import {
+  connectMetaCampaignToExisting,
+  disconnectMetaCampaignReportGroup,
   disconnectMetaConnection,
   saveMetaCampaignMappings,
   syncMetaAdsNow,
@@ -51,6 +53,8 @@ type Campaign = {
     productParent: { sku: string; name: string };
     sourceIds: string[];
     sources: { id: string; name: string }[];
+    reportGroupId: string | null;
+    linkedCampaigns: { id: string; campaignName: string }[];
   } | null;
 };
 
@@ -211,6 +215,136 @@ function SearchableParentPicker({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+
+function sameMapping(a: Campaign, b: Campaign) {
+  if (!a.mapping || !b.mapping) return false;
+  if (a.mapping.productParentId !== b.mapping.productParentId) return false;
+
+  const aSources = [...a.mapping.sourceIds].sort();
+  const bSources = [...b.mapping.sourceIds].sort();
+
+  return (
+    aSources.length === bSources.length &&
+    aSources.every((sourceId, index) => sourceId === bSources[index])
+  );
+}
+
+function CampaignConnectionPicker({
+  campaign,
+  campaigns,
+  pending,
+  onConnect,
+  onDisconnect,
+}: {
+  campaign: Campaign;
+  campaigns: Campaign[];
+  pending: boolean;
+  onConnect: (campaignId: string, targetCampaignId: string) => void;
+  onDisconnect: (campaignId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+
+  const candidates = useMemo(() => {
+    const q = query.toLowerCase().trim();
+
+    return campaigns
+      .filter(
+        (candidate) =>
+          candidate.id !== campaign.id &&
+          sameMapping(campaign, candidate)
+      )
+      .filter(
+        (candidate) =>
+          !q ||
+          candidate.campaignName.toLowerCase().includes(q) ||
+          candidate.account.name.toLowerCase().includes(q) ||
+          candidate.metaCampaignId.toLowerCase().includes(q)
+      )
+      .slice(0, 12);
+  }, [campaign, campaigns, query]);
+
+  if (!campaign.mapping) {
+    return (
+      <div className="w-72 rounded-xl border border-dashed p-3 text-xs text-slate-500">
+        Map Product Parent and Source first, then update mappings before connecting campaigns.
+      </div>
+    );
+  }
+
+  if (campaign.mapping.reportGroupId) {
+    return (
+      <div className="w-72 rounded-xl border bg-emerald-50 p-3">
+        <p className="text-xs font-semibold text-emerald-800">
+          Connected campaign group
+        </p>
+        <div className="mt-2 space-y-1">
+          {campaign.mapping.linkedCampaigns.map((linked) => (
+            <p key={linked.id} className="text-xs text-emerald-700">
+              • {linked.campaignName}
+            </p>
+          ))}
+        </div>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onDisconnect(campaign.id)}
+          className="mt-3 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50"
+        >
+          Disconnect from group
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-72">
+      <div className="rounded-xl border bg-white px-3">
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search existing mapped campaign..."
+          className="w-full py-2 text-sm outline-none"
+        />
+      </div>
+
+      {query ? (
+        <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border bg-white shadow-sm">
+          {candidates.map((candidate) => (
+            <button
+              key={candidate.id}
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                setQuery("");
+                onConnect(campaign.id, candidate.id);
+              }}
+              className="block w-full border-b px-3 py-2 text-left last:border-b-0 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <p className="text-xs font-semibold text-slate-900">
+                {candidate.campaignName}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {candidate.account.name}
+              </p>
+            </button>
+          ))}
+
+          {!candidates.length ? (
+            <div className="px-3 py-3 text-xs text-slate-500">
+              No mapped campaign with the same Product Parent + Sources.
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-1 text-[11px] text-slate-400">
+          Connect campaigns only when they share the same Product Parent and Sources.
+        </p>
+      )}
     </div>
   );
 }
@@ -382,6 +516,30 @@ export default function AdsCostSyncClient({
           sourceIds: row.sourceIds,
         })),
       });
+      setMessage(result.message);
+      if (result.success) window.location.reload();
+    });
+  }
+
+  function handleConnectCampaign(
+    campaignId: string,
+    targetCampaignId: string
+  ) {
+    setMessage("");
+    startTransition(async () => {
+      const result = await connectMetaCampaignToExisting({
+        campaignId,
+        targetCampaignId,
+      });
+      setMessage(result.message);
+      if (result.success) window.location.reload();
+    });
+  }
+
+  function handleDisconnectCampaign(campaignId: string) {
+    setMessage("");
+    startTransition(async () => {
+      const result = await disconnectMetaCampaignReportGroup(campaignId);
       setMessage(result.message);
       if (result.success) window.location.reload();
     });
@@ -657,13 +815,14 @@ export default function AdsCostSyncClient({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full">
+          <table className="min-w-[1280px] w-full">
             <thead className="bg-slate-50">
               <tr className="border-b">
                 <Th>Ad Account / Campaign</Th>
                 <Th>Spend</Th>
                 <Th>Product Parent</Th>
                 <Th>Sources (multiple)</Th>
+                <Th>Connect Existing Ad</Th>
               </tr>
             </thead>
             <tbody>
@@ -724,13 +883,22 @@ export default function AdsCostSyncClient({
                         })}
                       </div>
                     </td>
+                    <td className="px-4 py-4">
+                      <CampaignConnectionPicker
+                        campaign={campaign}
+                        campaigns={campaigns}
+                        pending={pending}
+                        onConnect={handleConnectCampaign}
+                        onDisconnect={handleDisconnectCampaign}
+                      />
+                    </td>
                   </tr>
                 );
               })}
 
               {!visibleCampaigns.length ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-10 text-center text-sm text-slate-500">
+                  <td colSpan={5} className="px-6 py-10 text-center text-sm text-slate-500">
                     No campaigns found. Connect Meta and run Sync Now first.
                   </td>
                 </tr>

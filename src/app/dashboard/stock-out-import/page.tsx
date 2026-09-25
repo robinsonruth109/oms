@@ -10,7 +10,7 @@ export const revalidate = 0;
 export default async function StockOutImportPage() {
   const session = await getServerSession(authOptions);
 
-  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 

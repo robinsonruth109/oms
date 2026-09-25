@@ -31,7 +31,7 @@ function csvCell(value: unknown) {
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
 
-  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
     return new Response("Unauthorized", {
       status: 401,
       headers: {

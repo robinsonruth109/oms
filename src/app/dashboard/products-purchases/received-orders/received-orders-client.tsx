@@ -242,8 +242,13 @@ export default function ReceivedOrdersClient({ rows }: { rows: Row[] }) {
                         const form = getForm(row);
                         const totalCnfCharge =
                           form.packageWeight * form.cnfRatePerKg;
+                        const allocatedPurchaseValue =
+                          row.orderedQty > 0
+                            ? (row.paidAmountBdt / row.orderedQty) *
+                              form.receivedQty
+                            : 0;
                         const grandTotal =
-                          row.paidAmountBdt +
+                          allocatedPurchaseValue +
                           form.otherCostBdt +
                           totalCnfCharge;
                         const originalUnitPrice =
@@ -327,6 +332,11 @@ export default function ReceivedOrdersClient({ rows }: { rows: Row[] }) {
                                         onChange={(value) =>
                                           updateForm(row, { otherCostBdt: value })
                                         }
+                                      />
+
+                                      <Info
+                                        label="Allocated Purchase Value"
+                                        value={formatMoney(allocatedPurchaseValue)}
                                       />
 
                                       <Info

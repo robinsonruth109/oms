@@ -86,9 +86,27 @@ export default async function StockControlPage({
       take: 50,
     }),
     prisma.inventoryStock.findMany({
-      select: {
-        quantity: true,
-        averageCost: true,
+      include: {
+        parent: {
+          select: {
+            sku: true,
+            name: true,
+          },
+        },
+        product: {
+          select: {
+            sku: true,
+            name: true,
+            parent: {
+              select: {
+                sku: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
       },
     }),
     prisma.inventoryMovement.findMany({
@@ -141,6 +159,28 @@ export default async function StockControlPage({
         valuation,
         negativeTargets,
       }}
+      stockRows={stocks.map((stock) => ({
+        id: stock.id,
+        target:
+          stock.parent?.sku ||
+          stock.product?.sku ||
+          "Unknown",
+        name:
+          stock.parent?.name ||
+          stock.product?.name ||
+          "",
+        parentSku:
+          stock.parent?.sku ||
+          stock.product?.parent.sku ||
+          "",
+        mode: stock.parent ? "SHARED_PARENT" : "VARIANT",
+        quantity: stock.quantity,
+        averageCost: String(stock.averageCost),
+        valuation:
+          Number(stock.quantity || 0) *
+          Number(stock.averageCost || 0),
+        activatedAt: stock.activatedAt.toISOString(),
+      }))}
       parents={parents.map((parent) => ({
         id: parent.id,
         sku: parent.sku,

@@ -55,7 +55,12 @@ export default async function ProductsPage({
     prisma.product.findMany({
       where,
       include: {
-        parent: true,
+        inventoryStock: true,
+        parent: {
+          include: {
+            inventoryStock: true,
+          },
+        },
       },
       orderBy: {
         createdAt: "desc",
@@ -79,8 +84,9 @@ export default async function ProductsPage({
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">Product Master</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Manage parent SKU and child SKU products. Search, update, import CSV,
-          and use them in manual order entry.
+          Manage parent SKU and child SKU products. “Units / Sale” is the
+          physical stock consumption multiplier for each child SKU; actual
+          available stock is managed separately from Stock Control & Valuation.
         </p>
       </section>
 
@@ -156,7 +162,7 @@ export default async function ProductsPage({
                   <p className="font-medium text-slate-800">{product.parent.sku}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Qty</p>
+                  <p className="text-slate-400">Units / Sale</p>
                   <p className="font-medium text-slate-800">{product.quantity}</p>
                 </div>
                 <div>
@@ -175,6 +181,44 @@ export default async function ProductsPage({
                   <p className="text-slate-400">Sell</p>
                   <p className="font-medium text-slate-800">
                     ৳ {Number(product.sellingPrice).toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Current Stock</p>
+                  <p
+                    className={`font-medium ${
+                      (
+                        product.parent.inventoryMode === "SHARED_PARENT"
+                          ? product.parent.inventoryStock?.quantity
+                          : product.parent.inventoryMode === "VARIANT"
+                            ? product.inventoryStock?.quantity
+                            : null
+                      ) !== null &&
+                      (
+                        product.parent.inventoryMode === "SHARED_PARENT"
+                          ? product.parent.inventoryStock?.quantity
+                          : product.parent.inventoryMode === "VARIANT"
+                            ? product.inventoryStock?.quantity
+                            : null
+                      ) !== undefined &&
+                      Number(
+                        product.parent.inventoryMode === "SHARED_PARENT"
+                          ? product.parent.inventoryStock?.quantity
+                          : product.inventoryStock?.quantity
+                      ) <= 0
+                        ? "text-red-600"
+                        : "text-slate-800"
+                    }`}
+                  >
+                    {product.parent.inventoryMode === "SHARED_PARENT"
+                      ? product.parent.inventoryStock
+                        ? `${product.parent.inventoryStock.quantity} pcs (shared)`
+                        : "Not activated"
+                      : product.parent.inventoryMode === "VARIANT"
+                        ? product.inventoryStock
+                          ? `${product.inventoryStock.quantity} pcs`
+                          : "Not activated"
+                        : "Not activated"}
                   </p>
                 </div>
               </div>
@@ -196,13 +240,16 @@ export default async function ProductsPage({
                   Parent SKU
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Qty
+                  Units / Sale
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Purchase
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Sell
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Stock
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Status
@@ -233,6 +280,39 @@ export default async function ProductsPage({
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     ৳ {Number(product.sellingPrice).toFixed(2)}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    {product.parent.inventoryMode === "SHARED_PARENT" ? (
+                      product.parent.inventoryStock ? (
+                        <span
+                          className={
+                            product.parent.inventoryStock.quantity <= 0
+                              ? "font-semibold text-red-600"
+                              : "text-slate-700"
+                          }
+                        >
+                          {product.parent.inventoryStock.quantity} pcs shared
+                        </span>
+                      ) : (
+                        <span className="text-amber-600">Not activated</span>
+                      )
+                    ) : product.parent.inventoryMode === "VARIANT" ? (
+                      product.inventoryStock ? (
+                        <span
+                          className={
+                            product.inventoryStock.quantity <= 0
+                              ? "font-semibold text-red-600"
+                              : "text-slate-700"
+                          }
+                        >
+                          {product.inventoryStock.quantity} pcs
+                        </span>
+                      ) : (
+                        <span className="text-amber-600">Not activated</span>
+                      )
+                    ) : (
+                      <span className="text-slate-400">Not activated</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     {product.status ? "Active" : "Inactive"}

@@ -114,7 +114,7 @@ export default async function ProductsPage({
             id: editProduct.id,
             sku: editProduct.sku,
             name: editProduct.name,
-            quantity: editProduct.quantity,
+            quantity: editProduct.unitsPerSale ?? 1,
             purchasePrice: String(editProduct.purchasePrice),
             sellingPrice: String(editProduct.sellingPrice),
             status: editProduct.status,
@@ -163,7 +163,7 @@ export default async function ProductsPage({
                 </div>
                 <div>
                   <p className="text-slate-400">Units / Sale</p>
-                  <p className="font-medium text-slate-800">{product.quantity}</p>
+                  <p className="font-medium text-slate-800">{product.unitsPerSale ?? "Not set"}</p>
                 </div>
                 <div>
                   <p className="text-slate-400">Status</p>
@@ -273,7 +273,7 @@ export default async function ProductsPage({
                     {product.parent.sku}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
-                    {product.quantity}
+                    {product.unitsPerSale ?? "Not set"}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     ৳ {Number(product.purchasePrice).toFixed(2)}

@@ -27,7 +27,7 @@ export default async function ReadyToShipPage({
   searchParams,
 }: ReadyToShipPageProps) {
   const session = await getServerSession(authOptions);
-  if (!session || !["ADMIN", "PACKAGING_AGENT"].includes(session.user.role)) {
+  if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 

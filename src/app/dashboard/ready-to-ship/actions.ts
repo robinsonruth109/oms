@@ -427,6 +427,8 @@ export async function createCsvBatch(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
 
     const warnings = [
       missingFromCourier > 0
@@ -788,6 +790,8 @@ export async function pushAllToAssignedCouriers(
 
     revalidatePath("/dashboard/ready-to-ship");
     revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
 
     const summary = [
       `${submittedCount} submitted`,

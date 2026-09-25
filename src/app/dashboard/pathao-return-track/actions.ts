@@ -374,6 +374,7 @@ async function processReturn({
     revalidatePath("/dashboard/all-orders");
     revalidatePath(`/dashboard/all-orders/${orderId}`);
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
     revalidatePath("/dashboard/reports");
     revalidatePath("/dashboard/product-report");
     revalidatePath("/dashboard/pathao-daily-report");

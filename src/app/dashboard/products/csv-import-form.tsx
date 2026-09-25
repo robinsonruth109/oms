@@ -27,8 +27,11 @@ export default function CsvImportForm() {
         </h2>
         <p className="mt-1 text-sm text-slate-500">
           Upload a CSV file. The importer supports header-based mapping. Minimum
-          needed columns are SKU, Purchase, Sell, and Parent SKU. If a parent
-          SKU is missing, it will be created automatically.
+          needed columns are SKU, Purchase, Sell, and Parent SKU. Existing
+          Quantity values are treated as legacy data and never activate live
+          stock. To set package consumption through CSV, use an explicit
+          "Units per Sale" column. Actual stock is activated separately in
+          Stock Control & Valuation.
         </p>
       </div>
 

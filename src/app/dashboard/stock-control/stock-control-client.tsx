@@ -217,11 +217,23 @@ function StockEditorForm({
 export default function StockControlClient({
   parents,
   movements,
+  stockRows,
   summary,
   q,
 }: {
   parents: ParentRow[];
   movements: MovementRow[];
+  stockRows: Array<{
+    id: string;
+    target: string;
+    name: string;
+    parentSku: string;
+    mode: "SHARED_PARENT" | "VARIANT";
+    quantity: number;
+    averageCost: string;
+    valuation: number;
+    activatedAt: string;
+  }>;
   summary: {
     trackedTargets: number;
     physicalUnits: number;
@@ -256,6 +268,74 @@ export default function StockControlClient({
           value={summary.negativeTargets}
           warning={summary.negativeTargets > 0}
         />
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="border-b px-5 py-4">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Current Stock Valuation
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Current physical quantity × moving weighted-average landed cost.
+            Negative stock remains visible and does not block operations.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[900px] w-full">
+            <thead className="bg-slate-50">
+              <tr className="border-b text-left text-xs uppercase text-slate-500">
+                <th className="px-4 py-3">Stock Target</th>
+                <th className="px-4 py-3">Mode</th>
+                <th className="px-4 py-3">Current Qty</th>
+                <th className="px-4 py-3">Avg Unit Cost</th>
+                <th className="px-4 py-3">Stock Value</th>
+                <th className="px-4 py-3">Activated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockRows.map((row) => (
+                <tr key={row.id} className="border-b last:border-b-0">
+                  <td className="px-4 py-3 text-sm">
+                    <p className="font-semibold text-slate-900">{row.target}</p>
+                    <p className="text-xs text-slate-500">{row.name}</p>
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {row.mode === "SHARED_PARENT"
+                      ? "Shared Parent"
+                      : "Variant / Child"}
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-sm font-semibold ${
+                      row.quantity <= 0 ? "text-red-600" : "text-slate-900"
+                    }`}
+                  >
+                    {row.quantity}
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    {money(row.averageCost)}
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-sm font-semibold ${
+                      row.valuation < 0 ? "text-red-600" : "text-slate-900"
+                    }`}
+                  >
+                    {money(row.valuation)}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {new Date(row.activatedAt).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+              {!stockRows.length ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-500">
+                    No live stock has been activated yet.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm">

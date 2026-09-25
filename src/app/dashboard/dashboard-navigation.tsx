@@ -93,6 +93,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/pathao-return-requested", label: "Return Requested", icon: RotateCcw, roles: ALL_ROLES },
       { href: "/dashboard/pathao-return-track", label: "Pathao Return Track", icon: RotateCcw, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
       { href: "/dashboard/pathao-daily-report", label: "Pathao Daily Report", icon: BarChart3, roles: ["ADMIN", "MANAGER", "PACKAGING_AGENT"] },
+      { href: "/dashboard/pathao-delivery-report", label: "Pathao Delivery Report", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/pathao-problem", label: "Pathao Problem", icon: AlertTriangle, roles: ["ADMIN", "NOTE_AGENT"] },
       { href: "/dashboard/couriers", label: "Courier Master", icon: Store, roles: ["ADMIN"] },
     ],

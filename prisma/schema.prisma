@@ -1489,10 +1489,16 @@ enum FinanceDailyEntryType {
   KHOROCH
 }
 
+enum FinanceDailyBookType {
+  GENERAL
+  OFFICE
+}
+
 model FinanceDailyCost {
   id String @id @default(uuid())
 
   costDate DateTime
+  bookType FinanceDailyBookType @default(GENERAL)
   entryType FinanceDailyEntryType @default(KHOROCH)
   category String
   description String @db.Text
@@ -1507,6 +1513,7 @@ model FinanceDailyCost {
   updatedAt DateTime @updatedAt
 
   @@index([costDate])
+  @@index([bookType])
   @@index([entryType])
   @@index([category])
   @@index([createdByUserId])

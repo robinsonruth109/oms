@@ -14,6 +14,13 @@ export const DAILY_EXPENSE_TYPES = [
   "Phone Bills",
 ] as const;
 
+export const OFFICE_DAILY_EXPENSE_TYPES = [
+  ...DAILY_EXPENSE_TYPES,
+  "Gari Vara",
+  "Accessories Purchase",
+  "Product Purchase",
+] as const;
+
 export type DailyCashEntryLike = {
   entryType?: string | null;
   amount: unknown;

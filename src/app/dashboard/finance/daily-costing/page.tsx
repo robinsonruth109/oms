@@ -50,14 +50,14 @@ export default async function DailyCostingPage({ searchParams }: PageProps) {
 
   const [entries, priorEntries] = await Promise.all([
     prisma.financeDailyCost.findMany({
-      where: { costDate: { gte: range.start, lte: range.end } },
+      where: { bookType: "GENERAL", costDate: { gte: range.start, lte: range.end } },
       include: {
         createdByUser: { select: { name: true, username: true } },
       },
       orderBy: [{ createdAt: "asc" }],
     }),
     prisma.financeDailyCost.findMany({
-      where: { costDate: { lt: range.start } },
+      where: { bookType: "GENERAL", costDate: { lt: range.start } },
       select: { entryType: true, amount: true, paymentMethod: true },
       orderBy: [{ costDate: "asc" }, { createdAt: "asc" }],
     }),

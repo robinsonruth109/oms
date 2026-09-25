@@ -15,7 +15,11 @@ import {
   money,
   normalizeSalaryMonth,
 } from "@/lib/finance/salary";
-import { DAILY_EXPENSE_TYPES, DAILY_PAYMENT_METHODS } from "@/lib/finance/daily-cash";
+import {
+  DAILY_EXPENSE_TYPES,
+  DAILY_PAYMENT_METHODS,
+  OFFICE_DAILY_EXPENSE_TYPES,
+} from "@/lib/finance/daily-cash";
 
 async function getPrisma() {
   const { prisma } = await import("@/lib/prisma");
@@ -25,6 +29,14 @@ async function getPrisma() {
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") {
+    throw new Error("Unauthorized.");
+  }
+  return session;
+}
+
+async function requireOfficeCostingAccess() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user || !["ADMIN", "MANAGER"].includes(session.user.role)) {
     throw new Error("Unauthorized.");
   }
   return session;
@@ -71,6 +83,7 @@ export async function createDailyCostAction(formData: FormData) {
   await prisma.financeDailyCost.create({
     data: {
       costDate: bangladeshBusinessDateToUtc(costDate),
+      bookType: "GENERAL",
       entryType: entryType as "JOMA" | "KHOROCH",
       category,
       description,
@@ -88,8 +101,65 @@ export async function deleteDailyCostAction(formData: FormData) {
   await requireAdmin();
   const prisma = await getPrisma();
   const id = requiredString(formData.get("id"), "Cost ID");
-  await prisma.financeDailyCost.delete({ where: { id } });
+  await prisma.financeDailyCost.deleteMany({ where: { id, bookType: "GENERAL" } });
   revalidatePath("/dashboard/finance/daily-costing");
+}
+
+export async function createOfficeDailyCostAction(formData: FormData) {
+  const session = await requireOfficeCostingAccess();
+  const prisma = await getPrisma();
+
+  const costDate = requiredString(formData.get("costDate"), "Date");
+  const entryType = requiredString(formData.get("entryType"), "Entry type").toUpperCase();
+  const amount = money(formData.get("amount"));
+  const paymentMethod = requiredString(formData.get("paymentMethod"), "Method");
+  const details = String(formData.get("details") || "").trim();
+
+  if (entryType !== "JOMA" && entryType !== "KHOROCH") {
+    throw new Error("Entry type must be Joma or Khoroch.");
+  }
+  if (!DAILY_PAYMENT_METHODS.includes(paymentMethod as (typeof DAILY_PAYMENT_METHODS)[number])) {
+    throw new Error("Method must be Cash, Bank, or bKash.");
+  }
+  if (amount <= 0) throw new Error("Amount must be greater than 0.");
+
+  let category = "Joma";
+  let description = details || "Cash In";
+  let note: string | null = details || null;
+
+  if (entryType === "KHOROCH") {
+    category = requiredString(formData.get("category"), "Expense type");
+    if (!OFFICE_DAILY_EXPENSE_TYPES.includes(category as (typeof OFFICE_DAILY_EXPENSE_TYPES)[number])) {
+      throw new Error("Invalid office expense type.");
+    }
+    if (!details) throw new Error("Expense note/details is required.");
+    description = details;
+    note = details;
+  }
+
+  await prisma.financeDailyCost.create({
+    data: {
+      costDate: bangladeshBusinessDateToUtc(costDate),
+      bookType: "OFFICE",
+      entryType: entryType as "JOMA" | "KHOROCH",
+      category,
+      description,
+      amount,
+      paymentMethod,
+      note,
+      createdByUserId: session.user.id,
+    },
+  });
+
+  revalidatePath("/dashboard/finance/office-daily-costing");
+}
+
+export async function deleteOfficeDailyCostAction(formData: FormData) {
+  await requireOfficeCostingAccess();
+  const prisma = await getPrisma();
+  const id = requiredString(formData.get("id"), "Cost ID");
+  await prisma.financeDailyCost.deleteMany({ where: { id, bookType: "OFFICE" } });
+  revalidatePath("/dashboard/finance/office-daily-costing");
 }
 
 export async function saveSalaryProfileAction(formData: FormData) {

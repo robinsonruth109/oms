@@ -235,7 +235,7 @@ export async function restoreReturnedInventory(
     where: {
       idempotencyKey: `CSV_DISPATCH:${input.orderId}:${input.orderItemId}`,
     },
-    select: { id: true },
+    select: { id: true, quantityDelta: true },
   });
 
   // A return from an order dispatched before activation must not create stock.
@@ -245,17 +245,29 @@ export async function restoreReturnedInventory(
 
   const product = await db.product.findUnique({
     where: { id: input.productId },
-    select: { id: true, sku: true, quantity: true },
+    select: { id: true, sku: true },
   });
 
   if (!product) {
     return { applied: false, reason: "PRODUCT_NOT_FOUND" };
   }
 
-  const physicalUnitsPerSale = Math.max(1, Number(product.quantity || 1));
-  const physicalQty =
+  const orderItem = await db.orderItem.findUnique({
+    where: { id: input.orderItemId },
+    select: { quantity: true },
+  });
+
+  if (!orderItem || orderItem.quantity <= 0) {
+    return { applied: false, reason: "ORDER_ITEM_NOT_FOUND" };
+  }
+
+  const totalPhysicalDeducted = Math.abs(Number(dispatch.quantityDelta || 0));
+  const physicalUnitsPerSoldSku =
+    totalPhysicalDeducted / Number(orderItem.quantity || 1);
+  const physicalQty = Math.round(
     Math.max(0, Math.trunc(Number(input.returnedSoldQty || 0))) *
-    physicalUnitsPerSale;
+      physicalUnitsPerSoldSku
+  );
 
   return applyStockMovement(db, {
     productId: product.id,
@@ -264,7 +276,7 @@ export async function restoreReturnedInventory(
     idempotencyKey: `PATHAO_RETURN:${input.returnReference}:${input.orderItemId}`,
     referenceType: "PATHAO_RETURN",
     referenceId: input.returnReference,
-    note: `${product.sku}: ${input.returnedSoldQty} returned sold SKU x ${physicalUnitsPerSale} physical unit(s)`,
+    note: `${product.sku}: ${input.returnedSoldQty} returned sold SKU, restoring ${physicalQty} physical unit(s) from original dispatch movement.`,
     createdByUserId: input.createdByUserId,
   });
 }

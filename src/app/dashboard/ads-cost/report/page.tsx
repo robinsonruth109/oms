@@ -1,26 +1,53 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+  getBangladeshDateInputValue,
+} from "@/lib/bangladesh-time";
+
+const ALL_PAGE_ORDER = "__ALL_PAGE_ORDER__";
+const ALL_WEB_ORDER = "__ALL_WEB_ORDER__";
+
 type PageProps = {
   searchParams?: Promise<{
     from?: string;
     to?: string;
     sourceId?: string;
+    adAccountId?: string;
+    dataSource?: string;
   }>;
 };
 
-function getLocalDateInputValue(date = new Date()) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
-function startOfDay(value: string) {
-  return new Date(`${value}T00:00:00`);
-}
-
-function endOfDay(value: string) {
-  return new Date(`${value}T23:59:59.999`);
-}
+type ReportRow = {
+  id: string;
+  dataSource: "META" | "CSV";
+  productParentId: string;
+  parentSku: string;
+  parentName: string;
+  campaignName: string;
+  adAccountName: string;
+  adAccountId: string;
+  currency: string;
+  sourceNames: string[];
+  sourceIds: string[];
+  spendAmount: number;
+  spendUsd: number;
+  spendBdt: number;
+  dollarRate: number;
+  purchasePrice: number;
+  totalOrders: number;
+  confirmed: number;
+  cancelled: number;
+  noAnswer: number;
+  phoneOff: number;
+  confirmationRate: number;
+  costPerOrderBdt: number;
+  costPerConfirmedBdt: number;
+  orderIds: string[];
+  confirmedOrderIds: string[];
+};
 
 function money(value: number) {
   return `৳ ${Number(value || 0).toFixed(2)}`;
@@ -30,103 +57,141 @@ function usd(value: number) {
   return `$ ${Number(value || 0).toFixed(2)}`;
 }
 
+function currencyAmount(value: number, currency: string) {
+  const code = currency || "USD";
+
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(Number(value || 0));
+  } catch {
+    return `${code} ${Number(value || 0).toFixed(2)}`;
+  }
+}
+
+function getSelectedSourceIds(
+  sourceId: string,
+  sources: { id: string; type: string }[]
+) {
+  if (sourceId === ALL_PAGE_ORDER) {
+    return sources
+      .filter((source) => source.type === "MANUAL")
+      .map((source) => source.id);
+  }
+
+  if (sourceId === ALL_WEB_ORDER) {
+    return sources
+      .filter(
+        (source) => source.type === "SHOPIFY" || source.type === "LARAVEL"
+      )
+      .map((source) => source.id);
+  }
+
+  return sourceId ? [sourceId] : [];
+}
+
+function buildStatusMetrics(
+  orders: {
+    id: string;
+    orderStatus: string;
+  }[]
+) {
+  const totalOrders = orders.length;
+  const confirmed = orders.filter(
+    (order) => order.orderStatus === "READY_TO_SHIP"
+  ).length;
+  const cancelled = orders.filter(
+    (order) => order.orderStatus === "CANCELLED"
+  ).length;
+  const noAnswer = orders.filter(
+    (order) => order.orderStatus === "NO_ANSWER"
+  ).length;
+  const phoneOff = orders.filter(
+    (order) => order.orderStatus === "PHONE_OFF"
+  ).length;
+
+  return {
+    totalOrders,
+    confirmed,
+    cancelled,
+    noAnswer,
+    phoneOff,
+    confirmationRate:
+      totalOrders > 0 ? (confirmed / totalOrders) * 100 : 0,
+  };
+}
+
 export default async function AdsCostReportPage({
   searchParams,
 }: PageProps) {
   const { prisma } = await import("@/lib/prisma");
 
   const params = (await searchParams) || {};
-  const today = getLocalDateInputValue();
+  const today = getBangladeshDateInputValue();
 
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
   const sourceId = (params.sourceId || "").trim();
+  const adAccountId = (params.adAccountId || "").trim();
+  const dataSource =
+    String(params.dataSource || "META").toUpperCase() === "CSV"
+      ? "CSV"
+      : "META";
 
-  const fromDate = startOfDay(from);
-  const toDate = endOfDay(to);
+  const fromDate = bangladeshDateStartUtc(from);
+  const toDate = bangladeshDateEndUtc(to);
 
-  const sources = await prisma.orderSource.findMany({
-  where: { status: true },
-  orderBy: { name: "asc" },
-  select: {
-    id: true,
-    name: true,
-    type: true,
-  },
-});
+  const [sources, adAccounts, dollarRates, receivedOrders, products] =
+    await Promise.all([
+      prisma.orderSource.findMany({
+        where: { status: true },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+        },
+      }),
+      prisma.metaAdAccount.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          metaAccountId: true,
+          name: true,
+          currency: true,
+        },
+      }),
+      prisma.dailyDollarRate.findMany({
+        where: {
+          rateDate: {
+            gte: fromDate,
+            lte: toDate,
+          },
+        },
+        orderBy: { rateDate: "asc" },
+      }),
+      prisma.purchaseReceivedOrder.findMany({
+        where: {
+          receiveDate: {
+            lte: toDate,
+          },
+        },
+        include: {
+          purchaseOrder: true,
+        },
+      }),
+      prisma.product.findMany({
+        where: { status: true },
+        include: {
+          parent: true,
+        },
+      }),
+    ]);
 
-const adsItems = await prisma.adsCostItem.findMany({
-  where: {
-    ...(sourceId ? { sourceId } : {}),
-    upload: {
-      uploadDate: {
-        gte: fromDate,
-        lte: toDate,
-      },
-    },
-  },
-  include: {
-    productParent: true,
-    source: true,
-    upload: true,
-  },
-  orderBy: {
-    createdAt: "desc",
-  },
-});
-
-const readyItems = await prisma.orderItem.findMany({
-  where: {
-    order: {
-      orderKind: "NORMAL",
-      orderStatus: "READY_TO_SHIP",
-      readyToShipAt: {
-        gte: fromDate,
-        lte: toDate,
-      },
-      ...(sourceId ? { sourceId } : {}),
-    },
-  },
-  include: {
-    product: {
-      include: {
-        parent: true,
-      },
-    },
-    order: {
-      select: {
-        sourceId: true,
-      },
-    },
-  },
-});
-
-const receivedOrders = await prisma.purchaseReceivedOrder.findMany({
-  where: {
-    receiveDate: {
-      lte: toDate,
-    },
-  },
-  include: {
-    purchaseOrder: true,
-  },
-});
-
-const products = await prisma.product.findMany({
-  where: { status: true },
-  include: {
-    parent: true,
-  },
-});
-
-const dollarRates = await prisma.dailyDollarRate.findMany({
-  where: {
-    rateDate: {
-      gte: fromDate,
-      lte: toDate,
-    },
-  },
-});
+  const selectedSourceIds = getSelectedSourceIds(sourceId, sources);
+  const selectedSourceIdSet = new Set(selectedSourceIds);
 
   const dollarRateMap = new Map<
     string,
@@ -138,8 +203,7 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
   >();
 
   for (const rate of dollarRates) {
-    const dateKey = getLocalDateInputValue(rate.rateDate);
-
+    const dateKey = getBangladeshDateInputValue(rate.rateDate);
     const current = dollarRateMap.get(dateKey) || {
       totalUsd: 0,
       totalBdt: 0,
@@ -148,7 +212,6 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
 
     current.totalUsd += Number(rate.usdAmount);
     current.totalBdt += Number(rate.bdtAmount);
-
     current.averageRate =
       current.totalUsd > 0 ? current.totalBdt / current.totalUsd : 0;
 
@@ -165,7 +228,6 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
 
   for (const received of receivedOrders) {
     const parentSku = received.purchaseOrder.parentSku;
-
     const current = originalCostMap.get(parentSku) || {
       totalQty: 0,
       totalCost: 0,
@@ -187,7 +249,6 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
 
   for (const product of products) {
     const parentSku = product.parent.sku;
-
     const current = fallbackPriceMap.get(parentSku) || {
       totalQty: 0,
       totalPrice: 0,
@@ -199,127 +260,387 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
     fallbackPriceMap.set(parentSku, current);
   }
 
-  const readyQtyMap = new Map<string, number>();
+  function purchasePriceFor(parentSku: string) {
+    const originalCost = originalCostMap.get(parentSku);
+    const fallbackPrice = fallbackPriceMap.get(parentSku);
 
-  for (const item of readyItems) {
-    if (!item.product?.parent) continue;
+    if (originalCost && originalCost.totalQty > 0) {
+      return originalCost.totalCost / originalCost.totalQty;
+    }
 
-    const parentId = item.product.parent.id;
-    const sourceIdForOrder = item.order.sourceId;
+    if (fallbackPrice && fallbackPrice.totalQty > 0) {
+      return fallbackPrice.totalPrice / fallbackPrice.totalQty;
+    }
 
-    const key = `${parentId}__${sourceIdForOrder}`;
-
-    const productQty = Number(item.product.quantity || 1);
-    const orderQty = Number(item.quantity || 1);
-
-    const finalQty = productQty * orderQty;
-
-    readyQtyMap.set(key, (readyQtyMap.get(key) || 0) + finalQty);
+    return 0;
   }
 
-  const reportMap = new Map<
-    string,
-    {
-      productParentId: string;
-      parentSku: string;
-      parentName: string;
-      sourceId: string;
-      sourceName: string;
-      campaignName: string;
-      adsSpentUsd: number;
-      adsSpentBdt: number;
-      dollarRate: number;
-      readyQty: number;
-      purchasePrice: number;
-      cpoBdt: number;
-    }
-  >();
+  const rows: ReportRow[] = [];
 
-  for (const item of adsItems) {
-    const uploadDateKey = getLocalDateInputValue(
-      item.upload.uploadDate
+  if (dataSource === "META") {
+    const campaigns = await prisma.metaCampaign.findMany({
+      where: {
+        ...(adAccountId ? { adAccountId } : {}),
+        dailySpends: {
+          some: {
+            spendDate: {
+              gte: fromDate,
+              lte: toDate,
+            },
+          },
+        },
+      },
+      include: {
+        adAccount: true,
+        mapping: {
+          include: {
+            productParent: true,
+            sources: {
+              include: {
+                source: true,
+              },
+            },
+          },
+        },
+        dailySpends: {
+          where: {
+            spendDate: {
+              gte: fromDate,
+              lte: toDate,
+            },
+          },
+          orderBy: {
+            spendDate: "asc",
+          },
+        },
+      },
+      orderBy: [{ adAccount: { name: "asc" } }, { campaignName: "asc" }],
+    });
+
+    const eligibleCampaigns = campaigns.filter((campaign) => {
+      if (!campaign.mapping || !campaign.mapping.sources.length) {
+        return false;
+      }
+
+      if (!selectedSourceIds.length) {
+        return true;
+      }
+
+      // Source filtering only decides which mapped campaigns are shown.
+      // The campaign calculation still merges ALL sources in that campaign
+      // so the same Meta spend is never split or duplicated by source.
+      return campaign.mapping.sources.some((item) =>
+        selectedSourceIdSet.has(item.sourceId)
+      );
+    });
+
+    const parentIds = Array.from(
+      new Set(
+        eligibleCampaigns.map(
+          (campaign) => campaign.mapping!.productParentId
+        )
+      )
     );
 
-    const dollarRate =
-      dollarRateMap.get(uploadDateKey)?.averageRate || 0;
-
-    const adsSpentUsd = Number(item.amountSpent);
-
-    const adsSpentBdt = adsSpentUsd * dollarRate;
-
-    const key = `${item.productParentId}__${item.sourceId}__${item.campaignName}`;
-
-    const readyKey = `${item.productParentId}__${item.sourceId}`;
-
-    const readyQty = readyQtyMap.get(readyKey) || 0;
-
-    const originalCost = originalCostMap.get(
-      item.productParent.sku
+    const mappedSourceIds = Array.from(
+      new Set(
+        eligibleCampaigns.flatMap((campaign) =>
+          campaign.mapping!.sources.map((item) => item.sourceId)
+        )
+      )
     );
 
-    const fallbackPrice = fallbackPriceMap.get(
-      item.productParent.sku
-    );
+    const orders =
+      parentIds.length && mappedSourceIds.length
+        ? await prisma.order.findMany({
+            where: {
+              orderKind: "NORMAL",
+              createdAt: {
+                gte: fromDate,
+                lte: toDate,
+              },
+              sourceId: {
+                in: mappedSourceIds,
+              },
+              items: {
+                some: {
+                  product: {
+                    parentId: {
+                      in: parentIds,
+                    },
+                  },
+                },
+              },
+            },
+            select: {
+              id: true,
+              sourceId: true,
+              orderStatus: true,
+              items: {
+                select: {
+                  product: {
+                    select: {
+                      parentId: true,
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : [];
 
-    const purchasePrice =
-      originalCost && originalCost.totalQty > 0
-        ? originalCost.totalCost / originalCost.totalQty
-        : fallbackPrice && fallbackPrice.totalQty > 0
-          ? fallbackPrice.totalPrice / fallbackPrice.totalQty
-          : 0;
+    for (const campaign of eligibleCampaigns) {
+      const mapping = campaign.mapping!;
+      const campaignSourceIds = new Set(
+        mapping.sources.map((item) => item.sourceId)
+      );
 
-    const existing = reportMap.get(key);
+      const matchingOrders = orders.filter(
+        (order) =>
+          campaignSourceIds.has(order.sourceId) &&
+          order.items.some(
+            (item) => item.product?.parentId === mapping.productParentId
+          )
+      );
 
-    if (existing) {
-      existing.adsSpentUsd += adsSpentUsd;
-      existing.adsSpentBdt += adsSpentBdt;
+      const status = buildStatusMetrics(matchingOrders);
 
-      existing.cpoBdt =
-        readyQty > 0
-          ? existing.adsSpentBdt / readyQty
-          : 0;
-    } else {
-      reportMap.set(key, {
-        productParentId: item.productParentId,
-        parentSku: item.productParent.sku,
-        parentName: item.productParent.name,
-        sourceId: item.sourceId,
-        sourceName: item.source.name,
-        campaignName: item.campaignName,
-        adsSpentUsd,
-        adsSpentBdt,
+      let spendAmount = 0;
+      let spendUsd = 0;
+      let spendBdt = 0;
+
+      for (const spend of campaign.dailySpends) {
+        const amountSpent = Number(spend.amountSpent);
+        spendAmount += amountSpent;
+
+        if (String(spend.currency).toUpperCase() === "USD") {
+          spendUsd += amountSpent;
+          const dateKey = getBangladeshDateInputValue(spend.spendDate);
+          const rate = dollarRateMap.get(dateKey)?.averageRate || 0;
+          spendBdt += amountSpent * rate;
+        }
+      }
+
+      const dollarRate =
+        spendUsd > 0 ? spendBdt / spendUsd : 0;
+
+      rows.push({
+        id: `META__${campaign.id}`,
+        dataSource: "META",
+        productParentId: mapping.productParentId,
+        parentSku: mapping.productParent.sku,
+        parentName: mapping.productParent.name,
+        campaignName: campaign.campaignName,
+        adAccountName: campaign.adAccount.name,
+        adAccountId: campaign.adAccount.metaAccountId,
+        currency: campaign.adAccount.currency || "USD",
+        sourceNames: mapping.sources.map((item) => item.source.name),
+        sourceIds: mapping.sources.map((item) => item.sourceId),
+        spendAmount,
+        spendUsd,
+        spendBdt,
         dollarRate,
-        readyQty,
-        purchasePrice,
-        cpoBdt:
-          readyQty > 0
-            ? adsSpentBdt / readyQty
+        purchasePrice: purchasePriceFor(mapping.productParent.sku),
+        ...status,
+        costPerOrderBdt:
+          status.totalOrders > 0 ? spendBdt / status.totalOrders : 0,
+        costPerConfirmedBdt:
+          status.confirmed > 0 ? spendBdt / status.confirmed : 0,
+        orderIds: matchingOrders.map((order) => order.id),
+        confirmedOrderIds: matchingOrders
+          .filter((order) => order.orderStatus === "READY_TO_SHIP")
+          .map((order) => order.id),
+      });
+    }
+  } else {
+    const csvSourceIds =
+      selectedSourceIds.length > 0 ? selectedSourceIds : undefined;
+
+    const adsItems = await prisma.adsCostItem.findMany({
+      where: {
+        ...(csvSourceIds
+          ? {
+              sourceId: {
+                in: csvSourceIds,
+              },
+            }
+          : {}),
+        upload: {
+          uploadDate: {
+            gte: fromDate,
+            lte: toDate,
+          },
+        },
+      },
+      include: {
+        productParent: true,
+        source: true,
+        upload: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    const parentIds = Array.from(
+      new Set(adsItems.map((item) => item.productParentId))
+    );
+    const csvMappedSourceIds = Array.from(
+      new Set(adsItems.map((item) => item.sourceId))
+    );
+
+    const orders =
+      parentIds.length && csvMappedSourceIds.length
+        ? await prisma.order.findMany({
+            where: {
+              orderKind: "NORMAL",
+              createdAt: {
+                gte: fromDate,
+                lte: toDate,
+              },
+              sourceId: {
+                in: csvMappedSourceIds,
+              },
+              items: {
+                some: {
+                  product: {
+                    parentId: {
+                      in: parentIds,
+                    },
+                  },
+                },
+              },
+            },
+            select: {
+              id: true,
+              sourceId: true,
+              orderStatus: true,
+              items: {
+                select: {
+                  product: {
+                    select: {
+                      parentId: true,
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : [];
+
+    const csvMap = new Map<
+      string,
+      {
+        productParentId: string;
+        parentSku: string;
+        parentName: string;
+        sourceId: string;
+        sourceName: string;
+        campaignName: string;
+        spendUsd: number;
+        spendBdt: number;
+      }
+    >();
+
+    for (const item of adsItems) {
+      const key = `${item.productParentId}__${item.sourceId}__${item.campaignName}`;
+      const dateKey = getBangladeshDateInputValue(item.upload.uploadDate);
+      const rate = dollarRateMap.get(dateKey)?.averageRate || 0;
+      const itemSpendUsd = Number(item.amountSpent);
+      const itemSpendBdt = itemSpendUsd * rate;
+
+      const existing = csvMap.get(key);
+
+      if (existing) {
+        existing.spendUsd += itemSpendUsd;
+        existing.spendBdt += itemSpendBdt;
+      } else {
+        csvMap.set(key, {
+          productParentId: item.productParentId,
+          parentSku: item.productParent.sku,
+          parentName: item.productParent.name,
+          sourceId: item.sourceId,
+          sourceName: item.source.name,
+          campaignName: item.campaignName,
+          spendUsd: itemSpendUsd,
+          spendBdt: itemSpendBdt,
+        });
+      }
+    }
+
+    for (const [key, item] of csvMap) {
+      const matchingOrders = orders.filter(
+        (order) =>
+          order.sourceId === item.sourceId &&
+          order.items.some(
+            (orderItem) =>
+              orderItem.product?.parentId === item.productParentId
+          )
+      );
+
+      const status = buildStatusMetrics(matchingOrders);
+
+      rows.push({
+        id: `CSV__${key}`,
+        dataSource: "CSV",
+        productParentId: item.productParentId,
+        parentSku: item.parentSku,
+        parentName: item.parentName,
+        campaignName: item.campaignName,
+        adAccountName: "CSV Upload",
+        adAccountId: "",
+        currency: "USD",
+        sourceNames: [item.sourceName],
+        sourceIds: [item.sourceId],
+        spendAmount: item.spendUsd,
+        spendUsd: item.spendUsd,
+        spendBdt: item.spendBdt,
+        dollarRate:
+          item.spendUsd > 0 ? item.spendBdt / item.spendUsd : 0,
+        purchasePrice: purchasePriceFor(item.parentSku),
+        ...status,
+        costPerOrderBdt:
+          status.totalOrders > 0
+            ? item.spendBdt / status.totalOrders
             : 0,
+        costPerConfirmedBdt:
+          status.confirmed > 0
+            ? item.spendBdt / status.confirmed
+            : 0,
+        orderIds: matchingOrders.map((order) => order.id),
+        confirmedOrderIds: matchingOrders
+          .filter((order) => order.orderStatus === "READY_TO_SHIP")
+          .map((order) => order.id),
       });
     }
   }
 
-  const rows = Array.from(reportMap.values()).sort(
-    (a, b) => b.adsSpentBdt - a.adsSpentBdt
-  );
+  rows.sort((a, b) => b.spendBdt - a.spendBdt);
 
   const totalAdsUsd = rows.reduce(
-    (sum, row) => sum + row.adsSpentUsd,
+    (sum, row) => sum + row.spendUsd,
     0
   );
-
   const totalAdsBdt = rows.reduce(
-    (sum, row) => sum + row.adsSpentBdt,
+    (sum, row) => sum + row.spendBdt,
     0
   );
 
-  const totalQty = rows.reduce(
-    (sum, row) => sum + row.readyQty,
-    0
+  const uniqueOrderIds = new Set(
+    rows.flatMap((row) => row.orderIds)
+  );
+  const uniqueConfirmedOrderIds = new Set(
+    rows.flatMap((row) => row.confirmedOrderIds)
   );
 
-  const averageCpoBdt =
-    totalQty > 0 ? totalAdsBdt / totalQty : 0;
+  const totalOrders = uniqueOrderIds.size;
+  const confirmedOrders = uniqueConfirmedOrderIds.size;
+  const confirmationRate =
+    totalOrders > 0 ? (confirmedOrders / totalOrders) * 100 : 0;
+  const averageCostPerOrderBdt =
+    totalOrders > 0 ? totalAdsBdt / totalOrders : 0;
+  const averageCostPerConfirmedBdt =
+    confirmedOrders > 0 ? totalAdsBdt / confirmedOrders : 0;
 
   return (
     <div className="space-y-6">
@@ -329,17 +650,18 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
         </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          Campaign-wise ads cost report based on ready orders only.
+          Meta campaign spend matched with OMS orders by mapped Product Parent
+          and Sources. Campaign spend is counted once; mapped Sources are
+          combined for order costing.
         </p>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
-        <form className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <form className="grid grid-cols-1 gap-4 xl:grid-cols-5">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
               From Date
             </label>
-
             <input
               type="date"
               name="from"
@@ -352,7 +674,6 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
             <label className="mb-2 block text-sm font-medium text-slate-700">
               To Date
             </label>
-
             <input
               type="date"
               name="to"
@@ -363,16 +684,30 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
+              Cost Source
+            </label>
+            <select
+              name="dataSource"
+              defaultValue={dataSource}
+              className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+            >
+              <option value="META">Meta Sync</option>
+              <option value="CSV">CSV Upload</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
               Source
             </label>
-
             <select
               name="sourceId"
               defaultValue={sourceId}
               className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
             >
               <option value="">All Sources</option>
-
+              <option value={ALL_PAGE_ORDER}>All Page Order</option>
+              <option value={ALL_WEB_ORDER}>All Web Order</option>
               {sources.map((source) => (
                 <option key={source.id} value={source.id}>
                   {source.name} ({source.type})
@@ -381,122 +716,172 @@ const dollarRates = await prisma.dailyDollarRate.findMany({
             </select>
           </div>
 
-          <div className="flex items-end">
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
-            >
-              Apply Filter
-            </button>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Meta Ad Account
+            </label>
+            <div className="flex gap-2">
+              <select
+                name="adAccountId"
+                defaultValue={adAccountId}
+                className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-sm outline-none"
+              >
+                <option value="">All Ad Accounts</option>
+                {adAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} ({account.metaAccountId})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="shrink-0 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
+              >
+                Apply
+              </button>
+            </div>
           </div>
         </form>
+
+        {dataSource === "META" && sourceId ? (
+          <p className="mt-3 text-xs text-slate-500">
+            Source filtering finds campaigns mapped to that Source/group. Cost
+            calculations still use every Source mapped to each campaign, so
+            Meta spend is never split or duplicated.
+          </p>
+        ) : null}
       </section>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
+        <Summary title="Ads Spend USD" value={usd(totalAdsUsd)} />
+        <Summary title="Ads Spend BDT" value={money(totalAdsBdt)} />
+        <Summary title="Total Orders" value={String(totalOrders)} />
+        <Summary title="Confirmed" value={String(confirmedOrders)} />
         <Summary
-          title="Total Ads Spend USD"
-          value={usd(totalAdsUsd)}
+          title="Confirmation Rate"
+          value={`${confirmationRate.toFixed(2)}%`}
         />
-
         <Summary
-          title="Total Ads Spend BDT"
-          value={money(totalAdsBdt)}
+          title="Cost / Order BDT"
+          value={money(averageCostPerOrderBdt)}
         />
-
         <Summary
-          title="Total Ready Qty"
-          value={String(totalQty)}
-        />
-
-        <Summary
-          title="Average CPO BDT"
-          value={money(averageCpoBdt)}
+          title="Cost / Confirmed BDT"
+          value={money(averageCostPerConfirmedBdt)}
         />
       </section>
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         <div className="border-b px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            Product Parent Wise Ads Report
+            Campaign Performance Report
           </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Orders are matched by OMS order-created date. Confirmed means the
+            current OMS status is READY_TO_SHIP.
+          </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full">
+          <table className="min-w-[1900px] w-full">
             <thead className="bg-slate-50">
               <tr className="border-b">
-                <Th>Product Parent Code</Th>
-                <Th>Campaign Name</Th>
-                <Th>Source</Th>
-                <Th center>Qty</Th>
-                <Th center>Product Purchase Price</Th>
+                <Th>Product Parent</Th>
+                <Th>Campaign</Th>
+                <Th>Ad Account</Th>
+                <Th>Mapped Sources</Th>
+                <Th center>Total Orders</Th>
+                <Th center>Confirmed</Th>
+                <Th center>Cancelled</Th>
+                <Th center>No Answer</Th>
+                <Th center>Phone Off</Th>
+                <Th center>Confirm %</Th>
+                <Th center>Purchase Price</Th>
                 <Th center>Dollar Rate</Th>
-                <Th center>Ads Spent USD</Th>
-                <Th center>Ads Spent BDT</Th>
-                <Th center>CPO BDT</Th>
+                <Th center>Ads Spend</Th>
+                <Th center>Ads Spend BDT</Th>
+                <Th center>Cost / Order BDT</Th>
+                <Th center>Cost / Confirmed BDT</Th>
               </tr>
             </thead>
 
             <tbody>
               {rows.map((row) => (
                 <tr
-                  key={`${row.productParentId}-${row.sourceId}-${row.campaignName}`}
-                  className="border-b last:border-b-0"
+                  key={row.id}
+                  className="border-b align-top last:border-b-0"
                 >
                   <td className="px-5 py-4 text-sm">
                     <p className="font-semibold text-slate-900">
                       {row.parentSku}
                     </p>
-
-                    <p className="text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-slate-500">
                       {row.parentName}
                     </p>
                   </td>
 
                   <Td>{row.campaignName}</Td>
 
-                  <Td>{row.sourceName}</Td>
-
-                  <Td center>{row.readyQty}</Td>
-
-                  <Td center>
-                    {money(row.purchasePrice)}
+                  <Td>
+                    <p>{row.adAccountName}</p>
+                    {row.adAccountId ? (
+                      <p className="mt-1 text-xs text-slate-400">
+                        {row.adAccountId}
+                      </p>
+                    ) : null}
                   </Td>
 
+                  <Td>
+                    <div className="max-w-64">
+                      {row.sourceNames.join(", ")}
+                    </div>
+                  </Td>
+
+                  <Td center>{row.totalOrders}</Td>
+                  <Td center>{row.confirmed}</Td>
+                  <Td center>{row.cancelled}</Td>
+                  <Td center>{row.noAnswer}</Td>
+                  <Td center>{row.phoneOff}</Td>
+                  <Td center>{row.confirmationRate.toFixed(2)}%</Td>
+                  <Td center>{money(row.purchasePrice)}</Td>
                   <Td center>
                     {row.dollarRate > 0
                       ? money(row.dollarRate)
                       : "No Rate"}
                   </Td>
-
                   <Td center>
-                    {usd(row.adsSpentUsd)}
+                    {currencyAmount(row.spendAmount, row.currency)}
                   </Td>
-
-                  <Td center>
-                    {money(row.adsSpentBdt)}
-                  </Td>
-
-                  <Td center>
-                    {money(row.cpoBdt)}
-                  </Td>
+                  <Td center>{money(row.spendBdt)}</Td>
+                  <Td center>{money(row.costPerOrderBdt)}</Td>
+                  <Td center>{money(row.costPerConfirmedBdt)}</Td>
                 </tr>
               ))}
 
-              {!rows.length && (
+              {!rows.length ? (
                 <tr>
                   <td
-                    colSpan={9}
-                    className="px-6 py-8 text-center text-sm text-slate-500"
+                    colSpan={16}
+                    className="px-6 py-10 text-center text-sm text-slate-500"
                   >
-                    No ads report data found for this filter.
+                    {dataSource === "META"
+                      ? "No mapped Meta campaign spend found for this filter. Sync Meta spend and map campaigns first."
+                      : "No CSV ads-cost data found for this filter."}
                   </td>
                 </tr>
-              )}
+              ) : null}
             </tbody>
           </table>
         </div>
       </section>
+
+      {dataSource === "META" && rows.length > 1 ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          Campaign order attribution is mapping-based. If multiple campaigns
+          use the same Product Parent and the same mapped Sources, their row
+          order counts can overlap. Summary order counts are de-duplicated.
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -510,13 +895,8 @@ function Summary({
 }) {
   return (
     <div className="rounded-2xl border bg-white p-4 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">
-        {title}
-      </p>
-
-      <p className="mt-2 text-2xl font-bold text-slate-900">
-        {value}
-      </p>
+      <p className="text-sm font-medium text-slate-500">{title}</p>
+      <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
     </div>
   );
 }

@@ -8,7 +8,30 @@ function roleHome(role: string) {
   return "/dashboard";
 }
 
-function isAllowed(pathname: string, role: string) {
+function isAllowed(pathname: string, role: string, userId: string) {
+  // Attendance is personal self-service, not the Admin attendance report.
+  // These roles have Attendance in their menu (or need it for daily work).
+  if (
+    (role === "MANAGER" ||
+      role === "NOTE_AGENT" ||
+      role === "PACKAGING_AGENT") &&
+    pathname === "/dashboard/attendance"
+  ) {
+    return true;
+  }
+
+  // My Salary redirects to /dashboard/finance/salary/[userId].
+  // Only permit the employee's own detail page, never another staff member's
+  // salary or the Admin Salary Management list.
+  if (
+    (role === "NOTE_AGENT" || role === "PACKAGING_AGENT") &&
+    (pathname === "/dashboard/finance/my-salary" ||
+      (Boolean(userId) &&
+        pathname === `/dashboard/finance/salary/${userId}`))
+  ) {
+    return true;
+  }
+
   if (role === "MANAGER") {
     return (
       pathname === "/dashboard/attendance/report" ||
@@ -90,6 +113,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const role = String(token.role || "");
+  const userId = String(token.id || "");
   const pathname = request.nextUrl.pathname;
 
   if (
@@ -99,7 +123,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(roleHome(role), request.url));
   }
 
-  if (!isAllowed(pathname, role)) {
+  if (!isAllowed(pathname, role, userId)) {
     return NextResponse.redirect(new URL(roleHome(role), request.url));
   }
 

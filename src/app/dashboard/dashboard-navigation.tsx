@@ -56,7 +56,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const ALL_ROLES = ["ADMIN", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
+const ALL_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
 
 const NAV_GROUPS: NavGroup[] = [
   {

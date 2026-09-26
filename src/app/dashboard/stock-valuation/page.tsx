@@ -20,6 +20,7 @@ export default async function StockValuationPage() {
     include: {
       products: {
         where: { status: true },
+        include: { bundleComponents: { include: { componentProduct: true } } },
         orderBy: { sku: "asc" },
       },
     },
@@ -38,26 +39,49 @@ export default async function StockValuationPage() {
     unitsPerSale: string;
   }> = [];
 
+  const virtualBundles: Array<{
+    sku: string; parent: string; components: string;
+    sets: number; cost: number; legacyQty: number;
+  }> = [];
   for (const parent of parents) {
+    for (const product of parent.products) {
+      if (product.inventoryKind !== "BUNDLE") continue;
+      const parts = product.bundleComponents;
+      virtualBundles.push({
+        sku: product.sku,
+        parent: parent.sku,
+        components: parts.map((part) =>
+          part.componentProduct.sku + " × " + part.units
+        ).join(" + ") || "Recipe missing",
+        sets: parts.length ? Math.max(0, Math.min(...parts.map((part) =>
+          Math.floor(part.componentProduct.quantity / part.units)
+        ))) : 0,
+        cost: parts.reduce((sum, part) =>
+          sum + Number(part.componentProduct.purchasePrice) * part.units, 0
+        ),
+        legacyQty: product.quantity,
+      });
+    }
     if (parent.stockMode === "PARENT_STOCK") {
       const quantity = Number(parent.stockQuantity || 0);
       const unitCost = Number(parent.purchasePrice || 0);
       rows.push({
         key: `parent-${parent.id}`,
         parentSku: parent.sku,
-        sku: parent.products.map((product) => product.sku).join(", ") || "—",
+        sku: parent.products.filter((product) => product.inventoryKind !== "BUNDLE").map((product) => product.sku).join(", ") || "—",
         name: parent.name,
         mode: "Parent Stock",
         quantity,
         unitCost,
         value: quantity * unitCost,
         unitsPerSale:
-          parent.products.map((product) => `${product.sku}: ${product.unitsPerSale}`).join(" · ") || "—",
+          parent.products.filter((product) => product.inventoryKind !== "BUNDLE").map((product) => `${product.sku}: ${product.unitsPerSale}`).join(" · ") || "—",
       });
       continue;
     }
 
     for (const product of parent.products) {
+      if (product.inventoryKind === "BUNDLE") continue;
       const quantity = Number(product.quantity || 0);
       const unitCost = Number(product.purchasePrice || 0);
       rows.push({
@@ -84,7 +108,7 @@ export default async function StockValuationPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Stock Valuation</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Physical inventory value from the actual stock owner. Parent Stock is valued once at parent level; Variation Stock is valued per child SKU.
+              Physical inventory counted once at its real stock owner. Virtual bundle sets are excluded from the total.
             </p>
           </div>
           <Link

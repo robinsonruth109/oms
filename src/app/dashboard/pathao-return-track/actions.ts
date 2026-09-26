@@ -401,6 +401,7 @@ async function processReturn({
             returnedQty,
             stockBefore: restored.stockBefore,
             stockAfter: restored.stockAfter,
+            stockBreakdown: JSON.stringify(restored.stockBreakdown),
           },
         });
 
@@ -606,6 +607,7 @@ export async function repairZeroRestoredReturnsAction(
                   productId: restored.productId,
                   stockBefore: restored.stockBefore,
                   stockAfter: restored.stockAfter,
+                  stockBreakdown: JSON.stringify(restored.stockBreakdown),
                 },
               });
             }

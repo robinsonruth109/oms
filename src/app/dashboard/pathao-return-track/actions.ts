@@ -64,7 +64,12 @@ export type ScanReturnResult =
     }
   | {
       success: false;
-      action: "ERROR" | "ALREADY_PROCESSED" | "ALREADY_RETURNED" | "NOT_FOUND_SAVED";
+      action: "NOT_FOUND_SAVED";
+      message: string;
+    }
+  | {
+      success: false;
+      action: "ERROR" | "ALREADY_PROCESSED" | "ALREADY_RETURNED";
       message: string;
     };
 

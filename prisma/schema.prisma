@@ -11,6 +11,11 @@ enum ProductStockMode {
   PARENT_STOCK
 }
 
+enum ProductInventoryKind {
+  PHYSICAL
+  BUNDLE
+}
+
 enum StockOwnerType {
   PRODUCT
   PRODUCT_PARENT
@@ -173,6 +178,7 @@ model ProductDamageEntry {
   enteredQuantity   Int
   unitsPerSale      Int
   damagedStockUnits Int
+  componentBreakdown String? @db.Text
 
   unitCost    Decimal @db.Decimal(10, 2)
   damageValue Decimal @db.Decimal(12, 2)
@@ -218,6 +224,7 @@ model ProductStockAdjustment {
   enteredQuantity Int
   unitsPerSale    Int
   adjustedStockUnits Int
+  componentBreakdown String? @db.Text
 
   unitCost        Decimal @db.Decimal(10, 2)
   adjustmentValue Decimal @db.Decimal(12, 2)
@@ -299,6 +306,7 @@ model Product {
   name          String
   quantity      Int      @default(1)
   unitsPerSale  Int      @default(1)
+  inventoryKind ProductInventoryKind @default(PHYSICAL)
   purchasePrice Decimal  @db.Decimal(10, 2)
   sellingPrice  Decimal  @db.Decimal(10, 2)
   status        Boolean  @default(true)
@@ -312,6 +320,20 @@ model Product {
   exchangeCaseItems ExchangeCaseItem[]
   damageEntries ProductDamageEntry[]
   stockAdjustments ProductStockAdjustment[]
+  bundleComponents ProductBundleComponent[] @relation("BundleSku")
+  usedInBundles ProductBundleComponent[] @relation("BundleComponentSku")
+}
+
+model ProductBundleComponent {
+  id String @id @default(uuid())
+  bundleProductId String
+  bundleProduct Product @relation("BundleSku", fields: [bundleProductId], references: [id], onDelete: Cascade)
+  componentProductId String
+  componentProduct Product @relation("BundleComponentSku", fields: [componentProductId], references: [id], onDelete: Restrict)
+  units Int
+
+  @@unique([bundleProductId, componentProductId])
+  @@index([componentProductId])
 }
 
 model Order {
@@ -577,6 +599,7 @@ model PathaoReturnItem {
   orderedQty Int
   returnedQty Int
   stockBefore Int
+  stockBreakdown String? @db.Text
   stockAfter Int
 
   createdAt DateTime @default(now())
@@ -894,11 +917,29 @@ model OrderItem {
   updatedAt DateTime @updatedAt
 
   pathaoReturnItems PathaoReturnItem[]
+  stockAllocations OrderItemStockAllocation[]
 
   @@index([orderId])
   @@index([productId])
   @@index([productSku])
   @@index([stockDeductedAt])
+}
+
+// Immutable stock-owner snapshot, one line per physical owner consumed by an order item.
+model OrderItemStockAllocation {
+  id String @id @default(uuid())
+  orderItemId String
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  ownerType StockOwnerType
+  ownerId String
+  ownerSkuSnapshot String
+  unitsPerSale Int
+  deductedUnits Int
+  restoredUnits Int @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([orderItemId, ownerType, ownerId])
+  @@index([ownerType, ownerId])
 }
 
 model InvoiceBatch {

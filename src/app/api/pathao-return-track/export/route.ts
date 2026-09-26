@@ -91,6 +91,7 @@ export async function GET(request: NextRequest) {
           productSkuSnapshot: true,
           productNameSnapshot: true,
           returnedQty: true,
+          stockBreakdown: true,
         },
       },
     },
@@ -162,6 +163,7 @@ export async function GET(request: NextRequest) {
     "First Scanned (Bangladesh)",
     "Last Scanned (Bangladesh)",
     "Lookup Details",
+    "Restored Physical Components",
   ];
 
   const rows = logs.map((log) => [
@@ -191,6 +193,19 @@ export async function GET(request: NextRequest) {
     "",
     "",
     "",
+    log.items.map((item) => {
+      if (!item.stockBreakdown) return "";
+      try {
+        const parts = JSON.parse(item.stockBreakdown) as Array<{
+          ownerSku: string; quantity: number;
+        }>;
+        return parts.map((part) =>
+          part.ownerSku + " × " + part.quantity
+        ).join(" + ");
+      } catch {
+        return "";
+      }
+    }).filter(Boolean).join(" | "),
   ]);
 
   // Unmatched scans are exported with the same columns as processed
@@ -217,6 +232,7 @@ export async function GET(request: NextRequest) {
     formatBangladeshDateTime(scan.firstScannedAt),
     formatBangladeshDateTime(scan.lastScannedAt),
     scan.reason,
+    "",
   ]);
 
   const csv = [

@@ -157,6 +157,7 @@ export default async function PathaoReturnTrackPage({ searchParams }: PageProps)
             sku: item.productSkuSnapshot,
             name: item.productNameSnapshot,
             quantity: item.returnedQty,
+            stockBreakdown: item.stockBreakdown,
           })),
         }))}
       />

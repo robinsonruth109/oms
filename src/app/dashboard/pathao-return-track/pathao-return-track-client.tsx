@@ -35,7 +35,12 @@ type DailyRow = {
   totalRestoredQty: number;
   processedBy: string;
   processedAt: string;
-  items: { sku: string; name: string; quantity: number }[];
+  items: {
+    sku: string;
+    name: string;
+    quantity: number;
+    stockBreakdown: string | null;
+  }[];
 };
 
 type UnmatchedReturnRow = {
@@ -76,6 +81,15 @@ function statusClass(status: string) {
   if (status === "RETURNED") return "bg-emerald-100 text-emerald-700";
   if (status === "PARTIAL_RETURN") return "bg-amber-100 text-amber-800";
   return "bg-slate-100 text-slate-700";
+}
+
+function returnComponentBreakdown(raw: string) {
+  try {
+    const rows = JSON.parse(raw) as Array<{ ownerSku: string; quantity: number }>;
+    return rows.map((row) => row.ownerSku + " × " + row.quantity).join(" + ");
+  } catch {
+    return "Historical stock breakdown unavailable";
+  }
 }
 
 function returnTypeClass(type: string) {
@@ -621,7 +635,16 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
                     <p className="text-xs text-slate-500">{row.phone}</p>
                   </td>
                   <td className="max-w-[320px] px-4 py-4 text-xs text-slate-600">
-                    {row.items.map((item) => `${item.sku} × ${item.quantity}`).join(", ")}
+                    {row.items.map((item, index) => (
+                      <div key={index}>
+                        <p>{item.sku} × {item.quantity}</p>
+                        {item.stockBreakdown ? (
+                          <p className="mt-1 text-[11px] text-violet-700">
+                            Restored: {returnComponentBreakdown(item.stockBreakdown)}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
                   </td>
                   <td className="px-4 py-4">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${returnTypeClass(row.returnType)}`}>{row.returnType}</span>

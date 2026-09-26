@@ -47,12 +47,14 @@ export default function EditProductForm({ product }: Props) {
             ? "Virtual bundle: physically count each component SKU in Stock Adjustment."
             : product.stockVerified
               ? "Stock has a verified physical count."
-              : "Existing stock is legacy/unverified and excluded from valuation. Changing the physical quantity here will verify the new number. To verify the same number or count zero, use Set Physical Count in Stock Adjustment."}
+              : "Existing stock is legacy/unverified and excluded from valuation. Enter the actual quantity and tick the physical-count confirmation below, or use Set Physical Count in Stock Adjustment."}
         </p>
       </div>
 
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="productId" value={product.id} />
+        <input type="hidden" name="originalProductQuantity" value={product.quantity} />
+        <input type="hidden" name="originalParentStockQuantity" value={product.parent.stockQuantity} />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <TextField label="Parent SKU" name="parentSku" defaultValue={product.parent.sku} required />
           <TextField label="Parent Name" name="parentName" defaultValue={product.parent.name} />
@@ -101,6 +103,25 @@ export default function EditProductForm({ product }: Props) {
 
           <NumberField label="Child Purchase Cost" name="purchasePrice" min="0" step="0.01" defaultValue={product.purchasePrice} />
           <NumberField label="Selling Price" name="sellingPrice" min="0" step="0.01" defaultValue={product.sellingPrice} />
+
+          {product.inventoryKind !== "BUNDLE" ? (
+            <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 md:col-span-2">
+              <input
+                type="checkbox"
+                name="stockCountConfirmed"
+                value="yes"
+                className="mt-1"
+              />
+              <span className="text-sm text-amber-950">
+                I physically counted this {stockMode === "PARENT_STOCK"
+                  ? "shared parent inventory (individual physical units)"
+                  : "child SKU"} and confirm the stock quantity entered above
+                is the exact balance, including zero if empty. Mark it verified
+                for Stock Valuation. Leave this unchecked when editing only
+                product details, purchase price or selling price.
+              </span>
+            </label>
+          ) : null}
 
           <label className="space-y-2 md:col-span-2">
             <span className="text-sm font-medium text-slate-700">Status</span>

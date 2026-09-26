@@ -75,6 +75,15 @@ async function findOrCreateParent(
         name: parentName?.trim() || existingParent.name,
         stockMode: inventory.stockMode,
         stockQuantity: inventory.stockQuantity,
+        // A deliberate change to the parent physical quantity is an
+        // explicit manual count. Updating the name/price is not.
+        stockVerifiedAt: inventory.stockMode === "PARENT_STOCK"
+          ? inventory.stockQuantity !== existingParent.stockQuantity
+            ? new Date()
+            : existingParent.stockMode === "PARENT_STOCK"
+              ? existingParent.stockVerifiedAt
+              : null
+          : null,
         purchasePrice:
           inventory.stockMode === "PARENT_STOCK"
             ? inventory.purchasePrice
@@ -89,6 +98,11 @@ async function findOrCreateParent(
       name: parentName?.trim() || parentSku,
       stockMode: inventory?.stockMode || "VARIANT_STOCK",
       stockQuantity: inventory?.stockQuantity || 0,
+      // Only a manually entered new parent is treated as counted.
+      // Parents created by CSV imports have no inventory and stay unverified.
+      stockVerifiedAt: inventory?.stockMode === "PARENT_STOCK"
+        ? new Date()
+        : null,
       purchasePrice:
         inventory?.stockMode === "PARENT_STOCK"
           ? inventory.purchasePrice
@@ -169,6 +183,8 @@ export async function createProduct(
           slug: buildProductSlug(sku),
           name: name || sku,
           quantity,
+          // Explicit manual creation provides an initial physical count.
+          stockVerifiedAt: stockMode === "VARIANT_STOCK" ? new Date() : null,
           unitsPerSale,
           purchasePrice,
           sellingPrice,
@@ -201,7 +217,7 @@ export async function updateProduct(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureAdmin();
+    const session = await ensureAdmin();
 
     const productId = String(formData.get("productId") || "").trim();
     const parentSku = String(formData.get("parentSku") || "").trim();
@@ -307,6 +323,9 @@ export async function updateProduct(
     }
 
     await prisma.$transaction(async (tx) => {
+      const previousParent = await tx.productParent.findUnique({
+        where: { sku: parentSku },
+      });
       const parent = await findOrCreateParent(tx, parentSku, parentName, {
         stockMode,
         stockQuantity: parentStockQuantity,
@@ -314,10 +333,30 @@ export async function updateProduct(
         updateExisting: true,
       });
 
+      // When changing the stock ownership mode, quantities in the other
+      // ownership mode are old data and must be counted again.
+      if (previousParent && previousParent.stockMode !== stockMode) {
+        await tx.product.updateMany({
+          where: { parentId: previousParent.id },
+          data: { stockVerifiedAt: null },
+        });
+      }
+
+      const childCountChanged = currentProduct.inventoryKind === "PHYSICAL" &&
+        stockMode === "VARIANT_STOCK" &&
+        quantity !== currentProduct.quantity;
+      const childVerifiedAt = currentProduct.inventoryKind === "BUNDLE"
+        ? currentProduct.stockVerifiedAt
+        : stockMode === "VARIANT_STOCK"
+          ? childCountChanged
+            ? new Date()
+            : currentProduct.parent.stockMode === "VARIANT_STOCK"
+              ? currentProduct.stockVerifiedAt
+              : null
+          : null;
+
       await tx.product.update({
-        where: {
-          id: productId,
-        },
+        where: { id: productId },
         data: {
           parentId: parent.id,
           sku,
@@ -326,6 +365,7 @@ export async function updateProduct(
           quantity: currentProduct.inventoryKind === "BUNDLE"
             ? currentProduct.quantity
             : quantity,
+          stockVerifiedAt: childVerifiedAt,
           unitsPerSale: currentProduct.inventoryKind === "BUNDLE"
             ? currentProduct.unitsPerSale
             : unitsPerSale,
@@ -334,6 +374,67 @@ export async function updateProduct(
           status,
         },
       });
+
+      const actorLabel = session.user.name || session.user.username || "OMS User";
+      const actorId = session.user.id;
+      // Keep an audit trail when an Admin explicitly edits physical
+      // quantity through Product Master, not when only price/name changes.
+      if (previousParent && stockMode === "PARENT_STOCK" &&
+          parentStockQuantity !== previousParent.stockQuantity) {
+        const delta = parentStockQuantity - previousParent.stockQuantity;
+        const cost = Number(parent.purchasePrice || 0);
+        await tx.productStockAdjustment.create({
+          data: {
+            adjustmentDate: new Date(),
+            adjustmentType: "SET_COUNT",
+            productId: currentProduct.id,
+            parentId: parent.id,
+            skuSnapshot: sku,
+            productNameSnapshot: name || sku,
+            parentSkuSnapshot: parent.sku,
+            stockOwnerType: "PRODUCT_PARENT",
+            stockOwnerId: parent.id,
+            enteredQuantity: parentStockQuantity,
+            unitsPerSale: 1,
+            adjustedStockUnits: Math.abs(delta),
+            unitCost: cost,
+            adjustmentValue: Math.abs(delta) * cost,
+            stockBefore: previousParent.stockQuantity,
+            stockAfter: parentStockQuantity,
+            reason: "Product Master Physical Count",
+            note: "Physical parent quantity explicitly updated in Product Master.",
+            createdByUserId: actorId,
+            createdByName: actorLabel,
+          },
+        });
+      }
+      if (childCountChanged) {
+        const delta = quantity - currentProduct.quantity;
+        await tx.productStockAdjustment.create({
+          data: {
+            adjustmentDate: new Date(),
+            adjustmentType: "SET_COUNT",
+            productId: currentProduct.id,
+            parentId: parent.id,
+            skuSnapshot: sku,
+            productNameSnapshot: name || sku,
+            parentSkuSnapshot: parent.sku,
+            stockOwnerType: "PRODUCT",
+            stockOwnerId: currentProduct.id,
+            enteredQuantity: quantity,
+            unitsPerSale: 1,
+            adjustedStockUnits: Math.abs(delta),
+            unitCost: purchasePrice,
+            adjustmentValue: Math.abs(delta) * purchasePrice,
+            stockBefore: currentProduct.quantity,
+            stockAfter: quantity,
+            reason: "Product Master Physical Count",
+            note: "Physical SKU quantity explicitly updated in Product Master.",
+            createdByUserId: actorId,
+            createdByName: actorLabel,
+          },
+        });
+      }
     });
 
     revalidatePath("/dashboard/products");
@@ -463,6 +564,12 @@ export async function importProductsCsv(
             skippedCount += 1;
             continue;
           }
+          // CSV imports never verify legacy stock and must never overwrite
+          // a balance that someone has already counted manually.
+          const importedReferenceQty = quantity > 0 ? quantity : 1;
+          const existingQty = existingProduct.stockVerifiedAt
+            ? existingProduct.quantity
+            : importedReferenceQty;
           await tx.product.update({
             where: {
               sku,
@@ -473,7 +580,7 @@ export async function importProductsCsv(
               name: existingProduct.name || sku,
               purchasePrice,
               sellingPrice,
-              quantity: quantity > 0 ? quantity : 1,
+              quantity: existingQty,
               status: true,
             },
           });
@@ -503,7 +610,7 @@ export async function importProductsCsv(
 
     return {
       success: true,
-      message: `CSV import complete. Created: ${importedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}.`,
+      message: `CSV import complete. Created: ${importedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}. Imported quantities are unverified; already verified physical stock counts are preserved.`,
     };
   } catch (error) {
     return {

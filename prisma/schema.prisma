@@ -498,6 +498,30 @@ model ReadyToShipDateShiftItem {
   @@index([orderId])
 }
 
+// Scanned return barcodes which Pathao/OMS could not yet resolve.
+// Stored independently of Order so old or unknown parcels can be exported.
+model PathaoUnmatchedReturnScan {
+  id                     String   @id @default(uuid())
+  consignmentId          String   @unique
+  status                 String   @default("NOT_FOUND_PREVIOUS_PARCEL")
+  lookupStatus           String
+  reason                 String   @db.Text
+  matchedMerchantOrderId String?
+  checkedCourierCount    Int      @default(0)
+  failedCourierCount     Int      @default(0)
+  scanCount              Int      @default(1)
+  scannedByUserId        String?
+  scannedByName          String
+  firstScannedAt         DateTime @default(now())
+  lastScannedAt          DateTime @default(now())
+  resolvedAt             DateTime?
+  resolvedReturnTrackId  String?
+
+  @@index([status])
+  @@index([firstScannedAt])
+  @@index([lastScannedAt])
+}
+
 model PathaoReturnTrack {
   id String @id @default(uuid())
 

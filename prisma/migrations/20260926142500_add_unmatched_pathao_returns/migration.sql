@@ -1,0 +1,22 @@
+CREATE TABLE `PathaoUnmatchedReturnScan` (
+  `id` VARCHAR(191) NOT NULL,
+  `consignmentId` VARCHAR(191) NOT NULL,
+  `status` VARCHAR(191) NOT NULL DEFAULT 'NOT_FOUND_PREVIOUS_PARCEL',
+  `lookupStatus` VARCHAR(191) NOT NULL,
+  `reason` TEXT NOT NULL,
+  `matchedMerchantOrderId` VARCHAR(191) NULL,
+  `checkedCourierCount` INTEGER NOT NULL DEFAULT 0,
+  `failedCourierCount` INTEGER NOT NULL DEFAULT 0,
+  `scanCount` INTEGER NOT NULL DEFAULT 1,
+  `scannedByUserId` VARCHAR(191) NULL,
+  `scannedByName` VARCHAR(191) NOT NULL,
+  `firstScannedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `lastScannedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `resolvedAt` DATETIME(3) NULL,
+  `resolvedReturnTrackId` VARCHAR(191) NULL,
+  UNIQUE INDEX `PathaoUnmatchedReturnScan_consignmentId_key`(`consignmentId`),
+  INDEX `PathaoUnmatchedReturnScan_status_idx`(`status`),
+  INDEX `PathaoUnmatchedReturnScan_firstScannedAt_idx`(`firstScannedAt`),
+  INDEX `PathaoUnmatchedReturnScan_lastScannedAt_idx`(`lastScannedAt`),
+  PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

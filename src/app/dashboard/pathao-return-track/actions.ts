@@ -64,7 +64,7 @@ export type ScanReturnResult =
     }
   | {
       success: false;
-      action: "ERROR" | "ALREADY_PROCESSED" | "ALREADY_RETURNED";
+      action: "ERROR" | "ALREADY_PROCESSED" | "ALREADY_RETURNED" | "NOT_FOUND_SAVED";
       message: string;
     };
 
@@ -119,6 +119,65 @@ function isUniqueConstraintError(error: unknown) {
     "code" in error &&
     String((error as { code?: unknown }).code || "") === "P2002"
   );
+}
+
+type UnmatchedLookupStatus = "NO_MATCH" | "PARTIAL_CHECK" | "OMS_INVOICE_NOT_FOUND";
+
+async function saveUnmatchedScan({
+  consignmentId,
+  user,
+  lookupStatus,
+  reason,
+  checkedCourierCount,
+  failedCourierCount,
+  matchedMerchantOrderId,
+}: {
+  consignmentId: string;
+  user: SessionUser;
+  lookupStatus: UnmatchedLookupStatus;
+  reason: string;
+  checkedCourierCount: number;
+  failedCourierCount: number;
+  matchedMerchantOrderId?: string | null;
+}): Promise<Extract<ScanReturnResult, { action: "NOT_FOUND_SAVED" }>> {
+  // One durable row per barcode: re-scanning updates its count/timestamp.
+  await prisma.pathaoUnmatchedReturnScan.upsert({
+    where: { consignmentId },
+    create: {
+      consignmentId,
+      status: "NOT_FOUND_PREVIOUS_PARCEL",
+      lookupStatus,
+      reason,
+      checkedCourierCount,
+      failedCourierCount,
+      matchedMerchantOrderId: matchedMerchantOrderId || null,
+      scannedByUserId: user.id,
+      scannedByName: user.name || user.username || "OMS User",
+    },
+    update: {
+      status: "NOT_FOUND_PREVIOUS_PARCEL",
+      lookupStatus,
+      reason,
+      checkedCourierCount,
+      failedCourierCount,
+      matchedMerchantOrderId: matchedMerchantOrderId || null,
+      scannedByUserId: user.id,
+      scannedByName: user.name || user.username || "OMS User",
+      scanCount: { increment: 1 },
+      lastScannedAt: new Date(),
+      resolvedAt: null,
+      resolvedReturnTrackId: null,
+    },
+  });
+
+  revalidatePath("/dashboard/pathao-return-track");
+  return {
+    success: false,
+    action: "NOT_FOUND_SAVED",
+    message:
+      `Parcel ${consignmentId} saved as Not Found / Previous Parcel. ` +
+      `You can find its consignment ID in the daily CSV. ${reason}`,
+  };
 }
 
 async function returnedQtyByOrderItem(orderItemIds: string[]) {
@@ -291,6 +350,21 @@ async function processReturn({
           processingMethod: method,
           rawPathaoResponse: serializeRawInfo(match.info),
           processedByUserId: user.id,
+        },
+      });
+
+      // Resolve a previously unmatched scan only after the return is actually
+      // processed; the surrounding transaction also contains stock restoration.
+      await tx.pathaoUnmatchedReturnScan.updateMany({
+        where: {
+          consignmentId,
+          status: "NOT_FOUND_PREVIOUS_PARCEL",
+        },
+        data: {
+          status: "RESOLVED",
+          resolvedAt: new Date(),
+          resolvedReturnTrackId: track.id,
+          reason: "Matched to OMS and return processed.",
         },
       });
 
@@ -629,6 +703,10 @@ export async function scanPathaoReturnAction(
       throw new ReturnProcessError("ERROR", "Consignment ID is required.");
     }
 
+    if (consignmentId.length > 191) {
+      throw new ReturnProcessError("ERROR", "Consignment ID is too long.");
+    }
+
     const alreadyProcessed = await prisma.pathaoReturnTrack.findUnique({
       where: { returnConsignmentId: consignmentId },
       include: {
@@ -663,14 +741,17 @@ export async function scanPathaoReturnAction(
       const failedAccounts = search.errors.filter(
         (row) => !/\(404\)/.test(row.message)
       );
-      const suffix = failedAccounts.length
-        ? ` ${failedAccounts.length} Pathao account(s) could not be checked successfully.`
-        : "";
-
-      throw new ReturnProcessError(
-        "ERROR",
-        `Return consignment ${consignmentId} could not be matched. OMS checked verified Pathao return-webhook history first, then all configured Pathao courier accounts.${suffix} If this is an RG return ID, confirm Pathao return lifecycle webhooks are enabled for that courier account.`
-      );
+      const reason = failedAccounts.length
+        ? `Lookup incomplete: ${failedAccounts.length} courier account(s) failed to respond. Recheck after Pathao connectivity is restored.`
+        : "No matching return consignment found in verified webhooks or configured Pathao accounts.";
+      return await saveUnmatchedScan({
+        consignmentId,
+        user: session.user,
+        lookupStatus: failedAccounts.length ? "PARTIAL_CHECK" : "NO_MATCH",
+        reason,
+        checkedCourierCount: search.checkedCourierCount,
+        failedCourierCount: failedAccounts.length,
+      });
     }
 
     const merchantIds = [...new Set(search.matches.map((match) => match.merchantOrderId))];
@@ -689,12 +770,15 @@ export async function scanPathaoReturnAction(
     );
 
     if (!match) {
-      throw new ReturnProcessError(
-        "ERROR",
-        `Pathao found consignment ${consignmentId}, but OMS invoice ${merchantIds.join(
-          ", "
-        )} was not found.`
-      );
+      return await saveUnmatchedScan({
+        consignmentId,
+        user: session.user,
+        lookupStatus: "OMS_INVOICE_NOT_FOUND",
+        reason: `Pathao returned merchant order ID(s) ${merchantIds.join(", ")}, but the OMS invoice was not found.`,
+        checkedCourierCount: search.checkedCourierCount,
+        failedCourierCount: search.errors.length,
+        matchedMerchantOrderId: merchantIds.join(", ").slice(0, 191),
+      });
     }
 
     const order = orderByInvoice.get(match.merchantOrderId)!;

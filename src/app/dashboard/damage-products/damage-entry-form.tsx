@@ -14,7 +14,9 @@ type Props = {
     parentSku: string;
     sku: string;
     name: string;
-    stockMode: "VARIANT_STOCK" | "PARENT_STOCK";
+    stockMode: "VARIANT_STOCK" | "PARENT_STOCK" | "BUNDLE";
+    bundleUnitCost: number;
+    componentSummary: string;
     currentStock: number;
     unitsPerSale: number;
     unitCost: number;
@@ -46,10 +48,12 @@ export default function DamageEntryForm({ product, today }: Props) {
 
   const qty = Math.max(0, Math.floor(Number(quantity || 0)));
   const physicalUnits =
-    product.stockMode === "PARENT_STOCK"
+    product.stockMode !== "VARIANT_STOCK"
       ? qty * Math.max(1, product.unitsPerSale)
       : qty;
-  const damageValue = physicalUnits * product.unitCost;
+  const damageValue = product.stockMode === "BUNDLE"
+    ? qty * product.bundleUnitCost
+    : physicalUnits * product.unitCost;
   const stockAfter = product.currentStock - physicalUnits;
 
   useEffect(() => {
@@ -65,18 +69,25 @@ export default function DamageEntryForm({ product, today }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-bold text-slate-900">{product.sku}</p>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-              {product.stockMode === "PARENT_STOCK"
-                ? "PARENT STOCK"
-                : "VARIATION STOCK"}
+              {product.stockMode === "BUNDLE"
+                ? "VIRTUAL BUNDLE"
+                : product.stockMode === "PARENT_STOCK"
+                  ? "PARENT STOCK"
+                  : "VARIATION STOCK"}
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-700">{product.name}</p>
           <p className="mt-1 text-xs text-slate-500">
-            Parent: {product.parentSku} · Current physical stock:{" "}
+            Parent: {product.parentSku} · {product.stockMode === "BUNDLE" ? "Possible sets" : "Physical stock"}:{" "}
             <strong>{product.currentStock}</strong> · Unit cost:{" "}
             <strong>{money(product.unitCost)}</strong>
           </p>
-          {product.stockMode === "PARENT_STOCK" ? (
+          {product.stockMode === "BUNDLE" ? (
+            <p className="mt-2 text-xs font-medium text-violet-700">
+              Components: {product.componentSummary}.
+              This action changes every component. For only one damaged/missing colour, select its physical SKU instead.
+            </p>
+          ) : product.stockMode === "PARENT_STOCK" ? (
             <p className="mt-1 text-xs font-medium text-violet-700">
               1 × {product.sku} = {product.unitsPerSale} parent stock unit
               {product.unitsPerSale === 1 ? "" : "s"}
@@ -89,7 +100,7 @@ export default function DamageEntryForm({ product, today }: Props) {
           {physicalUnits === 1 ? "" : "s"} ·{" "}
           <strong>{money(damageValue)}</strong> damage · stock after{" "}
           <strong className={stockAfter < 0 ? "text-red-600" : "text-slate-900"}>
-            {stockAfter}
+            {product.stockMode === "BUNDLE" ? "see individual component balances" : stockAfter}
           </strong>
         </div>
       </div>

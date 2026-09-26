@@ -36,6 +36,20 @@ function money(value: number) {
   }).format(value);
 }
 
+function componentBreakdownLabel(raw: string) {
+  try {
+    const rows = JSON.parse(raw) as Array<{
+      ownerSku: string; units: number; before: number; after: number;
+    }>;
+    return rows.map((row) =>
+      row.ownerSku + " × " + row.units + " (" +
+      row.before + " → " + row.after + ")"
+    ).join("; ");
+  } catch {
+    return "Historical component detail unavailable";
+  }
+}
+
 export default async function StockAdjustmentsPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
 
@@ -65,7 +79,7 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
               { parent: { name: { contains: q } } },
             ],
           },
-          include: { parent: true },
+          include: { parent: true, bundleComponents: { include: { componentProduct: true } } },
           orderBy: { sku: "asc" },
           take: 25,
         })
@@ -83,21 +97,33 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
   ]);
 
   const resultProducts = products.map((product) => {
+    const bundle = product.inventoryKind === "BUNDLE";
     const parentStock = product.parent.stockMode === "PARENT_STOCK";
-
+    const parts = product.bundleComponents;
+    const units = parts.reduce((sum, part) => sum + part.units, 0);
+    const cost = parts.reduce((sum, part) =>
+      sum + Number(part.componentProduct.purchasePrice) * part.units, 0
+    );
+    const sets = parts.length ? Math.max(0, Math.min(...parts.map((part) =>
+      Math.floor(part.componentProduct.quantity / part.units)
+    ))) : 0;
     return {
       id: product.id,
       parentSku: product.parent.sku,
       sku: product.sku,
       name: product.name,
-      stockMode: product.parent.stockMode,
-      currentStock: parentStock
-        ? Number(product.parent.stockQuantity || 0)
+      stockMode: bundle ? "BUNDLE" as const : product.parent.stockMode,
+      currentStock: bundle ? sets
+        : parentStock ? Number(product.parent.stockQuantity || 0)
         : Number(product.quantity || 0),
-      unitsPerSale: Math.max(1, Number(product.unitsPerSale || 1)),
-      unitCost: parentStock
-        ? Number(product.parent.purchasePrice || 0)
+      unitsPerSale: bundle ? units : Math.max(1, Number(product.unitsPerSale || 1)),
+      unitCost: bundle ? (units ? cost / units : 0)
+        : parentStock ? Number(product.parent.purchasePrice || 0)
         : Number(product.purchasePrice || 0),
+      bundleUnitCost: cost,
+      componentSummary: bundle
+        ? parts.map((part) => part.componentProduct.sku + " × " + part.units).join(" + ")
+        : "",
     };
   });
 
@@ -423,7 +449,7 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
                   </td>
                   <td className="px-5 py-4 text-slate-700">{entry.productNameSnapshot}</td>
                   <td className="px-5 py-4 text-slate-700">
-                    {entry.stockOwnerType === "PRODUCT_PARENT"
+                    {entry.componentBreakdown ? "Virtual Bundle" : entry.stockOwnerType === "PRODUCT_PARENT"
                       ? `Parent Stock × ${entry.unitsPerSale}`
                       : "Variation Stock"}
                   </td>
@@ -432,17 +458,22 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
                   <td className="px-5 py-4 text-right font-semibold">
                     {money(Number(entry.adjustmentValue || 0))}
                   </td>
-                  <td className="px-5 py-4 text-right">{entry.stockBefore}</td>
+                  <td className="px-5 py-4 text-right">{entry.componentBreakdown ? "—" : entry.stockBefore}</td>
                   <td
                     className={
                       "px-5 py-4 text-right font-semibold " +
                       (entry.stockAfter < 0 ? "text-red-600" : "text-slate-900")
                     }
                   >
-                    {entry.stockAfter}
+                    {entry.componentBreakdown ? "—" : entry.stockAfter}
                   </td>
                   <td className="px-5 py-4 font-medium text-slate-700">{entry.reason}</td>
-                  <td className="max-w-xs px-5 py-4 text-slate-600">{entry.note || "—"}</td>
+                  <td className="max-w-xs px-5 py-4 text-slate-600">{entry.note || "—"}
+                    {entry.componentBreakdown ? (
+                      <p className="mt-1 break-words text-xs text-violet-700">
+                        Components: {componentBreakdownLabel(entry.componentBreakdown)}
+                      </p>
+                    ) : null}</td>
                   <td className="px-5 py-4 text-slate-700">{entry.createdByName}</td>
                   <td className="px-5 py-4 text-xs text-slate-500">
                     {formatBangladeshDateTime(entry.createdAt)}

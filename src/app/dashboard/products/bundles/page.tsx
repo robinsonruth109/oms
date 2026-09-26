@@ -8,7 +8,7 @@ import BundleRecipeEditor from "./bundle-recipe-editor";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type Props = { searchParams?: Promise<{ q?: string }> };
+type Props = { searchParams?: Promise<{ q?: string; componentQ?: string }> };
 
 export default async function BundleRecipesPage({ searchParams }: Props) {
   const session = await getServerSession(authOptions);
@@ -31,16 +31,25 @@ export default async function BundleRecipesPage({ searchParams }: Props) {
       })
     : [];
 
-  const parentIds = [...new Set(products.map((product) => product.parentId))];
-  const choices = parentIds.length
+  const referencedIds = [...new Set(products.flatMap((product) =>
+    product.bundleComponents.map((part) => part.componentProductId)
+  ))];
+  const componentQuery = String((await searchParams)?.componentQ || q).trim();
+  const choices = q
     ? await prisma.product.findMany({
         where: {
-          parentId: { in: parentIds },
           inventoryKind: "PHYSICAL",
           status: true,
+          parent: { stockMode: "VARIANT_STOCK" },
+          OR: [
+            { sku: { contains: componentQuery } },
+            { name: { contains: componentQuery } },
+            { parent: { sku: { contains: componentQuery } } },
+            { id: { in: referencedIds } },
+          ],
         },
         orderBy: { sku: "asc" },
-        take: 1500,
+        take: 350,
       })
     : [];
 
@@ -51,7 +60,7 @@ export default async function BundleRecipesPage({ searchParams }: Props) {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Bundle / Composite SKU Recipes</h1>
             <p className="mt-1 text-sm text-slate-600">
-              A selling SKU can consume multiple physical colour SKUs under the same parent.
+              A selling SKU can consume multiple physical colour SKUs from different colour parent codes.
             </p>
           </div>
           <Link href="/dashboard/products" className="rounded-xl border px-4 py-2 text-sm font-semibold">
@@ -74,8 +83,14 @@ export default async function BundleRecipesPage({ searchParams }: Props) {
             placeholder="Search child SKU or Parent Code (e.g. Code-GF-254)"
             className="min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm"
           />
+          <input
+            name="componentQ"
+            defaultValue={String((await searchParams)?.componentQ || "")}
+            placeholder="Physical component search (optional)"
+            className="min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm"
+          />
           <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">
-            Find Selling SKUs
+            Find SKUs
           </button>
         </form>
       </section>
@@ -97,9 +112,7 @@ export default async function BundleRecipesPage({ searchParams }: Props) {
                 units: part.units,
               })),
             }}
-            options={choices
-              .filter((option) => option.parentId === product.parentId)
-              .map((option) => ({
+            options={choices.map((option) => ({
                 id: option.id,
                 sku: option.sku,
                 name: option.name,

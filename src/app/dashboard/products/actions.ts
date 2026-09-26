@@ -255,6 +255,24 @@ export async function updateProduct(
       };
     }
 
+    if (stockMode !== currentProduct.parent.stockMode) {
+      const restrictedProductCount = await prisma.product.count({
+        where: {
+          parentId: currentProduct.parentId,
+          OR: [
+            { inventoryKind: "BUNDLE" },
+            { usedInBundles: { some: {} } },
+          ],
+        },
+      });
+      if (restrictedProductCount > 0) {
+        return {
+          success: false,
+          message: "Cannot change this parent stock mode while it contains virtual bundles or physical bundle components. Reconcile and detach recipes first.",
+        };
+      }
+    }
+
     if (currentProduct.inventoryKind === "BUNDLE" &&
         (parentSku !== currentProduct.parent.sku ||
          stockMode !== currentProduct.parent.stockMode)) {

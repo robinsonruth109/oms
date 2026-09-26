@@ -4,6 +4,10 @@ import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import {
+  bangladeshDateEndUtc,
+  bangladeshDateStartUtc,
+} from "@/lib/bangladesh-time";
 import { prisma } from "@/lib/prisma";
 import { restoreReturnedStock } from "@/lib/inventory";
 import {
@@ -422,6 +426,196 @@ function errorResult(error: unknown): ScanReturnResult {
     message:
       error instanceof Error ? error.message : "Failed to process Pathao return.",
   };
+}
+
+export type RepairZeroReturnStockResult = {
+  success: boolean;
+  message: string;
+  repairedReturns: number;
+  restoredUnits: number;
+  skippedReturns: number;
+  failedReturns: number;
+};
+
+export async function repairZeroRestoredReturnsAction(
+  filterDate: string
+): Promise<RepairZeroReturnStockResult> {
+  try {
+    const session = await requireReturnAccess();
+    const date = String(filterDate || "").trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return {
+        success: false,
+        message: "Select a valid report date first.",
+        repairedReturns: 0,
+        restoredUnits: 0,
+        skippedReturns: 0,
+        failedReturns: 0,
+      };
+    }
+
+    const candidates = await prisma.pathaoReturnTrack.findMany({
+      where: {
+        totalRestoredQty: 0,
+        processedAt: {
+          gte: bangladeshDateStartUtc(date),
+          lte: bangladeshDateEndUtc(date),
+        },
+      },
+      select: { id: true },
+      orderBy: { processedAt: "asc" },
+    });
+
+    if (!candidates.length) {
+      return {
+        success: true,
+        message: "No zero-restoration return records need repair for this date.",
+        repairedReturns: 0,
+        restoredUnits: 0,
+        skippedReturns: 0,
+        failedReturns: 0,
+      };
+    }
+
+    let repairedReturns = 0;
+    let restoredUnits = 0;
+    let skippedReturns = 0;
+    let failedReturns = 0;
+
+    for (const candidate of candidates) {
+      try {
+        const result = await prisma.$transaction(async (tx) => {
+          const track = await tx.pathaoReturnTrack.findUnique({
+            where: { id: candidate.id },
+            include: {
+              items: true,
+              order: {
+                select: {
+                  id: true,
+                  invoiceId: true,
+                },
+              },
+            },
+          });
+
+          // Idempotency: if another repair already fixed this row, do nothing.
+          if (!track || Number(track.totalRestoredQty || 0) > 0) {
+            return { status: "SKIPPED" as const, restoredUnits: 0 };
+          }
+
+          let trackRestoredUnits = 0;
+          let legacyFallbackItems = 0;
+
+          for (const returnItem of track.items) {
+            const restored = await restoreReturnedStock(
+              tx,
+              returnItem.orderItemId,
+              returnItem.returnedQty
+            );
+
+            if (restored.usedLegacyFallback) {
+              legacyFallbackItems += 1;
+            }
+
+            if (restored.restoredUnits > 0) {
+              trackRestoredUnits += restored.restoredUnits;
+
+              await tx.pathaoReturnItem.update({
+                where: { id: returnItem.id },
+                data: {
+                  productId: restored.productId,
+                  stockBefore: restored.stockBefore,
+                  stockAfter: restored.stockAfter,
+                },
+              });
+            }
+          }
+
+          if (trackRestoredUnits <= 0) {
+            return { status: "SKIPPED" as const, restoredUnits: 0 };
+          }
+
+          await tx.pathaoReturnTrack.update({
+            where: { id: track.id },
+            data: {
+              totalRestoredQty: trackRestoredUnits,
+            },
+          });
+
+          await tx.orderAuditEvent.create({
+            data: {
+              orderId: track.order.id,
+              eventType: "PATHAO_RETURN_STOCK_REPAIR",
+              title: "Pathao return stock restoration repaired",
+              performedByUserId: session.user.id,
+              actorLabel:
+                session.user.name || session.user.username || "OMS User",
+              details: {
+                returnTrackId: track.id,
+                returnConsignmentId: track.returnConsignmentId,
+                invoiceId: track.order.invoiceId || track.merchantOrderId,
+                restoredUnits: trackRestoredUnits,
+                legacyFallbackItems,
+                repairDate: date,
+              },
+            },
+          });
+
+          return {
+            status: "REPAIRED" as const,
+            restoredUnits: trackRestoredUnits,
+          };
+        });
+
+        if (result.status === "REPAIRED") {
+          repairedReturns += 1;
+          restoredUnits += result.restoredUnits;
+        } else {
+          skippedReturns += 1;
+        }
+      } catch {
+        failedReturns += 1;
+      }
+    }
+
+    revalidatePath("/dashboard/pathao-return-track");
+    revalidatePath("/dashboard/all-orders");
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
+    revalidatePath("/dashboard/reports");
+    revalidatePath("/dashboard/product-report");
+    revalidatePath("/dashboard/pathao-daily-report");
+    revalidatePath("/dashboard");
+
+    const messageParts = [
+      `Repaired ${repairedReturns} return(s)`,
+      `restored ${restoredUnits} physical stock unit(s)`,
+      skippedReturns ? `${skippedReturns} skipped` : "",
+      failedReturns ? `${failedReturns} failed` : "",
+    ].filter(Boolean);
+
+    return {
+      success: repairedReturns > 0 && failedReturns === 0,
+      message: messageParts.join(" · ") + ".",
+      repairedReturns,
+      restoredUnits,
+      skippedReturns,
+      failedReturns,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to repair zero-restoration returns.",
+      repairedReturns: 0,
+      restoredUnits: 0,
+      skippedReturns: 0,
+      failedReturns: 0,
+    };
+  }
 }
 
 export async function scanPathaoReturnAction(

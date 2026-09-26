@@ -195,6 +195,14 @@ export async function restoreReturnedStock(
       product: {
         include: { parent: true },
       },
+      order: {
+        select: {
+          csvDownloaded: true,
+          pathaoSubmissionStatus: true,
+          pathaoConsignmentId: true,
+          pathaoSubmittedAt: true,
+        },
+      },
     },
   });
 
@@ -212,12 +220,31 @@ export async function restoreReturnedStock(
     fallbackOwner.unitsPerSale
   );
 
-  const restoredUnits =
-    item.stockDeductedAt && Number(item.stockDeductedUnits || 0) > 0
-      ? ownerType === "PRODUCT_PARENT"
-        ? positiveInt(returnedOrderQty, 1) * unitsPerSale
-        : positiveInt(returnedOrderQty, 1)
-      : 0;
+  const hasTrackedDeduction =
+    Boolean(item.stockDeductedAt) && Number(item.stockDeductedUnits || 0) > 0;
+
+  // Legacy orders created/submitted before the stock-audit fields were added
+  // can legitimately have no stockDeductedAt/stockDeductedUnits even though
+  // they were already dispatched through CSV/Pathao. For those orders, use
+  // the current Product Master owner/multiplier as a safe fallback so a
+  // physical return can restore stock instead of silently restoring 0.
+  const legacySubmittedOrder =
+    !hasTrackedDeduction &&
+    Boolean(
+      item.order?.csvDownloaded ||
+        item.order?.pathaoConsignmentId ||
+        item.order?.pathaoSubmittedAt ||
+        (item.order?.pathaoSubmissionStatus &&
+          item.order.pathaoSubmissionStatus !== "NOT_SUBMITTED")
+    );
+
+  const shouldRestore = hasTrackedDeduction || legacySubmittedOrder;
+
+  const restoredUnits = shouldRestore
+    ? ownerType === "PRODUCT_PARENT"
+      ? positiveInt(returnedOrderQty, 1) * unitsPerSale
+      : positiveInt(returnedOrderQty, 1)
+    : 0;
 
   if (ownerType === "PRODUCT_PARENT") {
     const parent = await tx.productParent.findUnique({
@@ -238,6 +265,7 @@ export async function restoreReturnedStock(
         restoredUnits: 0,
         stockBefore,
         stockAfter: stockBefore,
+        usedLegacyFallback: legacySubmittedOrder,
       };
     }
 
@@ -255,6 +283,7 @@ export async function restoreReturnedStock(
       restoredUnits,
       stockBefore,
       stockAfter: Number(updated.stockQuantity || 0),
+      usedLegacyFallback: legacySubmittedOrder,
     };
   }
 

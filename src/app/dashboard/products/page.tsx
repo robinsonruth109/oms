@@ -94,6 +94,16 @@ export default async function ProductsPage({
       : product.parent.stockMode === "PARENT_STOCK"
         ? product.parent.stockQuantity : product.quantity;
   }
+  function stockVerified(product: (typeof products)[number]) {
+    return product.inventoryKind === "BUNDLE"
+      ? product.bundleComponents.length > 0 &&
+        product.bundleComponents.every((part) =>
+          Boolean(part.componentProduct.stockVerifiedAt)
+        )
+      : product.parent.stockMode === "PARENT_STOCK"
+        ? Boolean(product.parent.stockVerifiedAt)
+        : Boolean(product.stockVerifiedAt);
+  }
   function displayCost(product: (typeof products)[number]) {
     return product.inventoryKind === "BUNDLE"
       ? product.bundleComponents.reduce(
@@ -122,8 +132,9 @@ export default async function ProductsPage({
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Product Master</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Manage parent and variation inventory. Parent Stock shares one physical
-              quantity across child SKUs; Variation Stock keeps inventory per child.
+              Manage parent and variation inventory. Old balances stay unverified
+              until an exact physical count is entered; unverified quantities
+              are excluded from Stock Valuation.
             </p>
             {!canManageMaster ? (
               <p className="mt-2 text-xs font-medium text-amber-700">
@@ -173,6 +184,9 @@ export default async function ProductsPage({
             quantity: editProduct.quantity,
             unitsPerSale: editProduct.unitsPerSale,
             inventoryKind: editProduct.inventoryKind,
+            stockVerified: editProduct.parent.stockMode === "PARENT_STOCK"
+              ? Boolean(editProduct.parent.stockVerifiedAt)
+              : Boolean(editProduct.stockVerifiedAt),
             purchasePrice: String(editProduct.purchasePrice),
             sellingPrice: String(editProduct.sellingPrice),
             status: editProduct.status,
@@ -253,6 +267,15 @@ export default async function ProductsPage({
                   <p className="font-medium text-slate-800">
                     {displayStock(product)}
                   </p>
+                  {!stockVerified(product) ? (
+                    <p className="mt-1 text-xs font-semibold text-amber-700">
+                      Legacy / unverified — excluded from valuation
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs font-semibold text-emerald-700">
+                      Verified physical count
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-slate-400">Units / Sale</p>
@@ -333,6 +356,12 @@ export default async function ProductsPage({
                     </div>
                     <div className="text-xs text-slate-400">
                       {displayMode(product)}
+                    </div>
+                    <div className={"mt-1 text-xs font-semibold " +
+                      (stockVerified(product)
+                        ? "text-emerald-700"
+                        : "text-amber-700")}>
+                      {stockVerified(product) ? "Verified" : "Unverified / not valued"}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">

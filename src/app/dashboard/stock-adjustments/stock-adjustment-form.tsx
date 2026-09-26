@@ -45,8 +45,11 @@ export default function StockAdjustmentForm({ product, today }: Props) {
     createProductStockAdjustment,
     initialState
   );
-  const [quantity, setQuantity] = useState("1");
-  const [type, setType] = useState<"ADD" | "REDUCE" | "SET_COUNT">("ADD");
+  const needsFirstCount = product.stockMode !== "BUNDLE" && !product.stockVerified;
+  const [quantity, setQuantity] = useState(needsFirstCount ? "" : "1");
+  const [type, setType] = useState<"ADD" | "REDUCE" | "SET_COUNT">(
+    needsFirstCount ? "SET_COUNT" : "ADD"
+  );
 
   const qtyValid = quantity.trim() !== "" &&
     Number.isSafeInteger(Number(quantity)) &&
@@ -112,9 +115,11 @@ export default function StockAdjustmentForm({ product, today }: Props) {
         <div
           className={
             "rounded-xl px-3 py-2 text-xs " +
-            (type === "ADD"
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-rose-50 text-rose-700")
+            (type === "SET_COUNT"
+              ? "bg-violet-50 text-violet-800"
+              : type === "ADD"
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-rose-50 text-rose-700")
           }
         >
           {type === "SET_COUNT" ? (

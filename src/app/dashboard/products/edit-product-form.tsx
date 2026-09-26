@@ -14,6 +14,7 @@ type Props = {
     quantity: number;
     unitsPerSale: number;
     inventoryKind: "PHYSICAL" | "BUNDLE";
+    stockVerified: boolean;
     purchasePrice: string;
     sellingPrice: string;
     status: boolean;
@@ -37,6 +38,16 @@ export default function EditProductForm({ product }: Props) {
         <h2 className="text-lg font-semibold text-slate-900">Edit Product</h2>
         <p className="mt-1 text-sm text-slate-500">
           Stock Mode belongs to the parent. Changing it affects every child SKU under this parent.
+        </p>
+        <p className={"mt-2 rounded-xl px-3 py-2 text-sm " +
+          (product.stockVerified
+            ? "bg-emerald-50 text-emerald-800"
+            : "bg-amber-50 text-amber-900")}>
+          {product.inventoryKind === "BUNDLE"
+            ? "Virtual bundle: physically count each component SKU in Stock Adjustment."
+            : product.stockVerified
+              ? "Stock has a verified physical count."
+              : "Existing stock is legacy/unverified and excluded from valuation. Changing the physical quantity here will verify the new number. To verify the same number or count zero, use Set Physical Count in Stock Adjustment."}
         </p>
       </div>
 

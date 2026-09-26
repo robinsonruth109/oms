@@ -28,7 +28,9 @@ export default function CsvImportForm() {
         <p className="mt-1 text-sm text-slate-500">
           Upload a CSV file. The importer supports header-based mapping. Minimum
           needed columns are SKU, Purchase, Sell, and Parent SKU. If a parent
-          SKU is missing, it will be created automatically.
+          SKU is missing, it will be created automatically. Imported
+          quantities remain unverified until physically counted; existing
+          verified stock balances are never overwritten by this CSV.
         </p>
       </div>
 

@@ -475,6 +475,11 @@ export async function POST(request: Request) {
                   sku: true,
                   name: true,
                   quantity: true,
+                  unitsPerSale: true,
+                  inventoryKind: true,
+                  parent: {
+                    select: { stockMode: true, stockQuantity: true },
+                  },
                   sellingPrice: true,
                 },
               },
@@ -529,11 +534,13 @@ export async function POST(request: Request) {
           throw new Error("REEL_NOT_FOUND");
         }
 
-        if (reel.product.quantity < 1) {
+        const { availableBundleSets } = await import("@/lib/inventory");
+        const available = await availableBundleSets(transaction, reel.product);
+
+        if (available < 1) {
           throw new Error("PRODUCT_OUT_OF_STOCK");
         }
-
-        if (quantity > reel.product.quantity) {
+        if (quantity > available) {
           throw new Error("QUANTITY_EXCEEDS_STOCK");
         }
 

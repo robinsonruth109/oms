@@ -122,8 +122,11 @@ function serializeProduct(row: {
     sku: string;
     slug: string | null;
     quantity: number;
+    unitsPerSale: number;
+    inventoryKind: "PHYSICAL" | "BUNDLE";
+    bundleComponents: { units: number; componentProduct: { quantity: number } }[];
     sellingPrice: { toString(): string };
-    parent: { sku: string; name: string };
+    parent: { sku: string; name: string; stockMode: string; stockQuantity: number };
   };
   gallery: Array<{
     id: string;
@@ -136,6 +139,17 @@ function serializeProduct(row: {
   if (!row.category.slug) {
     return null;
   }
+
+  const product = row.product;
+  const qty = product.inventoryKind === "BUNDLE"
+    ? product.bundleComponents.length
+      ? Math.max(0, Math.min(...product.bundleComponents.map((part) =>
+          Math.floor(part.componentProduct.quantity / part.units)
+        )))
+      : 0
+    : product.parent.stockMode === "PARENT_STOCK"
+      ? Math.max(0, Math.floor(product.parent.stockQuantity / product.unitsPerSale))
+      : product.quantity;
 
   return {
     reelId: row.id,
@@ -152,7 +166,7 @@ function serializeProduct(row: {
       slug: row.product.slug,
       parentSku: row.product.parent.sku,
       parentName: row.product.parent.name,
-      quantity: row.product.quantity,
+      quantity: qty,
       sellingPrice: row.product.sellingPrice.toString(),
     },
     gallery: row.gallery.map((media) => ({
@@ -302,8 +316,21 @@ export async function loadStorefrontPage({
               sku: true,
               slug: true,
               quantity: true,
+              unitsPerSale: true,
+              inventoryKind: true,
+              bundleComponents: {
+                select: {
+                  units: true,
+                  componentProduct: { select: { quantity: true } },
+                },
+              },
               sellingPrice: true,
-              parent: { select: { sku: true, name: true } },
+              parent: {
+                select: {
+                  sku: true, name: true,
+                  stockMode: true, stockQuantity: true,
+                },
+              },
             },
           },
           gallery: {

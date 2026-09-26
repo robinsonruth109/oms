@@ -191,11 +191,21 @@ export default async function PublicReelCategoryPage({
                 name: true,
                 sku: true,
                 quantity: true,
+                unitsPerSale: true,
+                inventoryKind: true,
+                bundleComponents: {
+                  select: {
+                    units: true,
+                    componentProduct: { select: { quantity: true } },
+                  },
+                },
                 sellingPrice: true,
                 parent: {
                   select: {
                     sku: true,
                     name: true,
+                    stockMode: true,
+                    stockQuantity: true,
                   },
                 },
               },
@@ -277,7 +287,17 @@ export default async function PublicReelCategoryPage({
         sku: reel.product.sku,
         parentSku: reel.product.parent.sku,
         parentName: reel.product.parent.name,
-        quantity: reel.product.quantity,
+        quantity: reel.product.inventoryKind === "BUNDLE"
+          ? reel.product.bundleComponents.length
+            ? Math.max(0, Math.min(...reel.product.bundleComponents.map((part) =>
+                Math.floor(part.componentProduct.quantity / part.units)
+              )))
+            : 0
+          : reel.product.parent.stockMode === "PARENT_STOCK"
+            ? Math.max(0, Math.floor(
+                reel.product.parent.stockQuantity / reel.product.unitsPerSale
+              ))
+            : reel.product.quantity,
         sellingPrice:
           reel.product.sellingPrice.toString(),
       },

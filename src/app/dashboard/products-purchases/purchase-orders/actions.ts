@@ -160,6 +160,13 @@ export async function createPurchaseOrder(
     };
   }
 
+  if (product.inventoryKind === "BUNDLE") {
+    return {
+      success: false,
+      message: "Virtual bundles are not purchased as physical stock. Create purchase orders for their colour/component SKUs.",
+    };
+  }
+
   const subtotalUsd =
     quantity * unitPriceUsd + platformChargeUsd + shippingUsd;
 

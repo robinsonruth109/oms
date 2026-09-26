@@ -91,6 +91,17 @@ export async function createReceivedOrder(
       };
     }
 
+    const purchasedSku = await prisma.product.findUnique({
+      where: { id: purchaseOrder.productId },
+      select: { inventoryKind: true },
+    });
+    if (purchasedSku?.inventoryKind === "BUNDLE") {
+      return {
+        success: false,
+        message: "This is now a virtual bundle. Receive real component SKUs instead.",
+      };
+    }
+
     const totalPaidBdt = purchaseOrder.payments.reduce(
       (sum, item) => sum + Number(item.amountBdt),
       0

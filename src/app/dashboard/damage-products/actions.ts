@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
+import { resolvePhysicalRequirements } from "@/lib/inventory";
 
 export type DamageEntryActionState = {
   success: boolean;
@@ -12,89 +13,73 @@ export type DamageEntryActionState = {
   warning?: boolean;
 };
 
-async function requireDamageAccess() {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user || !["ADMIN", "MANAGER"].includes(session.user.role)) {
-    throw new Error("Unauthorized");
-  }
-
-  return session;
-}
-
-function positiveInt(value: unknown) {
-  const parsed = Math.floor(Number(value));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
 export async function createProductDamageEntry(
   _prevState: DamageEntryActionState,
   formData: FormData
 ): Promise<DamageEntryActionState> {
   try {
-    const session = await requireDamageAccess();
-    const productId = String(formData.get("productId") || "").trim();
-    const damageDate = String(formData.get("damageDate") || "").trim();
-    const enteredQuantity = positiveInt(formData.get("quantity"));
-    const note = String(formData.get("note") || "").trim();
-
-    if (!productId) {
-      return { success: false, message: "Select a valid product SKU." };
+    const session = await getServerSession(authOptions);
+    if (!session?.user || !["ADMIN", "MANAGER"].includes(session.user.role)) {
+      throw new Error("Unauthorized");
     }
 
+    const productId = String(formData.get("productId") || "").trim();
+    const damageDate = String(formData.get("damageDate") || "").trim();
+    const enteredQuantity = Number(formData.get("quantity"));
+    const note = String(formData.get("note") || "").trim();
+
+    if (!productId) return { success: false, message: "Select a valid SKU." };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(damageDate)) {
       return { success: false, message: "Select a valid damage date." };
     }
-
-    if (!enteredQuantity) {
-      return {
-        success: false,
-        message: "Damage quantity must be at least 1.",
-      };
+    if (!Number.isSafeInteger(enteredQuantity) || enteredQuantity < 1) {
+      return { success: false, message: "Damage quantity must be a positive whole number." };
     }
 
     const { prisma } = await import("@/lib/prisma");
-
     const result = await prisma.$transaction(async (tx) => {
       const product = await tx.product.findUnique({
-        where: { id: productId },
-        include: { parent: true },
+        where: { id: productId }, include: { parent: true },
       });
+      if (!product) throw new Error("Product SKU not found.");
 
-      if (!product) {
-        throw new Error("Product SKU was not found.");
-      }
+      const owners = await resolvePhysicalRequirements(tx, product, enteredQuantity);
+      const isBundle = product.inventoryKind === "BUNDLE";
+      const breakdown: Array<{
+        ownerSku: string; ownerType: string;
+        units: number; unitCost: number; before: number; after: number;
+      }> = [];
 
-      const parentStock = product.parent.stockMode === "PARENT_STOCK";
-      const unitsPerSale = Math.max(1, Number(product.unitsPerSale || 1));
-      const damagedStockUnits = parentStock
-        ? enteredQuantity * unitsPerSale
-        : enteredQuantity;
-      const unitCost = parentStock
-        ? Number(product.parent.purchasePrice || 0)
-        : Number(product.purchasePrice || 0);
-
-      const stockBefore = parentStock
-        ? Number(product.parent.stockQuantity || 0)
-        : Number(product.quantity || 0);
-      const stockAfter = stockBefore - damagedStockUnits;
-      const damageValue = damagedStockUnits * unitCost;
-
-      if (parentStock) {
-        await tx.productParent.update({
-          where: { id: product.parentId },
-          data: {
-            stockQuantity: { decrement: damagedStockUnits },
-          },
-        });
-      } else {
-        await tx.product.update({
-          where: { id: product.id },
-          data: {
-            quantity: { decrement: damagedStockUnits },
-          },
+      for (const owner of owners) {
+        const before = owner.available;
+        let after: number;
+        if (owner.ownerType === "PRODUCT_PARENT") {
+          const updated = await tx.productParent.update({
+            where: { id: owner.ownerId },
+            data: { stockQuantity: { decrement: owner.requiredUnits } },
+            select: { stockQuantity: true },
+          });
+          after = updated.stockQuantity;
+        } else {
+          const updated = await tx.product.update({
+            where: { id: owner.ownerId },
+            data: { quantity: { decrement: owner.requiredUnits } },
+            select: { quantity: true },
+          });
+          after = updated.quantity;
+        }
+        breakdown.push({
+          ownerSku: owner.ownerLabel, ownerType: owner.ownerType,
+          units: owner.requiredUnits, unitCost: owner.unitCost,
+          before, after,
         });
       }
+
+      const physicalUnits = breakdown.reduce((sum, row) => sum + row.units, 0);
+      const damageValue = Math.round(
+        breakdown.reduce((sum, row) => sum + row.units * row.unitCost, 0) * 100
+      ) / 100;
+      const first = breakdown[0];
 
       await tx.productDamageEntry.create({
         data: {
@@ -104,51 +89,49 @@ export async function createProductDamageEntry(
           skuSnapshot: product.sku,
           productNameSnapshot: product.name,
           parentSkuSnapshot: product.parent.sku,
-          stockOwnerType: parentStock ? "PRODUCT_PARENT" : "PRODUCT",
-          stockOwnerId: parentStock ? product.parentId : product.id,
+          stockOwnerType: isBundle ? "PRODUCT" : first.ownerType,
+          stockOwnerId: isBundle ? product.id : owners[0].ownerId,
           enteredQuantity,
-          unitsPerSale: parentStock ? unitsPerSale : 1,
-          damagedStockUnits,
-          unitCost,
+          unitsPerSale: isBundle ? physicalUnits / enteredQuantity : owners[0].unitsPerSale,
+          damagedStockUnits: physicalUnits,
+          unitCost: physicalUnits ? Math.round(damageValue / physicalUnits * 100) / 100 : 0,
           damageValue,
-          stockBefore,
-          stockAfter,
+          stockBefore: isBundle ? 0 : first.before,
+          stockAfter: isBundle ? 0 : first.after,
+          componentBreakdown: isBundle ? JSON.stringify(breakdown) : null,
           note: note || null,
           createdByUserId: session.user.id,
-          createdByName:
-            session.user.name || session.user.username || "OMS User",
+          createdByName: session.user.name || session.user.username || "OMS User",
         },
       });
 
       return {
         sku: product.sku,
-        damagedStockUnits,
+        physicalUnits,
         damageValue,
-        stockBefore,
-        stockAfter,
+        breakdown,
       };
     });
 
     revalidatePath("/dashboard/damage-products");
+    revalidatePath("/dashboard/stock-adjustments");
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/stock-valuation");
 
     return {
       success: true,
-      warning: result.stockAfter < 0,
-      message:
-        `Damage recorded for ${result.sku}. ${result.damagedStockUnits} physical stock unit(s) deducted. Damage value: BDT ${result.damageValue.toFixed(2)}. Stock: ${result.stockBefore} → ${result.stockAfter}.` +
-        (result.stockAfter < 0
-          ? " Warning: stock is now negative."
-          : ""),
+      warning: result.breakdown.some((part) => part.after < 0),
+      message: "Damage recorded for " + result.sku +
+        ": " + result.physicalUnits + " physical unit(s), BDT " +
+        result.damageValue.toFixed(2) + ". " +
+        result.breakdown.map((part) =>
+          part.ownerSku + " " + part.before + " → " + part.after
+        ).join("; ") + ".",
     };
   } catch (error) {
     return {
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to record damaged product.",
+      message: error instanceof Error ? error.message : "Failed to record damage.",
     };
   }
 }

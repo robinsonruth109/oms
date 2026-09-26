@@ -58,6 +58,9 @@ async function findOrCreateParent(
     stockQuantity: number;
     purchasePrice: number;
     updateExisting: boolean;
+    // Only an explicitly confirmed physical count can overwrite stock.
+    updateStock?: boolean;
+    expectedStockQuantity?: number;
   }
 ) {
   const existingParent = await tx.productParent.findUnique({
@@ -69,21 +72,36 @@ async function findOrCreateParent(
   if (existingParent) {
     if (!inventory?.updateExisting) return existingParent;
 
+    if (inventory.updateStock) {
+      const updated = await tx.productParent.updateMany({
+        where: {
+          id: existingParent.id,
+          stockQuantity: inventory.expectedStockQuantity,
+        },
+        data: {
+          stockQuantity: inventory.stockQuantity,
+          stockVerifiedAt: new Date(),
+        },
+      });
+      if (updated.count !== 1) {
+        throw new Error(
+          "Shared parent stock changed while you were editing. Reload and count it again."
+        );
+      }
+    }
+
     return tx.productParent.update({
       where: { id: existingParent.id },
       data: {
         name: parentName?.trim() || existingParent.name,
         stockMode: inventory.stockMode,
-        stockQuantity: inventory.stockQuantity,
-        // A deliberate change to the parent physical quantity is an
-        // explicit manual count. Updating the name/price is not.
-        stockVerifiedAt: inventory.stockMode === "PARENT_STOCK"
-          ? inventory.stockQuantity !== existingParent.stockQuantity
-            ? new Date()
-            : existingParent.stockMode === "PARENT_STOCK"
-              ? existingParent.stockVerifiedAt
-              : null
-          : null,
+        // Name/price edits must not write a stale quantity back to stock.
+        // When switching stock owner mode, the new owner requires a count.
+        stockVerifiedAt: inventory.updateStock
+          ? undefined
+          : existingParent.stockMode !== inventory.stockMode
+            ? null
+            : undefined,
         purchasePrice:
           inventory.stockMode === "PARENT_STOCK"
             ? inventory.purchasePrice
@@ -97,12 +115,11 @@ async function findOrCreateParent(
       sku: parentSku,
       name: parentName?.trim() || parentSku,
       stockMode: inventory?.stockMode || "VARIANT_STOCK",
-      stockQuantity: inventory?.stockQuantity || 0,
-      // Only a manually entered new parent is treated as counted.
-      // Parents created by CSV imports have no inventory and stay unverified.
-      stockVerifiedAt: inventory?.stockMode === "PARENT_STOCK"
-        ? new Date()
-        : null,
+      stockQuantity: inventory?.updateStock ? inventory.stockQuantity : 0,
+      // A freshly created manual physical count is verified; importer-created
+      // placeholder stock stays unverified.
+      stockVerifiedAt: inventory?.stockMode === "PARENT_STOCK" &&
+        inventory.updateStock ? new Date() : null,
       purchasePrice:
         inventory?.stockMode === "PARENT_STOCK"
           ? inventory.purchasePrice
@@ -174,6 +191,7 @@ export async function createProduct(
         stockQuantity: parentStockQuantity,
         purchasePrice: parentPurchasePrice,
         updateExisting: false,
+        updateStock: stockMode === "PARENT_STOCK",
       });
 
       await tx.product.create({
@@ -235,6 +253,9 @@ export async function updateProduct(
     const purchasePrice = toMoney(formData.get("purchasePrice"));
     const sellingPrice = toMoney(formData.get("sellingPrice"));
     const status = String(formData.get("status") || "").trim() === "true";
+    const countConfirmed = formData.get("stockCountConfirmed") === "yes";
+    const originalProductQty = Number(formData.get("originalProductQuantity"));
+    const originalParentQty = Number(formData.get("originalParentStockQuantity"));
 
     if (!productId || !parentSku || !sku) {
       return {
@@ -268,6 +289,30 @@ export async function updateProduct(
       return {
         success: false,
         message: "Product not found.",
+      };
+    }
+    if (countConfirmed && currentProduct.inventoryKind === "BUNDLE") {
+      return {
+        success: false,
+        message: "You cannot count virtual bundle stock. Count each component SKU.",
+      };
+    }
+    const enteredStockChanged = stockMode === "PARENT_STOCK"
+      ? parentStockQuantity !== originalParentQty
+      : quantity !== originalProductQty;
+    if (enteredStockChanged && !countConfirmed) {
+      return {
+        success: false,
+        message: "You changed a physical stock quantity. Tick the physical-count confirmation to verify it, or use Stock Adjustment.",
+      };
+    }
+    if (countConfirmed && (
+      !Number.isSafeInteger(originalProductQty) ||
+      !Number.isSafeInteger(originalParentQty)
+    )) {
+      return {
+        success: false,
+        message: "Invalid original count. Reload the product and retry.",
       };
     }
 
@@ -326,15 +371,21 @@ export async function updateProduct(
       const previousParent = await tx.productParent.findUnique({
         where: { sku: parentSku },
       });
+      const enteringParentCount = countConfirmed &&
+        stockMode === "PARENT_STOCK";
+      const enteringSkuCount = countConfirmed &&
+        stockMode === "VARIANT_STOCK" &&
+        currentProduct.inventoryKind === "PHYSICAL";
+
       const parent = await findOrCreateParent(tx, parentSku, parentName, {
         stockMode,
         stockQuantity: parentStockQuantity,
         purchasePrice: parentPurchasePrice,
         updateExisting: true,
+        updateStock: enteringParentCount,
+        expectedStockQuantity: originalParentQty,
       });
 
-      // When changing the stock ownership mode, quantities in the other
-      // ownership mode are old data and must be counted again.
       if (previousParent && previousParent.stockMode !== stockMode) {
         await tx.product.updateMany({
           where: { parentId: previousParent.id },
@@ -342,18 +393,17 @@ export async function updateProduct(
         });
       }
 
-      const childCountChanged = currentProduct.inventoryKind === "PHYSICAL" &&
-        stockMode === "VARIANT_STOCK" &&
-        quantity !== currentProduct.quantity;
-      const childVerifiedAt = currentProduct.inventoryKind === "BUNDLE"
-        ? currentProduct.stockVerifiedAt
-        : stockMode === "VARIANT_STOCK"
-          ? childCountChanged
-            ? new Date()
-            : currentProduct.parent.stockMode === "VARIANT_STOCK"
-              ? currentProduct.stockVerifiedAt
-              : null
-          : null;
+      if (enteringSkuCount) {
+        const claimed = await tx.product.updateMany({
+          where: { id: productId, quantity: originalProductQty },
+          data: { quantity, stockVerifiedAt: new Date() },
+        });
+        if (claimed.count !== 1) {
+          throw new Error(
+            "SKU stock changed while you were editing. Reload and count it again."
+          );
+        }
+      }
 
       await tx.product.update({
         where: { id: productId },
@@ -362,10 +412,14 @@ export async function updateProduct(
           sku,
           slug: buildProductSlug(sku),
           name: name || sku,
-          quantity: currentProduct.inventoryKind === "BUNDLE"
-            ? currentProduct.quantity
-            : quantity,
-          stockVerifiedAt: childVerifiedAt,
+          // Never copy an unconfirmed, possibly stale stock quantity back
+          // when Admin is changing only a price, name or status.
+          stockVerifiedAt: enteringSkuCount
+            ? undefined
+            : stockMode !== "VARIANT_STOCK" ||
+                currentProduct.parent.stockMode !== "VARIANT_STOCK"
+              ? null
+              : undefined,
           unitsPerSale: currentProduct.inventoryKind === "BUNDLE"
             ? currentProduct.unitsPerSale
             : unitsPerSale,
@@ -377,11 +431,10 @@ export async function updateProduct(
 
       const actorLabel = session.user.name || session.user.username || "OMS User";
       const actorId = session.user.id;
-      // Keep an audit trail when an Admin explicitly edits physical
-      // quantity through Product Master, not when only price/name changes.
-      if (previousParent && stockMode === "PARENT_STOCK" &&
-          parentStockQuantity !== previousParent.stockQuantity) {
-        const delta = parentStockQuantity - previousParent.stockQuantity;
+
+      if (enteringParentCount) {
+        const before = previousParent?.stockQuantity || 0;
+        const delta = parentStockQuantity - before;
         const cost = Number(parent.purchasePrice || 0);
         await tx.productStockAdjustment.create({
           data: {
@@ -399,17 +452,18 @@ export async function updateProduct(
             adjustedStockUnits: Math.abs(delta),
             unitCost: cost,
             adjustmentValue: Math.abs(delta) * cost,
-            stockBefore: previousParent.stockQuantity,
+            stockBefore: before,
             stockAfter: parentStockQuantity,
             reason: "Product Master Physical Count",
-            note: "Physical parent quantity explicitly updated in Product Master.",
+            note: "Exact physical parent count confirmed in Product Master.",
             createdByUserId: actorId,
             createdByName: actorLabel,
           },
         });
       }
-      if (childCountChanged) {
-        const delta = quantity - currentProduct.quantity;
+
+      if (enteringSkuCount) {
+        const delta = quantity - originalProductQty;
         await tx.productStockAdjustment.create({
           data: {
             adjustmentDate: new Date(),
@@ -426,10 +480,10 @@ export async function updateProduct(
             adjustedStockUnits: Math.abs(delta),
             unitCost: purchasePrice,
             adjustmentValue: Math.abs(delta) * purchasePrice,
-            stockBefore: currentProduct.quantity,
+            stockBefore: originalProductQty,
             stockAfter: quantity,
             reason: "Product Master Physical Count",
-            note: "Physical SKU quantity explicitly updated in Product Master.",
+            note: "Exact physical SKU count confirmed in Product Master.",
             createdByUserId: actorId,
             createdByName: actorLabel,
           },
@@ -442,7 +496,9 @@ export async function updateProduct(
 
     return {
       success: true,
-      message: "Product updated successfully.",
+      message: countConfirmed
+        ? "Product updated and physical stock counted. This stock is now included in valuation."
+        : "Product updated. Legacy stock remains excluded from valuation until physically counted.",
     };
   } catch (error) {
     return {

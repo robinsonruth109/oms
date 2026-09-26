@@ -250,10 +250,9 @@ export default function StockAdjustmentForm({ product, today }: Props) {
 
       {!product.stockVerified ? (
         <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          This is an old unverified balance. Use Set Physical Count to enter the
-          exact stock you physically found (including zero). Add/Reduce does
-          not verify an old balance; this prevents placeholder quantities
-          from entering valuation.
+          {product.stockMode === "BUNDLE"
+            ? "This bundle has unverified components. Search for each physical component SKU and use Set Physical Count on those SKUs; a bundle has no count of its own."
+            : "This is an unverified legacy balance. Use Set Physical Count to enter the exact quantity physically found (zero is allowed). Add/Reduce does not verify an old baseline or bring it into valuation."}
         </p>
       ) : null}
 

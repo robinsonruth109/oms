@@ -142,7 +142,11 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
         ? Number(entry.adjustedStockUnits || 0)
         : -Number(entry.adjustedStockUnits || 0);
   const stockMovementValue = (entry: (typeof entries)[number]) =>
-    stockMovement(entry) * Number(entry.unitCost || 0);
+    entry.adjustmentType === "SET_COUNT"
+      ? (entry.stockAfter - entry.stockBefore) * Number(entry.unitCost || 0)
+      : entry.adjustmentType === "ADD"
+        ? Number(entry.adjustmentValue || 0)
+        : -Number(entry.adjustmentValue || 0);
   const addedUnits = entries.reduce((sum, entry) =>
     sum + Math.max(0, stockMovement(entry)), 0);
   const reducedUnits = entries.reduce((sum, entry) =>
@@ -293,6 +297,8 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
           <p className="mt-1 text-sm text-slate-500">
             Filter manual stock changes by Bangladesh business date.
             {countedRecords} exact physical count(s) recorded in this period.
+            A first verification makes the full counted inventory eligible for
+            valuation, even if the change from its old stored quantity is zero.
           </p>
         </div>
 

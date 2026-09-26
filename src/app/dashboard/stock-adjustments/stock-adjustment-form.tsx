@@ -17,6 +17,7 @@ type Props = {
     stockMode: "VARIANT_STOCK" | "PARENT_STOCK" | "BUNDLE";
     bundleUnitCost: number;
     componentSummary: string;
+    stockVerified: boolean;
     currentStock: number;
     unitsPerSale: number;
     unitCost: number;
@@ -45,18 +46,25 @@ export default function StockAdjustmentForm({ product, today }: Props) {
     initialState
   );
   const [quantity, setQuantity] = useState("1");
-  const [type, setType] = useState<"ADD" | "REDUCE">("ADD");
+  const [type, setType] = useState<"ADD" | "REDUCE" | "SET_COUNT">("ADD");
 
-  const qty = Math.max(0, Math.floor(Number(quantity || 0)));
-  const physicalUnits =
-    product.stockMode !== "VARIANT_STOCK"
+  const qtyValid = quantity.trim() !== "" &&
+    Number.isSafeInteger(Number(quantity)) &&
+    Number(quantity) >= (type === "SET_COUNT" ? 0 : 1);
+  const qty = qtyValid ? Number(quantity) : 0;
+  const physicalUnits = type === "SET_COUNT"
+    ? Math.abs(qty - product.currentStock)
+    : product.stockMode !== "VARIANT_STOCK"
       ? qty * Math.max(1, product.unitsPerSale)
       : qty;
-  const value = product.stockMode === "BUNDLE"
-    ? qty * product.bundleUnitCost
-    : physicalUnits * product.unitCost;
-  const stockAfter =
-    product.currentStock + (type === "ADD" ? physicalUnits : -physicalUnits);
+  const value = type === "SET_COUNT"
+    ? Math.max(0, qty) * product.unitCost
+    : product.stockMode === "BUNDLE"
+      ? qty * product.bundleUnitCost
+      : physicalUnits * product.unitCost;
+  const stockAfter = type === "SET_COUNT"
+    ? qty
+    : product.currentStock + (type === "ADD" ? physicalUnits : -physicalUnits);
 
   useEffect(() => {
     if (state.success) router.refresh();
@@ -78,9 +86,15 @@ export default function StockAdjustmentForm({ product, today }: Props) {
           </div>
           <p className="mt-1 text-sm text-slate-700">{product.name}</p>
           <p className="mt-1 text-xs text-slate-500">
-            Parent: {product.parentSku} · {product.stockMode === "BUNDLE" ? "Possible sets" : "Physical stock"}:{" "}
+            Parent: {product.parentSku} · {product.stockMode === "BUNDLE" ? "Possible sets" : product.stockVerified ? "Verified balance" : "Legacy/unverified balance"}:{" "}
             <strong>{product.currentStock}</strong> · Unit cost:{" "}
             <strong>{money(product.unitCost)}</strong>
+            <span className={"ml-2 rounded-full px-2 py-1 font-semibold " +
+              (product.stockVerified
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-amber-100 text-amber-900")}>
+              {product.stockVerified ? "Verified" : "Needs physical count"}
+            </span>
           </p>
           {product.stockMode === "BUNDLE" ? (
             <p className="mt-2 text-xs font-medium text-violet-700">
@@ -103,12 +117,21 @@ export default function StockAdjustmentForm({ product, today }: Props) {
               : "bg-rose-50 text-rose-700")
           }
         >
-          Preview: <strong>{type === "ADD" ? "+" : "-"}{physicalUnits}</strong>{" "}
-          physical unit{physicalUnits === 1 ? "" : "s"} ·{" "}
-          <strong>{money(value)}</strong> value · stock after{" "}
-          <strong className={stockAfter < 0 ? "text-red-700" : ""}>
-            {product.stockMode === "BUNDLE" ? "see individual component balances" : stockAfter}
-          </strong>
+          {type === "SET_COUNT" ? (
+            <>
+              Confirm stored balance <strong>{product.currentStock}</strong> as{" "}
+              <strong>{qtyValid ? qty : "—"}</strong> physical units.{" "}
+              Valuation after verification: <strong>{qtyValid ? money(value) : "—"}</strong>.
+            </>
+          ) : (
+            <>
+              Preview: <strong>{type === "ADD" ? "+" : "-"}{physicalUnits}</strong>{" "}
+              physical units · <strong>{money(value)}</strong> value · stock after{" "}
+              <strong className={stockAfter < 0 ? "text-red-700" : ""}>
+                {product.stockMode === "BUNDLE" ? "see individual component balances" : stockAfter}
+              </strong>
+            </>
+          )}
         </div>
       </div>
 
@@ -121,12 +144,21 @@ export default function StockAdjustmentForm({ product, today }: Props) {
             name="adjustmentType"
             value={type}
             onChange={(event) =>
-              setType(event.target.value === "REDUCE" ? "REDUCE" : "ADD")
+              {
+                const next = event.target.value === "SET_COUNT"
+                  ? "SET_COUNT" : event.target.value === "REDUCE"
+                    ? "REDUCE" : "ADD";
+                setType(next);
+                setQuantity(next === "SET_COUNT" ? "" : "1");
+              }
             }
             className="w-full rounded-xl border px-3 py-2.5 outline-none"
           >
             <option value="ADD">Add Stock</option>
             <option value="REDUCE">Reduce Stock</option>
+            {product.stockMode !== "BUNDLE" ? (
+              <option value="SET_COUNT">Set Physical Count (verify inventory)</option>
+            ) : null}
           </select>
         </label>
 
@@ -142,19 +174,25 @@ export default function StockAdjustmentForm({ product, today }: Props) {
         </label>
 
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium text-slate-700">Qty</span>
+          <span className="font-medium text-slate-700">
+            {type === "SET_COUNT" ? "Actual physical count" : "Adjustment quantity"}
+          </span>
           <input
             type="number"
-            min={1}
+            min={type === "SET_COUNT" ? 0 : 1}
             step={1}
             name="quantity"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
             required
+            placeholder={type === "SET_COUNT" ? "Enter counted total (0 is valid)" : "Qty"}
             className="w-full rounded-xl border px-3 py-2.5 outline-none"
           />
         </label>
 
+        {type === "SET_COUNT" ? (
+          <input type="hidden" name="reason" value="Physical Count Verification" />
+        ) : (
         <label className="space-y-1.5 text-sm">
           <span className="font-medium text-slate-700">Reason</span>
           <select
@@ -171,6 +209,7 @@ export default function StockAdjustmentForm({ product, today }: Props) {
             <option value="Other">Other</option>
           </select>
         </label>
+        )}
 
         <label className="space-y-1.5 text-sm">
           <span className="font-medium text-slate-700">Note</span>
@@ -184,21 +223,34 @@ export default function StockAdjustmentForm({ product, today }: Props) {
 
         <button
           type="submit"
-          disabled={pending || qty < 1}
+          disabled={pending || !qtyValid}
           className={
             "self-end rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50 " +
-            (type === "ADD"
-              ? "bg-emerald-600 hover:bg-emerald-700"
-              : "bg-rose-600 hover:bg-rose-700")
+            (type === "SET_COUNT"
+              ? "bg-violet-600 hover:bg-violet-700"
+              : type === "ADD"
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : "bg-rose-600 hover:bg-rose-700")
           }
         >
           {pending
             ? "Saving..."
-            : type === "ADD"
-              ? "Add Stock"
-              : "Reduce Stock"}
+            : type === "SET_COUNT"
+              ? "Verify Physical Count"
+              : type === "ADD"
+                ? "Add Stock"
+                : "Reduce Stock"}
         </button>
       </form>
+
+      {!product.stockVerified ? (
+        <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          This is an old unverified balance. Use Set Physical Count to enter the
+          exact stock you physically found (including zero). Add/Reduce does
+          not verify an old balance; this prevents placeholder quantities
+          from entering valuation.
+        </p>
+      ) : null}
 
       {state.message ? (
         <div

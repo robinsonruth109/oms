@@ -38,9 +38,26 @@ type DailyRow = {
   items: { sku: string; name: string; quantity: number }[];
 };
 
+type UnmatchedReturnRow = {
+  id: string;
+  consignmentId: string;
+  status: string;
+  lookupStatus: string;
+  reason: string;
+  matchedMerchantOrderId: string | null;
+  checkedCourierCount: number;
+  failedCourierCount: number;
+  scanCount: number;
+  scannedBy: string;
+  firstScannedAt: string;
+  lastScannedAt: string;
+  resolvedAt: string | null;
+};
+
 type Props = {
   filterDate: string;
   rows: DailyRow[];
+  unmatchedRows: UnmatchedReturnRow[];
   summary: {
     totalReturns: number;
     fullReturns: number;
@@ -67,7 +84,7 @@ function returnTypeClass(type: string) {
     : "bg-amber-100 text-amber-800";
 }
 
-export default function PathaoReturnTrackClient({ filterDate, rows, summary }: Props) {
+export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRows, summary }: Props) {
   const router = useRouter();
   const scanRef = useRef<HTMLInputElement>(null);
   const [consignmentId, setConsignmentId] = useState("");
@@ -110,6 +127,13 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
 
     if (result.action === "PROCESSED") {
       setNotice({ kind: "success", text: result.message });
+      clearForNextScan();
+      router.refresh();
+      return;
+    }
+
+    if (result.action === "NOT_FOUND_SAVED") {
+      setNotice({ kind: "warning", text: result.message });
       clearForNextScan();
       router.refresh();
       return;
@@ -382,7 +406,7 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
         </section>
       ) : null}
 
-      <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Returns</p>
           <p className="mt-2 text-2xl font-bold text-slate-900">{summary.totalReturns}</p>
@@ -424,6 +448,106 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
             </p>
           )}
         </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <p className="text-sm text-amber-800">Not Found / Previous Parcel</p>
+          <p className="mt-2 text-2xl font-bold text-amber-900">
+            {unmatchedRows.filter((scan) => scan.status !== "RESOLVED").length}
+          </p>
+          <p className="mt-1 text-xs text-amber-700">
+            Unresolved IDs scanned on the selected date
+          </p>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-amber-100 bg-amber-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-amber-950">
+              Not Found / Previous Parcel
+            </h2>
+            <p className="mt-1 text-sm text-amber-800">
+              Unmatched return barcodes scanned on {filterDate}. Their IDs are saved without modifying OMS stock.
+            </p>
+          </div>
+          {unmatchedRows.length ? (
+            <a
+              href={`/api/pathao-return-track/export?date=${encodeURIComponent(filterDate)}&type=not-found`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              <Download className="h-4 w-4" />
+              Download Not Found CSV
+            </a>
+          ) : null}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1200px] w-full text-left text-sm">
+            <thead className="bg-amber-50/40 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Scanned Return CID</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Lookup Result</th>
+                <th className="px-4 py-3">Possible OMS Invoice</th>
+                <th className="px-4 py-3">Scans</th>
+                <th className="px-4 py-3">First / Latest Scan</th>
+                <th className="px-4 py-3">Agent</th>
+                <th className="px-4 py-3">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {unmatchedRows.map((scan) => (
+                <tr key={scan.id} className="align-top">
+                  <td className="px-4 py-4 font-mono text-xs font-bold text-slate-900">
+                    {scan.consignmentId}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className={
+                      "rounded-full px-2.5 py-1 text-xs font-bold " +
+                      (scan.status === "RESOLVED"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-amber-100 text-amber-800")
+                    }>
+                      {scan.status === "RESOLVED" ? "RESOLVED" : "NOT FOUND"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-xs text-slate-700">
+                    {scan.lookupStatus === "PARTIAL_CHECK"
+                      ? "Incomplete courier check"
+                      : scan.lookupStatus === "OMS_INVOICE_NOT_FOUND"
+                        ? "Pathao matched / OMS invoice missing"
+                        : "No Pathao match"}
+                    <p className="mt-1 text-slate-400">
+                      {scan.checkedCourierCount} account(s); {scan.failedCourierCount} failed
+                    </p>
+                  </td>
+                  <td className="px-4 py-4 text-xs text-slate-700">
+                    {scan.matchedMerchantOrderId || "—"}
+                  </td>
+                  <td className="px-4 py-4 font-semibold">{scan.scanCount}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-700">
+                    <p>{scan.firstScannedAt}</p>
+                    <p className="mt-1 text-slate-400">{scan.lastScannedAt}</p>
+                  </td>
+                  <td className="px-4 py-4 text-xs">{scan.scannedBy}</td>
+                  <td className="max-w-sm px-4 py-4 text-xs text-slate-600">
+                    {scan.reason}
+                    {scan.resolvedAt ? (
+                      <p className="mt-1 text-emerald-600">
+                        Resolved: {scan.resolvedAt}
+                      </p>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+              {!unmatchedRows.length ? (
+                <tr>
+                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-500">
+                    No unmatched barcodes saved on this date.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
@@ -432,7 +556,7 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
             <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
               <PackageCheck className="h-5 w-5" /> Daily Return List
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Processed Pathao returns for the selected Bangladesh date.</p>
+            <p className="mt-1 text-sm text-slate-500">Processed returns for the selected Bangladesh date. Download CSV also includes saved unmatched parcels.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <form className="flex items-end gap-2">
@@ -444,7 +568,7 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
                 Filter
               </button>
             </form>
-            {rows.length ? (
+            {rows.length || unmatchedRows.length ? (
               <a
                 href={`/api/pathao-return-track/export?date=${encodeURIComponent(filterDate)}`}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"

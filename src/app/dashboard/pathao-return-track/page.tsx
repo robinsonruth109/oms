@@ -66,6 +66,27 @@ export default async function PathaoReturnTrackPage({ searchParams }: PageProps)
     take: 2000,
   });
 
+  const unmatched = await prisma.pathaoUnmatchedReturnScan.findMany({
+    where: {
+      OR: [
+        {
+          firstScannedAt: {
+            gte: bangladeshDateStartUtc(filterDate),
+            lte: bangladeshDateEndUtc(filterDate),
+          },
+        },
+        {
+          lastScannedAt: {
+            gte: bangladeshDateStartUtc(filterDate),
+            lte: bangladeshDateEndUtc(filterDate),
+          },
+        },
+      ],
+    },
+    orderBy: { lastScannedAt: "desc" },
+    take: 2000,
+  });
+
   const summary = logs.reduce(
     (sum, log) => ({
       totalReturns: sum.totalReturns + 1,
@@ -98,6 +119,23 @@ export default async function PathaoReturnTrackPage({ searchParams }: PageProps)
       <PathaoReturnTrackClient
         filterDate={filterDate}
         summary={summary}
+        unmatchedRows={unmatched.map((scan) => ({
+          id: scan.id,
+          consignmentId: scan.consignmentId,
+          status: scan.status,
+          lookupStatus: scan.lookupStatus,
+          reason: scan.reason,
+          matchedMerchantOrderId: scan.matchedMerchantOrderId,
+          checkedCourierCount: scan.checkedCourierCount,
+          failedCourierCount: scan.failedCourierCount,
+          scanCount: scan.scanCount,
+          scannedBy: scan.scannedByName,
+          firstScannedAt: formatBangladeshDateTime(scan.firstScannedAt),
+          lastScannedAt: formatBangladeshDateTime(scan.lastScannedAt),
+          resolvedAt: scan.resolvedAt
+            ? formatBangladeshDateTime(scan.resolvedAt)
+            : null,
+        }))}
         rows={logs.map((log) => ({
           id: log.id,
           returnConsignmentId: log.returnConsignmentId,

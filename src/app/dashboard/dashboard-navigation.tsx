@@ -102,6 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Products & Content",
     items: [
       { href: "/dashboard/products", label: "Product Master", icon: Package, roles: ["ADMIN", "MANAGER"] },
+      { href: "/dashboard/products/bundles", label: "Bundle Recipes", icon: Boxes, roles: ["ADMIN"] },
       { href: "/dashboard/stock-valuation", label: "Stock Valuation", icon: Boxes, roles: ["ADMIN"] },
       { href: "/dashboard/damage-products", label: "Damage Products", icon: AlertTriangle, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/stock-adjustments", label: "Stock Adjustment", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },

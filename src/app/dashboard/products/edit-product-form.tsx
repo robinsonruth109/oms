@@ -13,6 +13,7 @@ type Props = {
     name: string;
     quantity: number;
     unitsPerSale: number;
+    inventoryKind: "PHYSICAL" | "BUNDLE";
     purchasePrice: string;
     sellingPrice: string;
     status: boolean;
@@ -72,9 +73,16 @@ export default function EditProductForm({ product }: Props) {
 
           <TextField label="Child SKU" name="sku" defaultValue={product.sku} required />
           <TextField label="Product Name" name="name" defaultValue={product.name} required />
-          <NumberField label="Units Used Per Sale" name="unitsPerSale" min="1" defaultValue={String(product.unitsPerSale)} />
+          {product.inventoryKind === "BUNDLE" ? (
+            <div className="self-end rounded-xl bg-violet-50 p-3 text-sm text-violet-800">
+              Bundle units and stock are derived from the component recipe.
+              <input type="hidden" name="unitsPerSale" value={product.unitsPerSale} />
+            </div>
+          ) : (
+            <NumberField label="Units Used Per Sale" name="unitsPerSale" min="1" defaultValue={String(product.unitsPerSale)} />
+          )}
 
-          {stockMode === "VARIANT_STOCK" ? (
+          {stockMode === "VARIANT_STOCK" && product.inventoryKind !== "BUNDLE" ? (
             <NumberField label="Child Stock Quantity" name="quantity" min="0" defaultValue={String(product.quantity)} />
           ) : (
             <input type="hidden" name="quantity" value={String(product.quantity)} />

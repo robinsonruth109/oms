@@ -241,8 +241,10 @@ export async function updateProduct(
     }
 
     const currentProduct = await prisma.product.findUnique({
-      where: {
-        id: productId,
+      where: { id: productId },
+      include: {
+        parent: true,
+        usedInBundles: { select: { id: true } },
       },
     });
 
@@ -250,6 +252,23 @@ export async function updateProduct(
       return {
         success: false,
         message: "Product not found.",
+      };
+    }
+
+    if (currentProduct.inventoryKind === "BUNDLE" &&
+        (parentSku !== currentProduct.parent.sku ||
+         stockMode !== currentProduct.parent.stockMode)) {
+      return {
+        success: false,
+        message: "Bundle parent and stock mode cannot change. Edit the recipe instead.",
+      };
+    }
+    if (currentProduct.usedInBundles.length &&
+        (parentSku !== currentProduct.parent.sku ||
+         stockMode !== currentProduct.parent.stockMode || !status)) {
+      return {
+        success: false,
+        message: "This SKU is a physical bundle component. Keep its parent, mode and active status.",
       };
     }
 
@@ -286,8 +305,12 @@ export async function updateProduct(
           sku,
           slug: buildProductSlug(sku),
           name: name || sku,
-          quantity,
-          unitsPerSale,
+          quantity: currentProduct.inventoryKind === "BUNDLE"
+            ? currentProduct.quantity
+            : quantity,
+          unitsPerSale: currentProduct.inventoryKind === "BUNDLE"
+            ? currentProduct.unitsPerSale
+            : unitsPerSale,
           purchasePrice,
           sellingPrice,
           status,
@@ -410,6 +433,18 @@ export async function importProductsCsv(
         });
 
         if (existingProduct) {
+          // CSV must never recreate stock for a virtual selling bundle.
+          if (existingProduct.inventoryKind === "BUNDLE") {
+            skippedCount += 1;
+            continue;
+          }
+          const usedBy = await tx.productBundleComponent.count({
+            where: { componentProductId: existingProduct.id },
+          });
+          if (usedBy && existingProduct.parentId !== parent.id) {
+            skippedCount += 1;
+            continue;
+          }
           await tx.product.update({
             where: {
               sku,

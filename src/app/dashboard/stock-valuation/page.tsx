@@ -161,6 +161,45 @@ export default async function StockValuationPage() {
           </table>
         </div>
       </section>
+      {virtualBundles.length ? (
+        <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-4">
+            <h2 className="font-semibold text-slate-900">
+              Virtual bundle availability — not additional stock
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Bundle component values are already counted in physical stock above.
+              Old bundle quantity is preserved in the database but ignored here.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-[900px] w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Parent</th>
+                  <th className="px-4 py-3">Bundle SKU</th>
+                  <th className="px-4 py-3">Components</th>
+                  <th className="px-4 py-3">Possible Sets</th>
+                  <th className="px-4 py-3">Cost / Set</th>
+                  <th className="px-4 py-3">Legacy Qty (ignored)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {virtualBundles.map((row) => (
+                  <tr key={row.sku} className="border-t">
+                    <td className="px-4 py-3">{row.parent}</td>
+                    <td className="px-4 py-3 font-semibold">{row.sku}</td>
+                    <td className="px-4 py-3">{row.components}</td>
+                    <td className="px-4 py-3 font-bold text-violet-700">{row.sets}</td>
+                    <td className="px-4 py-3">{money(row.cost)}</td>
+                    <td className="px-4 py-3 text-slate-500">{row.legacyQty}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

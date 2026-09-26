@@ -124,21 +124,36 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
       componentSummary: bundle
         ? parts.map((part) => part.componentProduct.sku + " × " + part.units).join(" + ")
         : "",
+      stockVerified: bundle
+        ? parts.length > 0 && parts.every((part) =>
+            Boolean(part.componentProduct.stockVerifiedAt)
+          )
+        : parentStock
+          ? Boolean(product.parent.stockVerifiedAt)
+          : Boolean(product.stockVerifiedAt),
     };
   });
 
-  const addedUnits = entries
-    .filter((entry) => entry.adjustmentType === "ADD")
-    .reduce((sum, entry) => sum + Number(entry.adjustedStockUnits || 0), 0);
-  const reducedUnits = entries
-    .filter((entry) => entry.adjustmentType === "REDUCE")
-    .reduce((sum, entry) => sum + Number(entry.adjustedStockUnits || 0), 0);
-  const addedValue = entries
-    .filter((entry) => entry.adjustmentType === "ADD")
-    .reduce((sum, entry) => sum + Number(entry.adjustmentValue || 0), 0);
-  const reducedValue = entries
-    .filter((entry) => entry.adjustmentType === "REDUCE")
-    .reduce((sum, entry) => sum + Number(entry.adjustmentValue || 0), 0);
+  // SET_COUNT records a target physical balance; its movement is after-before.
+  const stockMovement = (entry: (typeof entries)[number]) =>
+    entry.adjustmentType === "SET_COUNT"
+      ? entry.stockAfter - entry.stockBefore
+      : entry.adjustmentType === "ADD"
+        ? Number(entry.adjustedStockUnits || 0)
+        : -Number(entry.adjustedStockUnits || 0);
+  const stockMovementValue = (entry: (typeof entries)[number]) =>
+    stockMovement(entry) * Number(entry.unitCost || 0);
+  const addedUnits = entries.reduce((sum, entry) =>
+    sum + Math.max(0, stockMovement(entry)), 0);
+  const reducedUnits = entries.reduce((sum, entry) =>
+    sum + Math.max(0, -stockMovement(entry)), 0);
+  const addedValue = entries.reduce((sum, entry) =>
+    sum + Math.max(0, stockMovementValue(entry)), 0);
+  const reducedValue = entries.reduce((sum, entry) =>
+    sum + Math.max(0, -stockMovementValue(entry)), 0);
+  const countedRecords = entries.filter(
+    (entry) => entry.adjustmentType === "SET_COUNT"
+  ).length;
 
   const summaryMap = new Map<
     string,
@@ -169,18 +184,12 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
         netValue: 0,
       };
 
-    const units = Number(entry.adjustedStockUnits || 0);
-    const value = Number(entry.adjustmentValue || 0);
-
-    if (entry.adjustmentType === "ADD") {
-      current.addedUnits += units;
-      current.netUnits += units;
-      current.netValue += value;
-    } else {
-      current.reducedUnits += units;
-      current.netUnits -= units;
-      current.netValue -= value;
-    }
+    const units = stockMovement(entry);
+    const value = stockMovementValue(entry);
+    current.addedUnits += Math.max(0, units);
+    current.reducedUnits += Math.max(0, -units);
+    current.netUnits += units;
+    current.netValue += value;
 
     summaryMap.set(key, current);
   }
@@ -201,7 +210,8 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
               Stock Adjustment
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Add forgotten/found stock or reduce lost/missing stock with a permanent audit history.
+              Verify legacy quantities by entering an exact physical count, including zero.
+              Add or reduce stock separately, with a permanent audit history.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -267,7 +277,10 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
           </div>
         ) : (
           <div className="mt-4 rounded-2xl border border-dashed bg-slate-50 p-6 text-sm text-slate-500">
-            Search a child SKU or Parent Code to add or reduce stock.
+            Search a child SKU or Parent Code, then choose Set Physical Count.
+            For shared Parent Stock, enter the total physical parent units—not the
+            number of sale bundles. Previously stored quantities remain excluded
+            from valuation until verified.
           </div>
         )}
       </section>
@@ -279,6 +292,7 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
           </h2>
           <p className="mt-1 text-sm text-slate-500">
             Filter manual stock changes by Bangladesh business date.
+            {countedRecords} exact physical count(s) recorded in this period.
           </p>
         </div>
 
@@ -435,12 +449,14 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
                     <span
                       className={
                         "rounded-full px-2.5 py-1 text-xs font-semibold " +
-                        (entry.adjustmentType === "ADD"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-rose-100 text-rose-700")
+                        (entry.adjustmentType === "SET_COUNT"
+                          ? "bg-violet-100 text-violet-700"
+                          : entry.adjustmentType === "ADD"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-rose-100 text-rose-700")
                       }
                     >
-                      {entry.adjustmentType === "ADD" ? "ADD" : "REDUCE"}
+                      {entry.adjustmentType === "SET_COUNT" ? "SET COUNT" : entry.adjustmentType}
                     </span>
                   </td>
                   <td className="px-5 py-4">
@@ -454,7 +470,11 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
                       : "Variation Stock"}
                   </td>
                   <td className="px-5 py-4 text-right font-semibold">{entry.enteredQuantity}</td>
-                  <td className="px-5 py-4 text-right font-semibold">{entry.adjustedStockUnits}</td>
+                  <td className="px-5 py-4 text-right font-semibold">
+                    {entry.adjustmentType === "SET_COUNT"
+                      ? entry.stockAfter - entry.stockBefore
+                      : entry.adjustedStockUnits}
+                  </td>
                   <td className="px-5 py-4 text-right font-semibold">
                     {money(Number(entry.adjustmentValue || 0))}
                   </td>

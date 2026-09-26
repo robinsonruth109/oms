@@ -78,6 +78,7 @@ export async function saveBundleRecipe(
           id: true,
           sku: true,
           parentId: true,
+          parent: { select: { stockMode: true } },
           inventoryKind: true,
           status: true,
         },
@@ -99,13 +100,13 @@ export async function saveBundleRecipe(
       physical.some((row) =>
         !row.status ||
         row.inventoryKind !== "PHYSICAL" ||
-        row.parentId !== bundle.parentId ||
+        row.parent.stockMode !== "VARIANT_STOCK" ||
         row.id === bundle.id
       )
     ) {
       return {
         success: false,
-        message: "Every component must be a different, active, physical SKU under the same parent.",
+        message: "Every component must be a distinct active physical Variation Stock SKU. Components may belong to different colour parents.",
       };
     }
 

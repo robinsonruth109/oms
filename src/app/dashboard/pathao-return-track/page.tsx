@@ -73,8 +73,16 @@ export default async function PathaoReturnTrackPage({ searchParams }: PageProps)
       partialReturns:
         sum.partialReturns + (log.returnType === "PARTIAL" ? 1 : 0),
       restoredQty: sum.restoredQty + log.totalRestoredQty,
+      zeroRestoredReturns:
+        sum.zeroRestoredReturns + (log.totalRestoredQty <= 0 ? 1 : 0),
     }),
-    { totalReturns: 0, fullReturns: 0, partialReturns: 0, restoredQty: 0 }
+    {
+      totalReturns: 0,
+      fullReturns: 0,
+      partialReturns: 0,
+      restoredQty: 0,
+      zeroRestoredReturns: 0,
+    }
   );
 
   return (

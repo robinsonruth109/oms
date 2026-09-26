@@ -305,6 +305,7 @@ export async function restoreReturnedStock(
       restoredUnits: 0,
       stockBefore,
       stockAfter: stockBefore,
+      usedLegacyFallback: legacySubmittedOrder,
     };
   }
 
@@ -322,5 +323,6 @@ export async function restoreReturnedStock(
     restoredUnits,
     stockBefore,
     stockAfter: Number(updated.quantity || 0),
+    usedLegacyFallback: legacySubmittedOrder,
   };
 }

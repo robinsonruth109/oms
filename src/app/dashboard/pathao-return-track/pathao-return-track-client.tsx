@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   processSelectedPathaoReturnAction,
+  repairZeroRestoredReturnsAction,
   scanPathaoReturnAction,
   type ReturnLookupPayload,
   type ScanReturnResult,
@@ -45,6 +46,7 @@ type Props = {
     fullReturns: number;
     partialReturns: number;
     restoredQty: number;
+    zeroRestoredReturns: number;
   };
 };
 
@@ -151,6 +153,36 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
         lookup.order.items.map((item) => [item.orderItemId, item.remainingQty])
       )
     );
+  }
+
+  function repairZeroRestores() {
+    if (isPending || summary.zeroRestoredReturns <= 0) return;
+
+    const confirmed = window.confirm(
+      `Repair ${summary.zeroRestoredReturns} return record(s) with 0 restored stock for ${filterDate}?\n\nOMS will restore the returned product quantity and update those existing return records. This repair is idempotent and only processes rows still showing 0 restored stock.`
+    );
+
+    if (!confirmed) return;
+
+    setNotice({
+      kind: "info",
+      text: "Repairing zero-restoration return records and restoring stock...",
+    });
+
+    startTransition(async () => {
+      const result = await repairZeroRestoredReturnsAction(filterDate);
+
+      setNotice({
+        kind: result.success
+          ? "success"
+          : result.repairedReturns > 0
+            ? "warning"
+            : "error",
+        text: result.message,
+      });
+
+      router.refresh();
+    });
   }
 
   function processSelection() {
@@ -363,9 +395,34 @@ export default function PathaoReturnTrackClient({ filterDate, rows, summary }: P
           <p className="text-sm text-slate-500">Partial Return</p>
           <p className="mt-2 text-2xl font-bold text-amber-700">{summary.partialReturns}</p>
         </div>
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div
+          className={
+            "rounded-2xl border p-4 shadow-sm " +
+            (summary.zeroRestoredReturns > 0
+              ? "border-amber-200 bg-amber-50"
+              : "bg-white")
+          }
+        >
           <p className="text-sm text-slate-500">Stock Restored</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{summary.restoredQty} pcs</p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {summary.restoredQty} pcs
+          </p>
+          {summary.zeroRestoredReturns > 0 ? (
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={repairZeroRestores}
+              className="mt-3 w-full rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {isPending
+                ? "Repairing..."
+                : `Repair ${summary.zeroRestoredReturns} Zero Restore${summary.zeroRestoredReturns === 1 ? "" : "s"}`}
+            </button>
+          ) : (
+            <p className="mt-2 text-xs font-medium text-emerald-600">
+              All processed returns have stock restoration.
+            </p>
+          )}
         </div>
       </section>
 

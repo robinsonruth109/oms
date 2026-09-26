@@ -65,6 +65,7 @@ export default async function ProductsPage({
       where,
       include: {
         parent: true,
+        bundleComponents: { include: { componentProduct: true } },
       },
       orderBy: {
         createdAt: "desc",
@@ -83,6 +84,37 @@ export default async function ProductsPage({
       : null,
   ]);
 
+  function displayStock(product: (typeof products)[number]) {
+    return product.inventoryKind === "BUNDLE"
+      ? product.bundleComponents.length
+        ? Math.max(0, Math.min(...product.bundleComponents.map((part) =>
+            Math.floor(part.componentProduct.quantity / part.units)
+          )))
+        : 0
+      : product.parent.stockMode === "PARENT_STOCK"
+        ? product.parent.stockQuantity : product.quantity;
+  }
+  function displayCost(product: (typeof products)[number]) {
+    return product.inventoryKind === "BUNDLE"
+      ? product.bundleComponents.reduce(
+          (sum, part) => sum + Number(part.componentProduct.purchasePrice) * part.units, 0
+        )
+      : Number(product.parent.stockMode === "PARENT_STOCK"
+          ? product.parent.purchasePrice || 0 : product.purchasePrice);
+  }
+  function displayMode(product: (typeof products)[number]) {
+    return product.inventoryKind === "BUNDLE" ? "Virtual Bundle"
+      : product.parent.stockMode === "PARENT_STOCK"
+        ? "Parent Stock" : "Variation Stock";
+  }
+  function displayUnits(product: (typeof products)[number]) {
+    return product.inventoryKind === "BUNDLE"
+      ? product.bundleComponents.map((part) =>
+          part.componentProduct.sku + " × " + part.units
+        ).join(" + ") || "Recipe missing"
+      : String(product.unitsPerSale);
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
@@ -99,12 +131,18 @@ export default async function ProductsPage({
               </p>
             ) : null}
           </div>
-          <Link
-            href="/dashboard/stock-adjustments"
-            className="inline-flex rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-          >
-            Adjust Stock
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {canManageMaster ? (
+              <Link href="/dashboard/products/bundles"
+                className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">
+                Configure Bundles
+              </Link>
+            ) : null}
+            <Link href="/dashboard/stock-adjustments"
+              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white">
+              Adjust Stock
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -134,6 +172,7 @@ export default async function ProductsPage({
             name: editProduct.name,
             quantity: editProduct.quantity,
             unitsPerSale: editProduct.unitsPerSale,
+            inventoryKind: editProduct.inventoryKind,
             purchasePrice: String(editProduct.purchasePrice),
             sellingPrice: String(editProduct.sellingPrice),
             status: editProduct.status,
@@ -187,6 +226,14 @@ export default async function ProductsPage({
                       Edit
                     </Link>
                   ) : null}
+                  {canManageMaster ? (
+                    <Link
+                      href={"/dashboard/products/bundles?q=" + encodeURIComponent(product.sku)}
+                      className="rounded-lg border border-violet-300 px-3 py-1.5 text-xs font-semibold text-violet-700"
+                    >
+                      Bundle
+                    </Link>
+                  ) : null}
                 </div>
               </div>
 
@@ -198,20 +245,18 @@ export default async function ProductsPage({
                 <div>
                   <p className="text-slate-400">Stock Mode</p>
                   <p className="font-medium text-slate-800">
-                    {product.parent.stockMode === "PARENT_STOCK" ? "Parent Stock" : "Variation Stock"}
+                    {displayMode(product)}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-400">Available Stock</p>
                   <p className="font-medium text-slate-800">
-                    {product.parent.stockMode === "PARENT_STOCK"
-                      ? product.parent.stockQuantity
-                      : product.quantity}
+                    {displayStock(product)}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-400">Units / Sale</p>
-                  <p className="font-medium text-slate-800">{product.unitsPerSale}</p>
+                  <p className="font-medium text-slate-800">{displayUnits(product)}</p>
                 </div>
                 <div>
                   <p className="text-slate-400">Status</p>
@@ -222,7 +267,7 @@ export default async function ProductsPage({
                 <div>
                   <p className="text-slate-400">Purchase</p>
                   <p className="font-medium text-slate-800">
-                    ৳ {Number(product.purchasePrice).toFixed(2)}
+                    ৳ {displayCost(product).toFixed(2)}
                   </p>
                 </div>
                 <div>
@@ -284,23 +329,17 @@ export default async function ProductsPage({
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     <div className="font-medium">
-                      {product.parent.stockMode === "PARENT_STOCK"
-                        ? product.parent.stockQuantity
-                        : product.quantity}
+                      {displayStock(product)}
                     </div>
                     <div className="text-xs text-slate-400">
-                      {product.parent.stockMode === "PARENT_STOCK" ? "Parent Stock" : "Variation Stock"}
+                      {displayMode(product)}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
-                    {product.unitsPerSale}
+                    {displayUnits(product)}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
-                    ৳ {Number(
-                      product.parent.stockMode === "PARENT_STOCK"
-                        ? product.parent.purchasePrice || 0
-                        : product.purchasePrice
-                    ).toFixed(2)}
+                    ৳ {displayCost(product).toFixed(2)}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-700">
                     ৳ {Number(product.sellingPrice).toFixed(2)}

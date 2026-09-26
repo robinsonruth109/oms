@@ -24,6 +24,7 @@ enum StockOwnerType {
 enum StockAdjustmentType {
   ADD
   REDUCE
+  SET_COUNT
 }
 
 model User {
@@ -145,6 +146,8 @@ model ProductParent {
   name      String
   stockMode ProductStockMode @default(VARIANT_STOCK)
   stockQuantity Int @default(0)
+  // NULL means legacy / never physically counted. It is excluded from valuation.
+  stockVerifiedAt DateTime?
   purchasePrice Decimal? @db.Decimal(10, 2)
   status    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -307,6 +310,8 @@ model Product {
   quantity      Int      @default(1)
   unitsPerSale  Int      @default(1)
   inventoryKind ProductInventoryKind @default(PHYSICAL)
+  // NULL means legacy / unverified; only physical stock owners contribute to valuation.
+  stockVerifiedAt DateTime?
   purchasePrice Decimal  @db.Decimal(10, 2)
   sellingPrice  Decimal  @db.Decimal(10, 2)
   status        Boolean  @default(true)

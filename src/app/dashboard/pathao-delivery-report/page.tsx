@@ -136,7 +136,8 @@ function statusCardClass(label: string) {
     };
   }
 
-  if (value.includes("hold") || value.includes("pending") || value.includes("await")) {
+  if (value.includes("hold") || value.includes("pending") ||
+      value.includes("await") || value.includes("no verified")) {
     return {
       card: "border-amber-100 bg-amber-50",
       label: "text-amber-700",
@@ -267,12 +268,23 @@ export default async function PathaoDeliveryReportPage({
       },
       orderBy: [{ readyToShipAt: "desc" }, { createdAt: "desc" }],
     }),
-    dateBasis === "webhook"
+    dateBasis === "webhook" && !sourceId
       ? prisma.pathaoWebhookEvent.count({
           where: {
             receivedAt: { gte: startUtc, lte: endUtc },
             signatureValid: true,
             orderId: null,
+            // Store events never refer to an OMS order. Do not report them
+            // as a failed parcel match.
+            eventName: {
+              notIn: [
+                "store.created",
+                "store.updated",
+                "webhook_integration",
+                "store_created",
+                "store_updated",
+              ],
+            },
             ...(courierId ? { courierId } : {}),
           },
         })
@@ -622,6 +634,16 @@ export default async function PathaoDeliveryReportPage({
           </p>
         </div>
       </section>
+
+      {dateBasis === "ready" && orders.length > 0 &&
+      webhooks.length === 0 ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          These Pathao orders have no matched, verified webhook history yet.
+          Check that the selected Pathao account is sending all delivery events
+          to its OMS webhook URL. Historical events that Pathao never sent
+          cannot be recovered from the current order-status field.
+        </div>
+      ) : null}
 
       {unmatchedWebhookCount > 0 ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

@@ -18,99 +18,89 @@ type Props = {
     to?: string;
     source?: string;
     courier?: string;
+    dateBasis?: string;
+    view?: string;
   }>;
 };
 
+// These are Pathao webhook event names, not a snapshot from order.pathaoOrderStatus.
+// Store Created and Store Updated are intentionally absent: store-level events
+// have no OMS order or product quantity.
 const PRIMARY_STATUS_COLUMNS = [
-  "order.paid",
-  "order.return-in-transit",
-  "In Transit",
-  "At the Sorting HUB",
-  "On Hold",
-  "Delivered",
-  "Assigned for Delivery",
-  "Received at Last Mile HUB",
-  "order.return-id-created",
-  "order.returned-to-merchant",
-  "order.updated",
+  "Order Created",
+  "Order Updated",
+  "Pickup Requested",
+  "Assigned for Pickup",
+  "Pickup",
   "Pickup Failed",
+  "Pickup Cancelled",
+  "At the Sorting HUB",
+  "In Transit",
+  "Received at Last Mile HUB",
+  "Assigned for Delivery",
+  "Delivered",
+  "Partial Delivery",
+  "Return",
+  "Delivery Failed",
+  "On Hold",
+  "Payment Invoice",
+  "Paid Return",
+  "Exchange",
+  "Return Id Created",
+  "Return In Transit",
+  "Returned To Merchant",
+  "Paid",
 ] as const;
+
+const WEBHOOK_LABELS: Record<string, string> = {
+  "order.created": "Order Created",
+  "order.updated": "Order Updated",
+  "order.pickup-requested": "Pickup Requested",
+  "order.assigned-for-pickup": "Assigned for Pickup",
+  "order.pickup": "Pickup",
+  "order.picked-up": "Pickup",
+  "order.pickup-failed": "Pickup Failed",
+  "order.pickup-cancelled": "Pickup Cancelled",
+  "order.at-the-sorting-hub": "At the Sorting HUB",
+  "order.in-transit": "In Transit",
+  "order.received-at-last-mile-hub": "Received at Last Mile HUB",
+  "order.assigned-for-delivery": "Assigned for Delivery",
+  "order.delivered": "Delivered",
+  "order.partial-delivery": "Partial Delivery",
+  "order.returned": "Return",
+  "order.return": "Return",
+  "order.delivery-failed": "Delivery Failed",
+  "order.on-hold": "On Hold",
+  "order.payment-invoice": "Payment Invoice",
+  "order.paid-return": "Paid Return",
+  "order.exchange": "Exchange",
+  "order.return-id-created": "Return Id Created",
+  "order.return-in-transit": "Return In Transit",
+  "order.returned-to-merchant": "Returned To Merchant",
+  "order.paid": "Paid",
+};
 
 function validDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function taka(value: unknown) {
-  return `Tk ${Number(value || 0).toLocaleString("en-BD", {
+  return \`Tk \${Number(value || 0).toLocaleString("en-BD", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  })}\`;
 }
 
-function normalizeStatus(value: string | null | undefined) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function canonicalPathaoStatus(order: {
-  pathaoOrderStatus: string | null;
-  pathaoOrderStatusSlug: string | null;
-}) {
-  const aliases = new Map<string, string>([
-    ["order.paid", "order.paid"],
-    ["paid", "order.paid"],
-
-    ["order.return-in-transit", "order.return-in-transit"],
-    ["return in transit", "order.return-in-transit"],
-    ["return-in-transit", "order.return-in-transit"],
-
-    ["in transit", "In Transit"],
-    ["order.in-transit", "In Transit"],
-
-    ["at the sorting hub", "At the Sorting HUB"],
-    ["order.at-the-sorting-hub", "At the Sorting HUB"],
-
-    ["on hold", "On Hold"],
-    ["order.on-hold", "On Hold"],
-
-    ["delivered", "Delivered"],
-    ["order.delivered", "Delivered"],
-
-    ["assigned for delivery", "Assigned for Delivery"],
-    ["order.assigned-for-delivery", "Assigned for Delivery"],
-
-    ["received at last mile hub", "Received at Last Mile HUB"],
-    ["order.received-at-last-mile-hub", "Received at Last Mile HUB"],
-
-    ["order.return-id-created", "order.return-id-created"],
-    ["return id created", "order.return-id-created"],
-
-    ["order.returned-to-merchant", "order.returned-to-merchant"],
-    ["returned to merchant", "order.returned-to-merchant"],
-
-    ["order.updated", "order.updated"],
-
-    ["pickup failed", "Pickup Failed"],
-    ["order.pickup-failed", "Pickup Failed"],
-  ]);
-
-  const candidates = [order.pathaoOrderStatus, order.pathaoOrderStatusSlug];
-
-  for (const candidate of candidates) {
-    const normalized = normalizeStatus(candidate);
-    if (!normalized) continue;
-    const alias = aliases.get(normalized);
-    if (alias) return alias;
-  }
-
-  return (
-    String(order.pathaoOrderStatus || "").trim() ||
-    String(order.pathaoOrderStatusSlug || "").trim() ||
-    "Awaiting Status Sync"
-  );
+function canonicalWebhookEvent(raw: string) {
+  // The webhook's event field is the source of truth. Aliases only normalize
+  // spelling/casing of the SAME event, never infer another delivery status.
+  const normalized = String(raw || "unknown").trim().toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/\s+/g, "-");
+  const bare = normalized.startsWith("order.") ? normalized.slice(6) : normalized;
+  return WEBHOOK_LABELS[normalized] ||
+    WEBHOOK_LABELS["order." + bare] ||
+    (raw.trim() || "Unknown Webhook Event");
 }
 
 function statusCardClass(label: string) {

@@ -27,12 +27,14 @@ export default function ProductDeliveryStatusTable({
   statusTotals,
   totalProductQty,
   dateLabel,
+  viewMode,
 }: {
   groups: ProductGroup[];
   statusColumns: string[];
   statusTotals: Record<string, number>;
   totalProductQty: number;
   dateLabel: string;
+  viewMode: "latest" | "history";
 }) {
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
 
@@ -47,10 +49,18 @@ export default function ProductDeliveryStatusTable({
     <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
       <div className="border-b px-5 py-4">
         <h2 className="text-lg font-semibold text-slate-900">
-          Product Delivery Status Report
+          {viewMode === "latest"
+            ? "Product Delivery — Latest Webhook per Order"
+            : "Product Delivery — Webhook Stage History"}
         </h2>
         <p className="mt-1 text-sm text-slate-500">
           Parent Code wise report · click Parent Code to expand Child SKU details · {dateLabel}
+          {" "}· Status counts use verified Pathao webhook event names.
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          {viewMode === "history"
+            ? "Total Qty counts distinct order-line units. Stage columns show units per unique order/event type; a parcel can appear under multiple event types."
+            : "Each OMS order appears under its last verified webhook event only; a shipment without a verified event is marked No Verified Webhook."}
         </p>
       </div>
 
@@ -197,7 +207,7 @@ export default function ProductDeliveryStatusTable({
             <tfoot className="border-t-2 bg-slate-50">
               <tr>
                 <td colSpan={4} className="px-4 py-4 text-right font-bold text-slate-900">
-                  Total Product Qty
+                  Unique Product Qty
                 </td>
                 <td className="px-4 py-4 text-center text-lg font-bold text-slate-900">
                   {totalProductQty}

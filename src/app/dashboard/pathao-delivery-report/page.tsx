@@ -85,10 +85,10 @@ function validDate(value: string) {
 }
 
 function taka(value: unknown) {
-  return \`Tk \${Number(value || 0).toLocaleString("en-BD", {
+  return `Tk ${Number(value || 0).toLocaleString("en-BD", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}\`;
+  })}`;
 }
 
 function canonicalWebhookEvent(raw: string) {

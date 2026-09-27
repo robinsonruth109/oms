@@ -170,54 +170,83 @@ export default async function PathaoDeliveryReportPage({
 
   const sourceId = String(params.source || "").trim();
   const courierId = String(params.courier || "").trim();
-
+  const dateBasis = params.dateBasis === "webhook" ? "webhook" : "ready";
+  const view = params.view === "history" ? "history" : "latest";
+  const startUtc = bangladeshDateStartUtc(from);
+  const endUtc = bangladeshDateEndUtc(to);
   const { prisma } = await import("@/lib/prisma");
 
-  const [sources, couriers, orders] = await Promise.all([
+  // Authenticate against the existing saved signatureValid flag. The table
+  // includes rejected signatures, unmatched payloads and integration tests,
+  // none of which may be used as verified product-delivery data.
+  const [sources, couriers, webhooks] = await Promise.all([
     prisma.orderSource.findMany({
       where: { status: true },
       orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-      },
+      select: { id: true, name: true, type: true },
     }),
     prisma.courier.findMany({
-      where: {
-        status: true,
-        pathaoEnabled: true,
-      },
+      where: { status: true, pathaoEnabled: true },
       orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-      },
+      select: { id: true, name: true, slug: true },
     }),
+    prisma.pathaoWebhookEvent.findMany({
+      where: {
+        signatureValid: true,
+        processed: true,
+        orderId: { not: null },
+        ...(courierId ? { courierId } : {}),
+        ...(dateBasis === "webhook"
+          ? { receivedAt: { gte: startUtc, lte: endUtc } } : {}),
+        order: {
+          is: {
+            ...(sourceId ? { sourceId } : {}),
+            ...(dateBasis === "ready"
+              ? { readyToShipAt: { gte: startUtc, lte: endUtc } } : {}),
+            ...(dateBasis === "ready" && courierId
+              ? { pathaoCourierId: courierId } : {}),
+          },
+        },
+      },
+      orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+      select: { id: true, orderId: true, eventName: true, receivedAt: true },
+    }),
+  ]);
+
+  // In webhook-date mode, include only orders with a verified matching
+  // event received inside the chosen date range. In RTS-date mode, include
+  // submitted orders even if no webhook has reached OMS yet.
+  const webhookOrderIds = Array.from(new Set(
+    webhooks.map((event) => event.orderId).filter(
+      (id): id is string => Boolean(id)
+    )
+  ));
+
+  const [orders, unmatchedWebhookCount] = await Promise.all([
     prisma.order.findMany({
       where: {
-        readyToShipAt: {
-          gte: bangladeshDateStartUtc(from),
-          lte: bangladeshDateEndUtc(to),
-        },
-        pathaoConsignmentId: { not: null },
         ...(sourceId ? { sourceId } : {}),
-        ...(courierId ? { pathaoCourierId: courierId } : {}),
+        ...(dateBasis === "webhook"
+          ? { id: { in: webhookOrderIds } }
+          : {
+              readyToShipAt: { gte: startUtc, lte: endUtc },
+              ...(courierId ? { pathaoCourierId: courierId } : {}),
+              OR: [
+                { pathaoConsignmentId: { not: null } },
+                { pathaoSubmittedAt: { not: null } },
+                { pathaoWebhookEvents: {
+                  some: { signatureValid: true, processed: true },
+                } },
+              ],
+            }),
       },
       select: {
         id: true,
         totalAmount: true,
         deliveryCharge: true,
         pathaoDeliveryFee: true,
-        pathaoOrderStatus: true,
-        pathaoOrderStatusSlug: true,
         source: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
-          },
+          select: { id: true, name: true, type: true },
         },
         items: {
           select: {
@@ -229,12 +258,7 @@ export default async function PathaoDeliveryReportPage({
               select: {
                 sku: true,
                 name: true,
-                parent: {
-                  select: {
-                    sku: true,
-                    name: true,
-                  },
-                },
+                parent: { select: { sku: true, name: true } },
               },
             },
           },
@@ -242,9 +266,35 @@ export default async function PathaoDeliveryReportPage({
       },
       orderBy: [{ readyToShipAt: "desc" }, { createdAt: "desc" }],
     }),
+    dateBasis === "webhook"
+      ? prisma.pathaoWebhookEvent.count({
+          where: {
+            receivedAt: { gte: startUtc, lte: endUtc },
+            signatureValid: true,
+            orderId: null,
+            ...(courierId ? { courierId } : {}),
+          },
+        })
+      : Promise.resolve(0),
   ]);
 
+  const latestWebhookByOrder = new Map<string, string>();
+  const seenStagesByOrder = new Map<string, Set<string>>();
+  // The webhook query is newest first. Record the latest actual event once,
+  // and deduplicate repeated Pathao retries of the same order/event label.
+  for (const event of webhooks) {
+    if (!event.orderId) continue;
+    const label = canonicalWebhookEvent(event.eventName);
+    if (!latestWebhookByOrder.has(event.orderId)) {
+      latestWebhookByOrder.set(event.orderId, label);
+    }
+    const stages = seenStagesByOrder.get(event.orderId) || new Set<string>();
+    stages.add(label);
+    seenStagesByOrder.set(event.orderId, stages);
+  }
+
   const productStatusQuantity = new Map<string, number>();
+  const orderStatusCount = new Map<string, number>();
   const extraStatuses = new Set<string>();
 
   type ProductReportRow = {

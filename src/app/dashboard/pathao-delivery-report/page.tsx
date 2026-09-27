@@ -493,12 +493,14 @@ export default async function PathaoDeliveryReportPage({
           Pathao Delivery Report
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Product quantity by Pathao delivery status, filtered by Ready to Ship date, Source and courier.
+          Product delivery status from verified Pathao webhook events.
+          Filter by Ready to Ship date or webhook received date, Source and courier.
+          Current OMS status and Pathao API snapshots are not used for these event counts.
         </p>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
-        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr_1.2fr_auto]">
+        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label className="space-y-2 text-sm">
             <span className="font-medium text-slate-700">From</span>
             <input
@@ -551,23 +553,52 @@ export default async function PathaoDeliveryReportPage({
             </select>
           </label>
 
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-slate-700">Date Basis</span>
+            <select name="dateBasis" defaultValue={dateBasis}
+              className="w-full rounded-xl border px-3 py-2.5 outline-none">
+              <option value="ready">Ready to Ship date (shipment cohort)</option>
+              <option value="webhook">Webhook received date (daily activity)</option>
+            </select>
+          </label>
+
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-slate-700">Webhook Report View</span>
+            <select name="view" defaultValue={view}
+              className="w-full rounded-xl border px-3 py-2.5 outline-none">
+              <option value="latest">Latest webhook per order</option>
+              <option value="history">All webhook stages per order</option>
+            </select>
+          </label>
+
           <button className="self-end rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white">
             Apply Filter
           </button>
         </form>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <div className="rounded-2xl border border-sky-100 bg-sky-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-sky-700">Pathao Orders</p>
           <p className="mt-2 text-3xl font-bold text-sky-900">{orders.length}</p>
-          <p className="mt-1 text-xs text-sky-600">Orders in selected filter</p>
+          <p className="mt-1 text-xs text-sky-600">Unique OMS orders in selected filter</p>
         </div>
 
         <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-cyan-700">Product Qty</p>
           <p className="mt-2 text-3xl font-bold text-cyan-900">{totalProductQty}</p>
-          <p className="mt-1 text-xs text-cyan-600">Total item quantity</p>
+          <p className="mt-1 text-xs text-cyan-600">Unique order-item units; never summed per event</p>
+        </div>
+
+        <div className="rounded-2xl border border-violet-100 bg-violet-50 p-5 shadow-sm">
+          <p className="text-sm font-medium text-violet-700">Verified Webhook Events</p>
+          <p className="mt-2 text-3xl font-bold text-violet-900">
+            {webhooks.length.toLocaleString("en-BD")}
+          </p>
+          <p className="mt-1 text-xs text-violet-600">
+            {uniqueWebhookStages.toLocaleString("en-BD")} unique order/status
+            pair(s) · repeated callbacks counted once per status
+          </p>
         </div>
 
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
@@ -592,13 +623,32 @@ export default async function PathaoDeliveryReportPage({
         </div>
       </section>
 
+      {unmatchedWebhookCount > 0 ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {unmatchedWebhookCount} valid webhook event(s) received during
+          this period could not be matched to an OMS order. These events
+          cannot be assigned a product or source and are excluded from the
+          delivery quantities. Check the merchant order ID / consignment mapping.
+        </div>
+      ) : null}
+
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            Product Quantity by Pathao Status
+            {view === "latest"
+              ? "Product Quantity by Latest Pathao Webhook"
+              : "Product Quantity by Pathao Webhook Stage"}
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Each number is product/item quantity, not order count.
+            {view === "latest"
+              ? "One last received, verified webhook per order. If no callback has arrived, the order is marked No Verified Webhook. Generic events such as Order Updated are shown as received; they are not inferred delivery outcomes."
+              : "Each order contributes its product quantity once per distinct webhook stage. A parcel can pass through many stages, so status quantities must NOT be summed as unique product stock."}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            {dateBasis === "webhook"
+              ? "Dates refer to when OMS received the webhook; latest means latest event within this selected period."
+              : "Dates select orders by Ready to Ship date. Their entire verified webhook history up to now is used."}
+            {" "}Store Created / Store Updated events are not order-level delivery statuses.
           </p>
         </div>
 
@@ -616,13 +666,16 @@ export default async function PathaoDeliveryReportPage({
                 <p className={`mt-2 text-3xl font-bold ${colors.value}`}>
                   {status.count}
                 </p>
+                <p className={`mt-1 text-xs ${colors.label}`}>
+                  {status.orders} order(s)
+                </p>
               </div>
             );
           })}
 
-          {!statusCounts.length ? (
+          {!orders.length ? (
             <div className="rounded-2xl border border-dashed p-6 text-sm text-slate-500 sm:col-span-2 lg:col-span-3 xl:col-span-4">
-              No product quantity found for the selected filters.
+              No Pathao orders with reportable delivery data were found for the selected filters.
             </div>
           ) : null}
         </div>
@@ -633,7 +686,8 @@ export default async function PathaoDeliveryReportPage({
         statusColumns={statusColumns}
         statusTotals={statusTotals}
         totalProductQty={totalProductQty}
-        dateLabel={`${from} to ${to}`}
+        dateLabel={`${from} to ${to} · ${dateBasis === "webhook" ? "Webhook received date" : "Ready to Ship date"}`}
+        viewMode={view}
       />
     </div>
   );

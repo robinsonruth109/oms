@@ -106,19 +106,20 @@ function canonicalWebhookEvent(raw: string) {
 function statusCardClass(label: string) {
   const value = label.toLowerCase();
 
-  if (value.includes("deliver")) {
-    return {
-      card: "border-emerald-100 bg-emerald-50",
-      label: "text-emerald-700",
-      value: "text-emerald-800",
-    };
-  }
-
-  if (value.includes("return") || value.includes("cancel")) {
+  if (value.includes("return") || value.includes("cancel") ||
+      value.includes("failed")) {
     return {
       card: "border-rose-100 bg-rose-50",
       label: "text-rose-700",
       value: "text-rose-800",
+    };
+  }
+
+  if (value === "delivered") {
+    return {
+      card: "border-emerald-100 bg-emerald-50",
+      label: "text-emerald-700",
+      value: "text-emerald-800",
     };
   }
 
@@ -313,20 +314,31 @@ export default async function PathaoDeliveryReportPage({
   const productRowMap = new Map<string, ProductReportRow>();
 
   for (const order of orders) {
-    const status = canonicalPathaoStatus(order);
+    // Latest mode: one event per OMS order, so products and money are never
+    // multiplied by repeated webhook callbacks.
+    // History mode: one occurrence of each status per order. A parcel can
+    // appear in more than one stage, so stage quantities can exceed total qty.
+    const statuses = view === "history"
+      ? Array.from(seenStagesByOrder.get(order.id) || [])
+      : [latestWebhookByOrder.get(order.id) || "No Verified Webhook"];
+    if (!statuses.length) statuses.push("No Verified Webhook");
 
-    if (!PRIMARY_STATUS_COLUMNS.includes(status as (typeof PRIMARY_STATUS_COLUMNS)[number])) {
-      extraStatuses.add(status);
+    for (const status of statuses) {
+      orderStatusCount.set(status, (orderStatusCount.get(status) || 0) + 1);
+      if (!PRIMARY_STATUS_COLUMNS.includes(status as (typeof PRIMARY_STATUS_COLUMNS)[number])) {
+        extraStatuses.add(status);
+      }
     }
 
     for (const item of order.items) {
       const quantity = Math.max(0, Number(item.quantity || 0));
       if (!quantity) continue;
 
-      productStatusQuantity.set(
-        status,
-        (productStatusQuantity.get(status) || 0) + quantity
-      );
+      for (const status of statuses) {
+        productStatusQuantity.set(
+          status, (productStatusQuantity.get(status) || 0) + quantity
+        );
+      }
 
       const parentCode = item.product?.parent.sku || "UNLINKED";
       const parentName = item.product?.parent.name || "Product parent not linked";
@@ -334,23 +346,24 @@ export default async function PathaoDeliveryReportPage({
       const productName = item.product?.name || item.productName;
       const key = [parentCode, childSku, order.source.id].join("::");
 
-      const row =
-        productRowMap.get(key) ||
-        {
-          key,
-          parentCode,
-          parentName,
-          childSku,
-          productName,
-          sourceId: order.source.id,
-          sourceName: order.source.name,
-          sourceType: order.source.type,
-          totalQty: 0,
-          statuses: new Map<string, number>(),
-        };
+      const row = productRowMap.get(key) || {
+        key,
+        parentCode,
+        parentName,
+        childSku,
+        productName,
+        sourceId: order.source.id,
+        sourceName: order.source.name,
+        sourceType: order.source.type,
+        totalQty: 0,
+        statuses: new Map<string, number>(),
+      };
 
+      // Count a purchased SKU once per order, not once per webhook event.
       row.totalQty += quantity;
-      row.statuses.set(status, (row.statuses.get(status) || 0) + quantity);
+      for (const status of statuses) {
+        row.statuses.set(status, (row.statuses.get(status) || 0) + quantity);
+      }
       productRowMap.set(key, row);
     }
   }
@@ -452,12 +465,13 @@ export default async function PathaoDeliveryReportPage({
     ])
   );
 
-  const statusCounts = statusColumns
-    .map((label) => ({
-      label,
-      count: productStatusQuantity.get(label) || 0,
-    }))
-    .filter((row) => row.count > 0);
+  const statusCounts = statusColumns.map((label) => ({
+    label,
+    count: productStatusQuantity.get(label) || 0,
+    orders: orderStatusCount.get(label) || 0,
+  }));
+  const uniqueWebhookStages = Array.from(seenStagesByOrder.values())
+    .reduce((total, labels) => total + labels.size, 0);
 
   const totalAmount = orders.reduce(
     (sum, order) => sum + Number(order.totalAmount || 0),

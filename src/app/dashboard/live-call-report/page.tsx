@@ -4,8 +4,10 @@ import { authOptions } from "@/lib/auth";
 import {
   getBangladeshDateInputValue,
   getBangladeshDayRange,
+  BANGLADESH_UTC_OFFSET_HOURS,
 } from "@/lib/bangladesh-time";
 import LiveRefresh from "./live-refresh";
+import HourlyCallingChart from "./hourly-calling-chart";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -114,6 +116,10 @@ export default async function LiveCallReportPage({ searchParams }: Props) {
     },
   });
 
+  const hourlyCallsByAgent = new Map<string, number[]>(
+    agents.map((agent) => [agent.id, Array<number>(24).fill(0)])
+  );
+
   const rowMap = new Map<string, AgentRow>(
     agents.map((agent) => [
       agent.id,
@@ -140,6 +146,17 @@ export default async function LiveCallReportPage({ searchParams }: Props) {
     if (!row) continue;
 
     row.totalCalled += 1;
+
+    // calledAt is stored as a UTC instant. Bangladesh is UTC+06 and has
+    // no DST, so this is the correct local clock hour (00–23) regardless
+    // of Railway / the browser timezone.
+    if (order.calledAt) {
+      const localHour = (
+        order.calledAt.getUTCHours() + BANGLADESH_UTC_OFFSET_HOURS
+      ) % 24;
+      const hourCounts = hourlyCallsByAgent.get(order.calledByUserId);
+      if (hourCounts) hourCounts[localHour] += 1;
+    }
 
     switch (order.orderStatus) {
       case "READY_TO_SHIP":
@@ -379,6 +396,18 @@ export default async function LiveCallReportPage({ searchParams }: Props) {
           </table>
         </div>
       </section>
+
+      <HourlyCallingChart
+        key={`${from}-${to}-${selectedAgentId || "all"}`}
+        from={from}
+        to={to}
+        agents={agentRows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          username: row.username,
+          hourlyCalls: hourlyCallsByAgent.get(row.id) || Array<number>(24).fill(0),
+        }))}
+      />
 
       <section className="rounded-3xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <strong>Important:</strong> this report does not use order import date.

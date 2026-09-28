@@ -139,7 +139,7 @@ export default function HourlyCallingChart({
 
           <div className="overflow-x-auto px-2 pt-3 pb-2 sm:px-4">
             <svg
-              viewBox={\`0 0 \${CHART_WIDTH} \${CHART_HEIGHT}\`}
+              viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
               className="h-auto min-w-[960px] w-full"
               role="img"
               aria-label={

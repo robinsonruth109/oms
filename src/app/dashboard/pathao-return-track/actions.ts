@@ -117,6 +117,70 @@ function normalizeConsignmentId(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, "").toUpperCase();
 }
 
+export type DeleteUnmatchedReturnResult = {
+  success: boolean;
+  message: string;
+};
+
+/**
+ * Delete only an unresolved "Not Found / Previous Parcel" scan.
+ * A processed PathaoReturnTrack record is a separate model and is never
+ * modified by this action; neither orders nor physical inventory are touched.
+ */
+export async function deleteUnmatchedPathaoReturnAction({
+  id,
+  consignmentId,
+}: {
+  id: string;
+  consignmentId: string;
+}): Promise<DeleteUnmatchedReturnResult> {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user ||
+        !["ADMIN", "MANAGER"].includes(session.user.role)) {
+      return {
+        success: false,
+        message: "Only Admin or Manager can delete an unmatched return scan.",
+      };
+    }
+
+    const scanId = String(id || "").trim();
+    const cleanConsignmentId = normalizeConsignmentId(consignmentId);
+    if (!scanId || scanId.length > 191 ||
+        !cleanConsignmentId || cleanConsignmentId.length > 191) {
+      return { success: false, message: "Invalid unmatched return record." };
+    }
+
+    // Check BOTH the record ID and the CID visible when the user confirmed.
+    // A resolved return must not be removed by an outdated browser tab.
+    const deleted = await prisma.pathaoUnmatchedReturnScan.deleteMany({
+      where: {
+        id: scanId,
+        consignmentId: cleanConsignmentId,
+        status: "NOT_FOUND_PREVIOUS_PARCEL",
+      },
+    });
+
+    if (deleted.count !== 1) {
+      return {
+        success: false,
+        message: "The unmatched scan was already deleted or resolved. Refresh the report.",
+      };
+    }
+
+    revalidatePath("/dashboard/pathao-return-track");
+    return {
+      success: true,
+      message: `Removed ${cleanConsignmentId} from Not Found / Previous Parcel. Its scan record will no longer appear in the report or CSV.`,
+    };
+  } catch {
+    return {
+      success: false,
+      message: "Could not delete this unmatched scan. Please try again.",
+    };
+  }
+}
+
 function isUniqueConstraintError(error: unknown) {
   return (
     typeof error === "object" &&

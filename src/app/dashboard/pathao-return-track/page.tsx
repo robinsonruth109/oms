@@ -118,6 +118,7 @@ export default async function PathaoReturnTrackPage({ searchParams }: PageProps)
 
       <PathaoReturnTrackClient
         filterDate={filterDate}
+        canDeleteUnmatched={["ADMIN", "MANAGER"].includes(session.user.role)}
         summary={summary}
         unmatchedRows={unmatched.map((scan) => ({
           id: scan.id,

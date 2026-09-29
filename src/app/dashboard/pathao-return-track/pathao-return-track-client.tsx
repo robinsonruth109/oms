@@ -9,9 +9,11 @@ import {
   Loader2,
   PackageCheck,
   ScanLine,
+  Trash2,
   Undo2,
 } from "lucide-react";
 import {
+  deleteUnmatchedPathaoReturnAction,
   processSelectedPathaoReturnAction,
   repairZeroRestoredReturnsAction,
   scanPathaoReturnAction,
@@ -63,6 +65,7 @@ type Props = {
   filterDate: string;
   rows: DailyRow[];
   unmatchedRows: UnmatchedReturnRow[];
+  canDeleteUnmatched: boolean;
   summary: {
     totalReturns: number;
     fullReturns: number;
@@ -98,7 +101,13 @@ function returnTypeClass(type: string) {
     : "bg-amber-100 text-amber-800";
 }
 
-export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRows, summary }: Props) {
+export default function PathaoReturnTrackClient({
+  filterDate,
+  rows,
+  unmatchedRows,
+  canDeleteUnmatched,
+  summary,
+}: Props) {
   const router = useRouter();
   const scanRef = useRef<HTMLInputElement>(null);
   const [consignmentId, setConsignmentId] = useState("");
@@ -106,6 +115,12 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
   const [lookup, setLookup] = useState<ReturnLookupPayload | null>(null);
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
   const [isPending, startTransition] = useTransition();
+  const [deletingUnmatchedId, setDeletingUnmatchedId] = useState<string | null>(null);
+  const [deletedUnmatchedIds, setDeletedUnmatchedIds] = useState<string[]>([]);
+  const [unmatchedDeleteNotice, setUnmatchedDeleteNotice] = useState<Notice>(null);
+  const visibleUnmatchedRows = unmatchedRows.filter(
+    (scan) => !deletedUnmatchedIds.includes(scan.id)
+  );
 
   useEffect(() => {
     if (!lookup && !isPending) {
@@ -191,6 +206,48 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
         lookup.order.items.map((item) => [item.orderItemId, item.remainingQty])
       )
     );
+  }
+
+  function deleteUnmatchedScan(scan: UnmatchedReturnRow) {
+    if (!canDeleteUnmatched || isPending || deletingUnmatchedId ||
+        scan.status === "RESOLVED") return;
+
+    const confirmed = window.confirm(
+      `Delete unmatched return ${scan.consignmentId}?\n\n` +
+      "This removes its saved Not Found / Previous Parcel record " +
+      "from the report and CSV. It does not delete any processed return, " +
+      "modify an order, or change stock.\n\nThis cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setDeletingUnmatchedId(scan.id);
+    setUnmatchedDeleteNotice({
+      kind: "info",
+      text: `Deleting saved unmatched scan ${scan.consignmentId}...`,
+    });
+    startTransition(async () => {
+      try {
+        const result = await deleteUnmatchedPathaoReturnAction({
+          id: scan.id,
+          consignmentId: scan.consignmentId,
+        });
+        setUnmatchedDeleteNotice({
+          kind: result.success ? "success" : "error",
+          text: result.message,
+        });
+        if (result.success) {
+          setDeletedUnmatchedIds((previous) => [...previous, scan.id]);
+          router.refresh();
+        }
+      } catch {
+        setUnmatchedDeleteNotice({
+          kind: "error",
+          text: "The unmatched return could not be deleted. Please try again.",
+        });
+      } finally {
+        setDeletingUnmatchedId(null);
+      }
+    });
   }
 
   function repairZeroRestores() {
@@ -465,7 +522,7 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <p className="text-sm text-amber-800">Not Found / Previous Parcel</p>
           <p className="mt-2 text-2xl font-bold text-amber-900">
-            {unmatchedRows.filter((scan) => scan.status !== "RESOLVED").length}
+            {visibleUnmatchedRows.filter((scan) => scan.status !== "RESOLVED").length}
           </p>
           <p className="mt-1 text-xs text-amber-700">
             Unresolved IDs scanned on the selected date
@@ -483,7 +540,7 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
               Unmatched return barcodes scanned on {filterDate}. Their IDs are saved without modifying OMS stock.
             </p>
           </div>
-          {unmatchedRows.length ? (
+          {visibleUnmatchedRows.length ? (
             <a
               href={`/api/pathao-return-track/export?date=${encodeURIComponent(filterDate)}&type=not-found`}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
@@ -493,8 +550,20 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
             </a>
           ) : null}
         </div>
+        {unmatchedDeleteNotice ? (
+          <div className={
+            "mx-5 mt-4 rounded-xl border px-4 py-3 text-sm sm:mx-6 " +
+            (unmatchedDeleteNotice.kind === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : unmatchedDeleteNotice.kind === "error"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : "border-amber-200 bg-amber-50 text-amber-800")
+          }>
+            {unmatchedDeleteNotice.text}
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
-          <table className="min-w-[1200px] w-full text-left text-sm">
+          <table className="min-w-[1320px] w-full text-left text-sm">
             <thead className="bg-amber-50/40 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Scanned Return CID</th>
@@ -505,10 +574,15 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
                 <th className="px-4 py-3">First / Latest Scan</th>
                 <th className="px-4 py-3">Agent</th>
                 <th className="px-4 py-3">Details</th>
+                {canDeleteUnmatched ? (
+                  <th className="sticky right-0 z-10 bg-amber-50 px-4 py-3 text-right">
+                    Action
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {unmatchedRows.map((scan) => (
+              {visibleUnmatchedRows.map((scan) => (
                 <tr key={scan.id} className="align-top">
                   <td className="px-4 py-4 font-mono text-xs font-bold text-slate-900">
                     {scan.consignmentId}
@@ -550,11 +624,33 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
                       </p>
                     ) : null}
                   </td>
+                  {canDeleteUnmatched ? (
+                    <td className="sticky right-0 z-10 bg-white px-4 py-4 text-right shadow-[-4px_0_8px_-7px_rgba(15,23,42,0.4)]">
+                      {scan.status !== "RESOLVED" ? (
+                        <button
+                          type="button"
+                          onClick={() => deleteUnmatchedScan(scan)}
+                          disabled={isPending || deletingUnmatchedId !== null}
+                          title={`Delete unmatched scan ${scan.consignmentId}`}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {deletingUnmatchedId === scan.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          {deletingUnmatchedId === scan.id ? "Deleting..." : "Delete"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
-              {!unmatchedRows.length ? (
+              {!visibleUnmatchedRows.length ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-500">
+                  <td colSpan={canDeleteUnmatched ? 9 : 8} className="px-5 py-8 text-center text-sm text-slate-500">
                     No unmatched barcodes saved on this date.
                   </td>
                 </tr>
@@ -582,7 +678,7 @@ export default function PathaoReturnTrackClient({ filterDate, rows, unmatchedRow
                 Filter
               </button>
             </form>
-            {rows.length || unmatchedRows.length ? (
+            {rows.length || visibleUnmatchedRows.length ? (
               <a
                 href={`/api/pathao-return-track/export?date=${encodeURIComponent(filterDate)}`}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"

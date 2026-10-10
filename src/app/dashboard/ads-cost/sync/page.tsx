@@ -48,17 +48,22 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
   const toRange = getBangladeshDayRange(to);
   const { prisma } = await import("@/lib/prisma");
 
-  const [parents, sources, connections, campaigns, syncRuns] =
+  const [parents, sources, merchants, connections, campaigns, syncRuns] =
     await Promise.all([
       prisma.productParent.findMany({
         where: { status: true },
         orderBy: { sku: "asc" },
-        select: { id: true, sku: true, name: true },
+        select: { id: true, sku: true, name: true, merchantId: true },
       }),
       prisma.orderSource.findMany({
         where: { status: true },
         orderBy: { name: "asc" },
         select: { id: true, name: true, type: true },
+      }),
+      prisma.merchant.findMany({
+        where: { status: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
       }),
       prisma.metaAdsConnection.findMany({
         include: {
@@ -144,6 +149,7 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
       mapping: mapping
         ? {
             productParentId: mapping.productParentId,
+            merchantId: mapping.merchantId,
             productParent: {
               sku: mapping.productParent.sku,
               name: mapping.productParent.name,
@@ -198,6 +204,7 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
         }}
         parents={parents}
         sources={sources}
+        merchants={merchants}
         connections={connections.map((connection) => ({
           id: connection.id,
           metaUserName: connection.metaUserName,

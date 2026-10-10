@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { requireMerchantContext, formatTaka } from "@/lib/merchant-portal";
 import { prisma } from "@/lib/prisma";
 
@@ -137,8 +138,8 @@ export default async function MerchantProductsPage() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <>
-                  <tr key={row.key} className="border-t bg-white">
+                <Fragment key={row.key}>
+                  <tr className="border-t bg-white">
                     <td className="px-5 py-4">
                       <p className="font-bold text-slate-950">{row.parentSku}</p>
                       <p className="text-xs text-slate-500">{row.parentName}</p>
@@ -189,7 +190,7 @@ export default async function MerchantProductsPage() {
                       </td>
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
               {!rows.length ? (
                 <tr>

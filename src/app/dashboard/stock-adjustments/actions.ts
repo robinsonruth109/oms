@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
 import { resolvePhysicalRequirements } from "@/lib/inventory";
+import { enqueueStockSyncForOwners } from "@/lib/product-catalog-sync";
 
 export type StockAdjustmentActionState = {
   success: boolean;
@@ -121,6 +122,13 @@ export async function createProductStockAdjustment(
           },
         });
 
+        await enqueueStockSyncForOwners(tx, [
+          {
+            ownerType: shared ? "PRODUCT_PARENT" : "PRODUCT",
+            ownerId: shared ? product.parentId : product.id,
+          },
+        ]);
+
         return {
           sku: shared ? product.parent.sku : product.sku,
           units: Math.abs(delta),
@@ -222,6 +230,14 @@ export async function createProductStockAdjustment(
           createdByName: session.user.name || session.user.username || "OMS User",
         },
       });
+
+      await enqueueStockSyncForOwners(
+        tx,
+        requirements.map((owner) => ({
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+        }))
+      );
 
       return {
         sku: product.sku,

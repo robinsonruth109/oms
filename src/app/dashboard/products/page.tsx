@@ -124,7 +124,6 @@ export default async function ProductsPage({
               NOT: { id: edit },
             },
             orderBy: { sku: "asc" },
-            take: 500,
             select: {
               id: true,
               sku: true,

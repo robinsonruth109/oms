@@ -4,9 +4,15 @@ import { useMemo, useState, useTransition } from "react";
 import {
   Building2,
   CircleDollarSign,
+  Eye,
+  EyeOff,
+  KeyRound,
   PackageCheck,
+  Pencil,
+  Save,
   Truck,
   WalletCards,
+  X,
 } from "lucide-react";
 
 import {
@@ -16,6 +22,7 @@ import {
   omsBuyMerchantProduct,
   rechargeMerchantDollar,
   saveMerchantOperatingCost,
+  updateMerchant,
 } from "./actions";
 
 type Merchant = {
@@ -184,6 +191,37 @@ export default function MerchantControlClient({
   const [buyDate, setBuyDate] = useState(today());
   const [buyQty, setBuyQty] = useState(1);
   const [buyNote, setBuyNote] = useState("");
+
+  const [editingMerchantId, setEditingMerchantId] = useState("");
+  const editingMerchant = merchants.find(
+    (merchant) => merchant.id === editingMerchantId
+  );
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editPasswordConfirm, setEditPasswordConfirm] = useState("");
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  function openMerchantEditor(merchant: Merchant) {
+    setEditingMerchantId(merchant.id);
+    setEditName(merchant.name);
+    setEditPhone(merchant.phone);
+    setEditAddress(merchant.address);
+    setEditPassword("");
+    setEditPasswordConfirm("");
+    setShowEditPassword(false);
+    setEditError("");
+  }
+
+  function closeMerchantEditor() {
+    if (pending) return;
+    setEditingMerchantId("");
+    setEditPassword("");
+    setEditPasswordConfirm("");
+    setEditError("");
+  }
 
   const filteredParents = useMemo(() => {
     const q = parentQuery.toLowerCase().trim();
@@ -767,18 +805,28 @@ export default function MerchantControlClient({
                     {merchant.address}
                   </p>
                 </div>
-                <span
-                  className={
-                    "rounded-full px-2.5 py-1 text-xs font-semibold " +
-                    (merchant.status && merchant.loginEnabled
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-600")
-                  }
-                >
-                  {merchant.status && merchant.loginEnabled
-                    ? "ACTIVE"
-                    : "INACTIVE"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openMerchantEditor(merchant)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    View / Edit
+                  </button>
+                  <span
+                    className={
+                      "rounded-full px-2.5 py-1 text-xs font-semibold " +
+                      (merchant.status && merchant.loginEnabled
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-100 text-slate-600")
+                    }
+                  >
+                    {merchant.status && merchant.loginEnabled
+                      ? "ACTIVE"
+                      : "INACTIVE"}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -828,6 +876,253 @@ export default function MerchantControlClient({
           ) : null}
         </div>
       </section>
+
+      {editingMerchant ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeMerchantEditor();
+          }}
+        >
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-white px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                  Merchant Account
+                </p>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">
+                  View / Edit {editingMerchant.name}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Update Merchant profile details or set a new login password.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeMerchantEditor}
+                disabled={pending}
+                className="rounded-xl border p-2 text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+                aria-label="Close Merchant editor"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-6 p-5 sm:p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Login Username
+                  </p>
+                  <p className="mt-1 break-all font-mono font-bold text-slate-950">
+                    {editingMerchant.username || "—"}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Product Parents
+                  </p>
+                  <p className="mt-1 text-xl font-bold text-slate-950">
+                    {editingMerchant.parentCount}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Couriers
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-950">
+                    {editingMerchant.courierNames.join(", ") || "None"}
+                  </p>
+                </div>
+              </div>
+
+              <section className="rounded-2xl border p-4 sm:p-5">
+                <div className="flex items-center gap-2">
+                  <Pencil className="h-4 w-4 text-slate-600" />
+                  <h3 className="font-bold text-slate-950">Merchant Profile</h3>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Merchant Name
+                    <input
+                      value={editName}
+                      onChange={(event) => setEditName(event.target.value)}
+                      className="mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-400"
+                    />
+                  </label>
+
+                  <label className="text-sm font-medium text-slate-700">
+                    Phone Number
+                    <input
+                      value={editPhone}
+                      onChange={(event) => setEditPhone(event.target.value)}
+                      className="mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-400"
+                    />
+                  </label>
+
+                  <label className="text-sm font-medium text-slate-700 sm:col-span-2">
+                    Address
+                    <textarea
+                      value={editAddress}
+                      onChange={(event) => setEditAddress(event.target.value)}
+                      rows={3}
+                      className="mt-1.5 w-full resize-y rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-400"
+                    />
+                  </label>
+                </div>
+
+                <p className="mt-3 text-xs leading-5 text-slate-400">
+                  Changing the phone number updates the Merchant contact number.
+                  The existing login username remains unchanged so the Merchant
+                  is not unexpectedly locked out.
+                </p>
+              </section>
+
+              <section className="rounded-2xl border p-4 sm:p-5">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-slate-600" />
+                  <h3 className="font-bold text-slate-950">Change Password</h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Leave both password fields blank if you only want to update
+                  the Merchant profile.
+                </p>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    New Password
+                    <div className="relative mt-1.5">
+                      <input
+                        type={showEditPassword ? "text" : "password"}
+                        value={editPassword}
+                        onChange={(event) => setEditPassword(event.target.value)}
+                        placeholder="Minimum 8 characters"
+                        autoComplete="new-password"
+                        className="w-full rounded-xl border px-3 py-2.5 pr-11 text-sm outline-none focus:border-slate-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditPassword((value) => !value)}
+                        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 hover:text-slate-700"
+                        aria-label={showEditPassword ? "Hide password" : "Show password"}
+                      >
+                        {showEditPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="text-sm font-medium text-slate-700">
+                    Confirm New Password
+                    <input
+                      type={showEditPassword ? "text" : "password"}
+                      value={editPasswordConfirm}
+                      onChange={(event) =>
+                        setEditPasswordConfirm(event.target.value)
+                      }
+                      placeholder="Repeat new password"
+                      autoComplete="new-password"
+                      className="mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-slate-400"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              {editingMerchant.parentCodes.length ? (
+                <section className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Assigned Parent Codes
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {editingMerchant.parentCodes.map((code) => (
+                      <span
+                        key={code}
+                        className="rounded-lg border bg-white px-2.5 py-1 text-xs font-semibold text-slate-700"
+                      >
+                        {code}
+                      </span>
+                    ))}
+                    {editingMerchant.parentCount >
+                    editingMerchant.parentCodes.length ? (
+                      <span className="rounded-lg border bg-white px-2.5 py-1 text-xs font-semibold text-slate-500">
+                        +
+                        {editingMerchant.parentCount -
+                          editingMerchant.parentCodes.length}{" "}
+                        more
+                      </span>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {editError ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                  {editError}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col-reverse gap-2 border-t pt-5 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeMerchantEditor}
+                  disabled={pending}
+                  className="rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setEditError("");
+
+                    if (!editName.trim() || !editPhone.trim() || !editAddress.trim()) {
+                      setEditError("Name, phone number and address are required.");
+                      return;
+                    }
+
+                    if (editPassword && editPassword.length < 8) {
+                      setEditError("New password must be at least 8 characters.");
+                      return;
+                    }
+
+                    if (editPassword !== editPasswordConfirm) {
+                      setEditError("New password and confirmation do not match.");
+                      return;
+                    }
+
+                    startTransition(async () => {
+                      const result = await updateMerchant({
+                        merchantId: editingMerchant.id,
+                        name: editName,
+                        phone: editPhone,
+                        address: editAddress,
+                        newPassword: editPassword || undefined,
+                      });
+
+                      if (!result.success) {
+                        setEditError(result.message);
+                        return;
+                      }
+
+                      setMessage(result.message);
+                      window.location.reload();
+                    });
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  <Save className="h-4 w-4" />
+                  {pending ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
+import { enqueueFullSyncForProduct } from "@/lib/product-catalog-sync";
 
 export type BundleRecipeState = { success: boolean; message: string };
 
@@ -125,6 +126,8 @@ export async function saveBundleRecipe(
           units: row.units,
         })),
       });
+
+      await enqueueFullSyncForProduct(tx, bundle.id);
     });
 
     revalidatePath("/dashboard/products");

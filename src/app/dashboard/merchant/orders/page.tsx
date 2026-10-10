@@ -31,15 +31,7 @@ export default async function MerchantOrdersPage({ searchParams }: Props) {
 
   const orders = await prisma.order.findMany({
     where: {
-      calledAt: { gte: start, lte: end },
-      orderStatus: {
-        notIn: [
-          "PENDING_CONFIRMATION",
-          "NO_ANSWER",
-          "PHONE_OFF",
-          "DOUBLE_ORDER",
-        ],
-      },
+      readyToShipAt: { gte: start, lte: end },
       items: {
         some: {
           product: {
@@ -55,6 +47,7 @@ export default async function MerchantOrdersPage({ searchParams }: Props) {
       invoiceId: true,
       orderId: true,
       calledAt: true,
+      readyToShipAt: true,
       orderStatus: true,
       courier: true,
       pathaoOrderStatus: true,
@@ -209,8 +202,8 @@ export default async function MerchantOrdersPage({ searchParams }: Props) {
                       </p>
                     </td>
                     <td className="px-5 py-4">
-                      {order.calledAt
-                        ? order.calledAt.toLocaleString("en-BD")
+                      {order.readyToShipAt
+                        ? order.readyToShipAt.toLocaleString("en-BD")
                         : "—"}
                     </td>
                   </tr>

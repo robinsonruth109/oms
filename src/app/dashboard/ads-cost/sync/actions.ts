@@ -92,7 +92,7 @@ export async function saveMetaCampaignMapping(input: {
       prisma.metaCampaign.findUnique({ where: { id: campaignId }, select: { id: true } }),
       prisma.productParent.findUnique({
         where: { id: productParentId },
-        select: { id: true, merchantId: true },
+        select: { id: true },
       }),
       prisma.orderSource.count({ where: { id: { in: sourceIds }, status: true } }),
     ]);
@@ -100,14 +100,6 @@ export async function saveMetaCampaignMapping(input: {
     if (!campaign || !parent || sourceCount !== sourceIds.length) {
       return { success: false, message: "Campaign, Product Parent, or Source is invalid." };
     }
-    if ((parent.merchantId || null) !== merchantId) {
-      return {
-        success: false,
-        message:
-          "Merchant must match the Product Parent owner. Use Merchant Control to assign the Parent first.",
-      };
-    }
-
     await prisma.$transaction(async (tx) => {
       const mapping = await tx.metaCampaignMapping.upsert({
         where: { campaignId },
@@ -200,7 +192,7 @@ export async function saveMetaCampaignMappings(input: {
       parentIds.length
         ? prisma.productParent.findMany({
             where: { id: { in: parentIds }, status: true },
-            select: { id: true, merchantId: true },
+            select: { id: true },
           })
         : Promise.resolve([]),
       sourceIds.length
@@ -213,18 +205,6 @@ export async function saveMetaCampaignMappings(input: {
     }
     if (parentRows.length !== parentIds.length) {
       return { success: false, message: "One or more Product Parents are invalid or inactive." };
-    }
-    const parentById = new Map(parentRows.map((parent) => [parent.id, parent]));
-    for (const row of rows) {
-      if (!row.productParentId) continue;
-      const parent = parentById.get(row.productParentId);
-      if (!parent || (parent.merchantId || null) !== row.merchantId) {
-        return {
-          success: false,
-          message:
-            "Merchant must match each Product Parent owner. Update Merchant Control first.",
-        };
-      }
     }
     if (sourceCount !== sourceIds.length) {
       return { success: false, message: "One or more Sources are invalid or inactive." };

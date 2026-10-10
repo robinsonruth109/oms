@@ -160,6 +160,12 @@ export async function POST(
       nextData.pathaoConsignmentId = fields.consignmentId;
       nextData.pathaoSubmissionStatus = "CONSIGNMENT_CREATED";
       nextData.pathaoCreatedAt = order.pathaoCreatedAt || new Date();
+
+      // In Ready to Ship, csvDownloaded is the historical courier-submitted
+      // flag used by both CSV batches and direct Pathao API pushes. A verified
+      // outbound CID proves the parcel is already submitted, even if an older
+      // record missed this flag.
+      nextData.csvDownloaded = true;
     }
 
     if (fields.merchantOrderId) {

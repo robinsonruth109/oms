@@ -19,8 +19,6 @@ export default async function MerchantProductsPage() {
     },
   });
 
-  let totalValue = 0;
-
   const rows = parents.map((parent) => {
     if (parent.stockMode === "PARENT_STOCK") {
       const available = Math.max(
@@ -30,7 +28,6 @@ export default async function MerchantProductsPage() {
       );
       const unitCost = Number(parent.purchasePrice || 0);
       const value = parent.stockVerifiedAt ? available * unitCost : 0;
-      totalValue += value;
 
       return {
         key: parent.id,
@@ -66,7 +63,6 @@ export default async function MerchantProductsPage() {
         );
         const unitCost = Number(product.purchasePrice || 0);
         const value = product.stockVerifiedAt ? stock * unitCost : 0;
-        totalValue += value;
 
         return {
           sku: product.sku,
@@ -100,6 +96,8 @@ export default async function MerchantProductsPage() {
       children,
     };
   });
+
+  const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
 
   return (
     <div className="space-y-6">

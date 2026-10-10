@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
+import { enqueueStockSyncForOwners } from "@/lib/product-catalog-sync";
 
 export type LocalProductPurchaseActionState = {
   success: boolean;
@@ -183,6 +184,13 @@ export async function createLocalProductPurchase(
             session.user.name || session.user.username || "OMS User",
         },
       });
+
+      await enqueueStockSyncForOwners(tx, [
+        {
+          ownerType: parentStock ? "PRODUCT_PARENT" : "PRODUCT",
+          ownerId: parentStock ? product.parentId : product.id,
+        },
+      ]);
 
       return {
         sku: product.sku,

@@ -135,13 +135,28 @@ model Integration {
   source        OrderSource         @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   apiKey        String              @unique
   webhookSecret String?
+
+  // Actual store engine and catalog URL/taxonomy style are separate concepts.
+  // A Laravel store can use either /collections/{slug} or /subcategory/{slug}.
+  catalogMode       IntegrationCatalogMode @default(SUBCATEGORY)
+  baseUrl           String?
+  catalogApiToken   String? @db.Text
+  productSyncEnabled Boolean @default(false)
+  lastTaxonomySyncAt DateTime?
+  lastCatalogSyncAt  DateTime?
+
   status        Boolean             @default(true)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
   orders Order[]
+  taxonomyTerms ProductWebsiteTaxonomyTerm[]
+  productListings ProductWebsiteListing[]
+  productSyncJobs ProductSyncJob[]
+  catalogImportCandidates ProductCatalogImportCandidate[]
 
   @@index([platform])
+  @@index([catalogMode])
   @@index([sourceId])
 }
 
@@ -344,6 +359,186 @@ model Product {
   merchantOmsPurchases MerchantOmsPurchase[]
   bundleComponents ProductBundleComponent[] @relation("BundleSku")
   usedInBundles ProductBundleComponent[] @relation("BundleComponentSku")
+
+  catalogContent ProductCatalogContent?
+  media ProductMedia[]
+  websiteListings ProductWebsiteListing[]
+  productSyncJobs ProductSyncJob[]
+  catalogImportMatches ProductCatalogImportCandidate[] @relation("CatalogImportMatchedProduct")
+}
+
+model ProductCatalogContent {
+  id String @id @default(uuid())
+
+  productId String @unique
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  banglaName  String? @db.Text
+  englishName String? @db.Text
+
+  // Product URL slug. Manually supplied Unicode/Bangla/emoji slugs are stored
+  // exactly; never transliterate or regenerate them after Admin saves one.
+  productSlug String? @db.Text
+
+  shortDescriptionHtml String? @db.LongText
+  fullDescriptionHtml  String? @db.LongText
+
+  oldPrice Decimal? @db.Decimal(10, 2)
+  featured Boolean @default(false)
+  sortOrder Int @default(0)
+
+  metaTitle       String? @db.Text
+  metaDescription String? @db.Text
+  externalVideoUrl String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProductMedia {
+  id String @id @default(uuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  kind ProductMediaKind
+
+  // Durable object key in Railway S3-compatible bucket. Never store a
+  // temporary presigned URL as the canonical media reference.
+  objectKey String @unique @db.Text
+  originalFileName String @db.Text
+  mimeType String
+  sizeBytes BigInt
+  checksum String?
+  isPrimary Boolean @default(false)
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, kind, sortOrder])
+}
+
+model ProductWebsiteTaxonomyTerm {
+  id String @id @default(uuid())
+
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  externalId String
+  type ProductWebsiteTaxonomyType
+  parentExternalId String?
+  name String @db.Text
+
+  // One canonical raw Unicode slug regardless of COLLECTION/SUBCATEGORY mode.
+  // Preserve Bangla, English, emoji, numbers and hyphens exactly.
+  slug String @db.Text
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listingLinks ProductWebsiteTaxonomy[]
+
+  @@unique([integrationId, type, externalId])
+  @@index([integrationId, type])
+}
+
+model ProductWebsiteListing {
+  id String @id @default(uuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  // Optional website-specific overrides. Empty values inherit Product Master.
+  productSlugOverride String? @db.Text
+  sellingPriceOverride Decimal? @db.Decimal(10, 2)
+  oldPriceOverride Decimal? @db.Decimal(10, 2)
+  active Boolean @default(true)
+  featuredOverride Boolean?
+
+  remoteProductId String?
+  publicUrl String? @db.Text
+
+  syncStatus ProductWebsiteSyncStatus @default(NOT_PUBLISHED)
+  lastSyncedAt DateTime?
+  lastSyncError String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  taxonomyLinks ProductWebsiteTaxonomy[]
+  syncJobs ProductSyncJob[]
+
+  @@unique([productId, integrationId])
+  @@index([integrationId, syncStatus])
+}
+
+model ProductWebsiteTaxonomy {
+  id String @id @default(uuid())
+
+  listingId String
+  listing   ProductWebsiteListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  termId String
+  term   ProductWebsiteTaxonomyTerm @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([listingId, termId])
+  @@index([termId])
+}
+
+model ProductSyncJob {
+  id String @id @default(uuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  listingId String?
+  listing   ProductWebsiteListing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  operation ProductSyncOperation
+  status ProductSyncJobStatus @default(PENDING)
+  attempts Int @default(0)
+  payloadHash String?
+  lastError String? @db.Text
+  availableAt DateTime @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, availableAt])
+  @@index([productId, integrationId])
+}
+
+model ProductCatalogImportCandidate {
+  id String @id @default(uuid())
+
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  remoteProductId String
+  sku String
+  payloadJson String @db.LongText
+  status ProductCatalogImportStatus @default(PENDING)
+
+  matchedProductId String?
+  matchedProduct Product? @relation("CatalogImportMatchedProduct", fields: [matchedProductId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([integrationId, remoteProductId])
+  @@index([integrationId, sku])
+  @@index([status])
 }
 
 model ProductBundleComponent {
@@ -1288,6 +1483,49 @@ enum OrderSourceType {
 enum IntegrationPlatform {
   SHOPIFY
   LARAVEL
+}
+
+enum IntegrationCatalogMode {
+  COLLECTION
+  SUBCATEGORY
+}
+
+enum ProductWebsiteTaxonomyType {
+  CATEGORY
+  SUBCATEGORY
+  COLLECTION
+}
+
+enum ProductMediaKind {
+  IMAGE
+  VIDEO
+}
+
+enum ProductWebsiteSyncStatus {
+  NOT_PUBLISHED
+  PENDING
+  SYNCING
+  SYNCED
+  FAILED
+}
+
+enum ProductSyncOperation {
+  FULL_UPSERT
+  STOCK_ONLY
+  UNPUBLISH
+}
+
+enum ProductSyncJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum ProductCatalogImportStatus {
+  PENDING
+  MATCHED
+  IGNORED
 }
 
 enum OrderKind {

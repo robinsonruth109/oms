@@ -217,7 +217,6 @@ export default function PurchaseOrdersClient({
                     type="button"
                     onClick={() => {
                       setProductId(product.id);
-                      setMerchantId(product.merchantId || "");
                       setProductSearch(`${product.parentSku} - ${product.name}`);
                     }}
                     className="flex w-full flex-col items-start border-b px-4 py-3 text-left hover:bg-slate-50"
@@ -288,7 +287,7 @@ export default function PurchaseOrdersClient({
               ))}
             </select>
             <p className="mt-1 text-[11px] text-slate-400">
-              Merchant must match the Product Parent owner. Unassigned parents use OMS.
+              Leave blank for default OMS. Select a Merchant when this Purchase Order belongs to that Merchant.
             </p>
           </div>
 

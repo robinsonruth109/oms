@@ -9,7 +9,6 @@ import {
   CircleDollarSign,
   Banknote,
   Megaphone,
-  PackageCheck,
   ReceiptText,
   Truck,
   Users,
@@ -958,6 +957,16 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     .sort((a, b) => b.appliedAmount - a.appliedAmount);
 
   const warnings: string[] = [];
+  const unattributedProductAds = Math.max(
+    0,
+    adsApplied - productAttributedAds
+  );
+  if (unattributedProductAds > 0.01) {
+    warnings.push(
+      taka(unattributedProductAds) +
+        " of applied Meta spend has no usable Parent Product mapping, so it remains in company P&L but is not assigned to a Parent Code row."
+    );
+  }
   if (missingCostLines) {
     warnings.push(
       String(missingCostLines) +

@@ -17,6 +17,8 @@ type ProductsPageProps = {
   searchParams?: Promise<{
     q?: string;
     edit?: string;
+    view?: string;
+    section?: string;
   }>;
 };
 export const dynamic = "force-dynamic";
@@ -33,6 +35,17 @@ export default async function ProductsPage({
   const params = (await searchParams) || {};
   const q = (params.q || "").trim();
   const edit = (params.edit || "").trim();
+  const requestedView = (params.view || "").trim();
+  const requestedSection = (params.section || "").trim();
+  const activeView = edit
+    ? "edit"
+    : requestedView === "create" || requestedView === "import"
+      ? requestedView
+      : "products";
+  const editSection =
+    requestedSection === "bundle" || requestedSection === "catalog"
+      ? requestedSection
+      : "inventory";
   const { prisma } = await import("@/lib/prisma");
   const where =
     q.length > 0
@@ -189,230 +202,418 @@ export default async function ProductsPage({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="space-y-5">
+      <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Product Master</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Manage parent and variation inventory. Old balances stay unverified
-              until an exact physical count is entered; unverified quantities
-              are excluded from Stock Valuation.
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-950">Product Master</h1>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                Inventory + Catalog Hub
+              </span>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm text-slate-500">
+              Keep product inventory, bundle recipes and website publishing in one
+              place without showing every tool at the same time.
             </p>
             {!canManageMaster ? (
               <p className="mt-2 text-xs font-medium text-amber-700">
-                Manager view: master-data create/edit/import is Admin-only. Stock adjustment is available.
+                Manager view: master-data create/edit/import is Admin-only. Stock
+                operations remain available.
               </p>
             ) : null}
           </div>
+
           <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard/products-purchases/local-purchase"
-              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">
+            <Link
+              href="/dashboard/stock-valuation"
+              className="rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Stock Valuation
+            </Link>
+            <Link
+              href="/dashboard/products-purchases/local-purchase"
+              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
+            >
               Local Purchase
             </Link>
-            <Link href="/dashboard/stock-adjustments"
-              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white">
+            <Link
+              href="/dashboard/stock-adjustments"
+              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white"
+            >
               Adjust Stock
             </Link>
           </div>
         </div>
       </section>
 
-      <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
-        <form className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto]">
-          <input
-            type="text"
-            name="q"
-            defaultValue={q}
-            placeholder="Search by SKU, product name, parent SKU..."
-            className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
-          />
-          <button
-            type="submit"
-            className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
-          >
-            Search
-          </button>
-        </form>
-      </section>
+      {activeView !== "edit" ? (
+        <nav className="rounded-2xl border bg-white p-2 shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={q ? `/dashboard/products?q=${encodeURIComponent(q)}` : "/dashboard/products"}
+              className={
+                "rounded-xl px-4 py-2.5 text-sm font-semibold transition " +
+                (activeView === "products"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100")
+              }
+            >
+              Products
+            </Link>
 
-      {canManageMaster && editProduct ? (
-        <>
-          <EditProductForm
-            product={{
-              id: editProduct.id,
-              sku: editProduct.sku,
-              name: editProduct.name,
-              quantity: editProduct.quantity,
-              unitsPerSale: editProduct.unitsPerSale,
-              inventoryKind: editProduct.inventoryKind,
-              stockVerified: editProduct.parent.stockMode === "PARENT_STOCK"
-                ? Boolean(editProduct.parent.stockVerifiedAt)
-                : Boolean(editProduct.stockVerifiedAt),
-              purchasePrice: String(editProduct.purchasePrice),
-              sellingPrice: String(editProduct.sellingPrice),
-              status: editProduct.status,
-              parent: {
-                sku: editProduct.parent.sku,
-                name: editProduct.parent.name,
-                stockMode: editProduct.parent.stockMode,
-                stockQuantity: editProduct.parent.stockQuantity,
-                purchasePrice: String(editProduct.parent.purchasePrice || 0),
-              },
-            }}
-          />
-
-          <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
-            <div className="mb-4">
-              <h2 className="text-xl font-bold text-slate-950">
-                Bundle / Composite Recipe
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Bundle Recipes are now part of Product Master. A bundle has no
-                independent physical stock or valuation; availability comes from
-                its physical component SKUs.
-              </p>
-            </div>
-            <BundleRecipeEditor
-              product={{
-                id: editProduct.id,
-                sku: editProduct.sku,
-                name: editProduct.name,
-                parentSku: editProduct.parent.sku,
-                mode: editProduct.parent.stockMode,
-                kind: editProduct.inventoryKind,
-                legacyQuantity: editProduct.quantity,
-                existing: editProduct.bundleComponents.map((part) => ({
-                  componentProductId: part.componentProductId,
-                  units: part.units,
-                })),
-              }}
-              options={componentOptions.map((option) => ({
-                id: option.id,
-                sku: option.sku,
-                name: option.name,
-                quantity: option.quantity,
-                cost: Number(option.purchasePrice),
-              }))}
-            />
-          </section>
-
-          <ProductCatalogEditor
-            product={{
-              id: editProduct.id,
-              sku: editProduct.sku,
-              name: editProduct.name,
-              sellingPrice: Number(editProduct.sellingPrice),
-              content: {
-                banglaName: editProduct.catalogContent?.banglaName || "",
-                englishName:
-                  editProduct.catalogContent?.englishName || editProduct.name,
-                productSlug:
-                  editProduct.catalogContent?.productSlug ||
-                  editProduct.slug ||
-                  "",
-                shortDescriptionHtml:
-                  editProduct.catalogContent?.shortDescriptionHtml || "",
-                fullDescriptionHtml:
-                  editProduct.catalogContent?.fullDescriptionHtml || "",
-                oldPrice:
-                  editProduct.catalogContent?.oldPrice !== null &&
-                  editProduct.catalogContent?.oldPrice !== undefined
-                    ? Number(editProduct.catalogContent.oldPrice)
-                    : null,
-                featured: Boolean(editProduct.catalogContent?.featured),
-                sortOrder: editProduct.catalogContent?.sortOrder || 0,
-                metaTitle: editProduct.catalogContent?.metaTitle || "",
-                metaDescription:
-                  editProduct.catalogContent?.metaDescription || "",
-                externalVideoUrl:
-                  editProduct.catalogContent?.externalVideoUrl || "",
-              },
-            }}
-            websites={integrations.map((integration) => {
-              const listing = editProduct.websiteListings.find(
-                (row) => row.integrationId === integration.id
-              );
-              return {
-                id: integration.id,
-                name: integration.name,
-                platform: integration.platform,
-                catalogMode: integration.catalogMode,
-                productSyncEnabled: integration.productSyncEnabled,
-                baseUrl: integration.baseUrl,
-                taxonomyTerms: integration.taxonomyTerms.map((term) => ({
-                  id: term.id,
-                  externalId: term.externalId,
-                  type: term.type,
-                  parentExternalId: term.parentExternalId,
-                  name: term.name,
-                  slug: term.slug,
-                })),
-                listing: listing
-                  ? {
-                      id: listing.id,
-                      productSlugOverride: listing.productSlugOverride,
-                      sellingPriceOverride:
-                        listing.sellingPriceOverride !== null
-                          ? Number(listing.sellingPriceOverride)
-                          : null,
-                      oldPriceOverride:
-                        listing.oldPriceOverride !== null
-                          ? Number(listing.oldPriceOverride)
-                          : null,
-                      active: listing.active,
-                      featuredOverride: listing.featuredOverride,
-                      remoteProductId: listing.remoteProductId,
-                      publicUrl: listing.publicUrl,
-                      syncStatus: listing.syncStatus,
-                      lastSyncedAt: listing.lastSyncedAt
-                        ? listing.lastSyncedAt.toISOString()
-                        : null,
-                      lastSyncError: listing.lastSyncError,
-                      taxonomyTermIds: listing.taxonomyLinks.map(
-                        (link) => link.termId
-                      ),
-                    }
-                  : null,
-              };
-            })}
-            media={editProduct.media.map((row) => ({
-              id: row.id,
-              kind: row.kind,
-              originalFileName: row.originalFileName,
-              mimeType: row.mimeType,
-              sizeBytes: Number(row.sizeBytes),
-              isPrimary: row.isPrimary,
-              sortOrder: row.sortOrder,
-              previewUrl: productMediaStorageConfigured()
-                ? createProductMediaDownloadUrl(row.objectKey, 1800)
-                : null,
-            }))}
-            importCandidates={importCandidates.map((candidate) => ({
-              id: candidate.id,
-              websiteName: candidate.integration.name,
-              externalProductId: candidate.remoteProductId,
-              status: candidate.status,
-              updatedAt: candidate.updatedAt.toISOString(),
-            }))}
-            bucketConfigured={productMediaStorageConfigured()}
-          />
-        </>
+            {canManageMaster ? (
+              <>
+                <Link
+                  href="/dashboard/products?view=create"
+                  className={
+                    "rounded-xl px-4 py-2.5 text-sm font-semibold transition " +
+                    (activeView === "create"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100")
+                  }
+                >
+                  + Add Product
+                </Link>
+                <Link
+                  href="/dashboard/products?view=import"
+                  className={
+                    "rounded-xl px-4 py-2.5 text-sm font-semibold transition " +
+                    (activeView === "import"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100")
+                  }
+                >
+                  CSV Import
+                </Link>
+              </>
+            ) : null}
+          </div>
+        </nav>
       ) : null}
 
-      {canManageMaster ? (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      {activeView === "products" ? (
+        <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Find a Product
+              </h2>
+              <p className="text-xs text-slate-500">
+                Search child SKU, product name, parent SKU or parent name.
+              </p>
+            </div>
+            <p className="text-xs font-medium text-slate-400">
+              Showing up to 100 results
+            </p>
+          </div>
+          <form className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              type="hidden"
+              name="view"
+              value="products"
+            />
+            <input
+              type="text"
+              name="q"
+              defaultValue={q}
+              placeholder="Search SKU, product name or parent SKU..."
+              className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white"
+            >
+              Search
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      {activeView === "create" && canManageMaster ? (
+        <div className="mx-auto w-full max-w-5xl">
           <CreateProductForm />
+        </div>
+      ) : null}
+
+      {activeView === "import" && canManageMaster ? (
+        <div className="mx-auto w-full max-w-5xl">
           <CsvImportForm />
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+      {activeView === "edit" && canManageMaster ? (
+        editProduct ? (
+          <div className="space-y-5">
+            <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <Link
+                    href={q ? `/dashboard/products?q=${encodeURIComponent(q)}` : "/dashboard/products"}
+                    className="text-sm font-semibold text-blue-600 hover:underline"
+                  >
+                    ← Back to Product List
+                  </Link>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <h2 className="break-all text-xl font-bold text-slate-950">
+                      {editProduct.sku}
+                    </h2>
+                    <span
+                      className={
+                        "rounded-full px-2.5 py-1 text-xs font-semibold " +
+                        (editProduct.status
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-200 text-slate-600")
+                      }
+                    >
+                      {editProduct.status ? "ACTIVE" : "INACTIVE"}
+                    </span>
+                    <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                      {editProduct.inventoryKind === "BUNDLE"
+                        ? "Virtual Bundle"
+                        : editProduct.parent.stockMode === "PARENT_STOCK"
+                          ? "Parent Stock"
+                          : "Variation Stock"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {editProduct.name}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Parent: {editProduct.parent.sku} · Focus on one section at a time.
+                  </p>
+                </div>
+
+                <Link
+                  href={`/dashboard/stock-adjustments?q=${encodeURIComponent(editProduct.sku)}`}
+                  className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white"
+                >
+                  Adjust This Stock
+                </Link>
+              </div>
+
+              <div className="mt-5 flex gap-2 overflow-x-auto border-t pt-4">
+                <Link
+                  href={`/dashboard/products?edit=${editProduct.id}&section=inventory${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                  className={
+                    "whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold " +
+                    (editSection === "inventory"
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+                  }
+                >
+                  Inventory & Basics
+                </Link>
+                <Link
+                  href={`/dashboard/products?edit=${editProduct.id}&section=bundle${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                  className={
+                    "whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold " +
+                    (editSection === "bundle"
+                      ? "bg-violet-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+                  }
+                >
+                  Bundle Recipe
+                </Link>
+                <Link
+                  href={`/dashboard/products?edit=${editProduct.id}&section=catalog${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                  className={
+                    "whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold " +
+                    (editSection === "catalog"
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+                  }
+                >
+                  Website Content & Publishing
+                </Link>
+              </div>
+            </section>
+
+            {editSection === "inventory" ? (
+              <EditProductForm
+                product={{
+                  id: editProduct.id,
+                  sku: editProduct.sku,
+                  name: editProduct.name,
+                  quantity: editProduct.quantity,
+                  unitsPerSale: editProduct.unitsPerSale,
+                  inventoryKind: editProduct.inventoryKind,
+                  stockVerified:
+                    editProduct.parent.stockMode === "PARENT_STOCK"
+                      ? Boolean(editProduct.parent.stockVerifiedAt)
+                      : Boolean(editProduct.stockVerifiedAt),
+                  purchasePrice: String(editProduct.purchasePrice),
+                  sellingPrice: String(editProduct.sellingPrice),
+                  status: editProduct.status,
+                  parent: {
+                    sku: editProduct.parent.sku,
+                    name: editProduct.parent.name,
+                    stockMode: editProduct.parent.stockMode,
+                    stockQuantity: editProduct.parent.stockQuantity,
+                    purchasePrice: String(editProduct.parent.purchasePrice || 0),
+                  },
+                }}
+              />
+            ) : null}
+
+            {editSection === "bundle" ? (
+              <BundleRecipeEditor
+                product={{
+                  id: editProduct.id,
+                  sku: editProduct.sku,
+                  name: editProduct.name,
+                  parentSku: editProduct.parent.sku,
+                  mode: editProduct.parent.stockMode,
+                  kind: editProduct.inventoryKind,
+                  legacyQuantity: editProduct.quantity,
+                  existing: editProduct.bundleComponents.map((part) => ({
+                    componentProductId: part.componentProductId,
+                    units: part.units,
+                  })),
+                }}
+                options={componentOptions.map((option) => ({
+                  id: option.id,
+                  sku: option.sku,
+                  name: option.name,
+                  quantity: option.quantity,
+                  cost: Number(option.purchasePrice),
+                }))}
+              />
+            ) : null}
+
+            {editSection === "catalog" ? (
+              <ProductCatalogEditor
+                product={{
+                  id: editProduct.id,
+                  sku: editProduct.sku,
+                  name: editProduct.name,
+                  sellingPrice: Number(editProduct.sellingPrice),
+                  content: {
+                    banglaName: editProduct.catalogContent?.banglaName || "",
+                    englishName:
+                      editProduct.catalogContent?.englishName || editProduct.name,
+                    productSlug:
+                      editProduct.catalogContent?.productSlug ||
+                      editProduct.slug ||
+                      "",
+                    shortDescriptionHtml:
+                      editProduct.catalogContent?.shortDescriptionHtml || "",
+                    fullDescriptionHtml:
+                      editProduct.catalogContent?.fullDescriptionHtml || "",
+                    oldPrice:
+                      editProduct.catalogContent?.oldPrice !== null &&
+                      editProduct.catalogContent?.oldPrice !== undefined
+                        ? Number(editProduct.catalogContent.oldPrice)
+                        : null,
+                    featured: Boolean(editProduct.catalogContent?.featured),
+                    sortOrder: editProduct.catalogContent?.sortOrder || 0,
+                    metaTitle: editProduct.catalogContent?.metaTitle || "",
+                    metaDescription:
+                      editProduct.catalogContent?.metaDescription || "",
+                    externalVideoUrl:
+                      editProduct.catalogContent?.externalVideoUrl || "",
+                  },
+                }}
+                websites={integrations.map((integration) => {
+                  const listing = editProduct.websiteListings.find(
+                    (row) => row.integrationId === integration.id
+                  );
+                  return {
+                    id: integration.id,
+                    name: integration.name,
+                    platform: integration.platform,
+                    catalogMode: integration.catalogMode,
+                    productSyncEnabled: integration.productSyncEnabled,
+                    baseUrl: integration.baseUrl,
+                    taxonomyTerms: integration.taxonomyTerms.map((term) => ({
+                      id: term.id,
+                      externalId: term.externalId,
+                      type: term.type,
+                      parentExternalId: term.parentExternalId,
+                      name: term.name,
+                      slug: term.slug,
+                    })),
+                    listing: listing
+                      ? {
+                          id: listing.id,
+                          productSlugOverride: listing.productSlugOverride,
+                          sellingPriceOverride:
+                            listing.sellingPriceOverride !== null
+                              ? Number(listing.sellingPriceOverride)
+                              : null,
+                          oldPriceOverride:
+                            listing.oldPriceOverride !== null
+                              ? Number(listing.oldPriceOverride)
+                              : null,
+                          active: listing.active,
+                          featuredOverride: listing.featuredOverride,
+                          remoteProductId: listing.remoteProductId,
+                          publicUrl: listing.publicUrl,
+                          syncStatus: listing.syncStatus,
+                          lastSyncedAt: listing.lastSyncedAt
+                            ? listing.lastSyncedAt.toISOString()
+                            : null,
+                          lastSyncError: listing.lastSyncError,
+                          taxonomyTermIds: listing.taxonomyLinks.map(
+                            (link) => link.termId
+                          ),
+                        }
+                      : null,
+                  };
+                })}
+                media={editProduct.media.map((row) => ({
+                  id: row.id,
+                  kind: row.kind,
+                  originalFileName: row.originalFileName,
+                  mimeType: row.mimeType,
+                  sizeBytes: Number(row.sizeBytes),
+                  isPrimary: row.isPrimary,
+                  sortOrder: row.sortOrder,
+                  previewUrl: productMediaStorageConfigured()
+                    ? createProductMediaDownloadUrl(row.objectKey, 1800)
+                    : null,
+                }))}
+                importCandidates={importCandidates.map((candidate) => ({
+                  id: candidate.id,
+                  websiteName: candidate.integration.name,
+                  externalProductId: candidate.remoteProductId,
+                  status: candidate.status,
+                  updatedAt: candidate.updatedAt.toISOString(),
+                }))}
+                bucketConfigured={productMediaStorageConfigured()}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <section className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm">
+            <h2 className="font-bold text-rose-700">Product not found</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              This product may have been removed or the edit link is no longer valid.
+            </p>
+            <Link
+              href="/dashboard/products"
+              className="mt-4 inline-flex rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Back to Product List
+            </Link>
+          </section>
+        )
+      ) : null}
+
+      {activeView === "products" ? (
+        <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         <div className="border-b px-5 py-4 sm:px-6">
-          <h2 className="text-lg font-semibold text-slate-900">Product List</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Showing up to 100 products. Use search to narrow results.
-          </p>
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Product List</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Open a product only when you need to edit inventory, bundle or website content.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {products.length} result{products.length === 1 ? "" : "s"}
+            </span>
+          </div>
         </div>
 
         <div className="space-y-4 p-4 lg:hidden">
@@ -433,7 +634,7 @@ export default async function ProductsPage({
                   </Link>
                   {canManageMaster ? (
                     <Link
-                      href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
+                      href={`/dashboard/products?edit=${product.id}&section=inventory${q ? `&q=${encodeURIComponent(q)}` : ""}`}
                       className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
                     >
                       Edit
@@ -577,7 +778,7 @@ export default async function ProductsPage({
                       </Link>
                       {canManageMaster ? (
                         <Link
-                          href={`/dashboard/products?${q ? `q=${encodeURIComponent(q)}&` : ""}edit=${product.id}`}
+                          href={`/dashboard/products?edit=${product.id}&section=inventory${q ? `&q=${encodeURIComponent(q)}` : ""}`}
                           className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
                         >
                           Edit
@@ -590,7 +791,8 @@ export default async function ProductsPage({
             </tbody>
           </table>
         </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }

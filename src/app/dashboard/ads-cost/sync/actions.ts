@@ -30,10 +30,18 @@ function cleanIds(values: string[]) {
   );
 }
 
-function mappingSignature(productParentId: string, sourceIds: string[]) {
-  return String(productParentId || "").trim() +
+function mappingSignature(
+  productParentId: string,
+  sourceIds: string[],
+  merchantId?: string | null
+) {
+  return (
+    String(productParentId || "").trim() +
     "::" +
-    cleanIds(sourceIds).sort().join(",");
+    String(merchantId || "").trim() +
+    "::" +
+    cleanIds(sourceIds).sort().join(",")
+  );
 }
 
 async function cleanupReportGroup(groupId: string | null | undefined) {
@@ -62,6 +70,7 @@ async function cleanupReportGroup(groupId: string | null | undefined) {
 export async function saveMetaCampaignMapping(input: {
   campaignId: string;
   productParentId: string;
+  merchantId?: string;
   sourceIds: string[];
 }): Promise<ActionResult> {
   try {
@@ -69,6 +78,7 @@ export async function saveMetaCampaignMapping(input: {
 
     const campaignId = String(input.campaignId || "").trim();
     const productParentId = String(input.productParentId || "").trim();
+    const merchantId = String(input.merchantId || "").trim() || null;
     const sourceIds = cleanIds(input.sourceIds);
 
     if (!campaignId || !productParentId || !sourceIds.length) {
@@ -80,19 +90,29 @@ export async function saveMetaCampaignMapping(input: {
 
     const [campaign, parent, sourceCount] = await Promise.all([
       prisma.metaCampaign.findUnique({ where: { id: campaignId }, select: { id: true } }),
-      prisma.productParent.findUnique({ where: { id: productParentId }, select: { id: true } }),
+      prisma.productParent.findUnique({
+        where: { id: productParentId },
+        select: { id: true, merchantId: true },
+      }),
       prisma.orderSource.count({ where: { id: { in: sourceIds }, status: true } }),
     ]);
 
     if (!campaign || !parent || sourceCount !== sourceIds.length) {
       return { success: false, message: "Campaign, Product Parent, or Source is invalid." };
     }
+    if ((parent.merchantId || null) !== merchantId) {
+      return {
+        success: false,
+        message:
+          "Merchant must match the Product Parent owner. Use Merchant Control to assign the Parent first.",
+      };
+    }
 
     await prisma.$transaction(async (tx) => {
       const mapping = await tx.metaCampaignMapping.upsert({
         where: { campaignId },
-        create: { campaignId, productParentId },
-        update: { productParentId },
+        create: { campaignId, productParentId, merchantId },
+        update: { productParentId, merchantId },
       });
 
       await tx.metaCampaignSource.deleteMany({
@@ -127,6 +147,7 @@ export async function saveMetaCampaignMappings(input: {
   mappings: {
     campaignId: string;
     productParentId: string;
+    merchantId?: string;
     sourceIds: string[];
   }[];
 }): Promise<ActionResult> {
@@ -136,6 +157,7 @@ export async function saveMetaCampaignMappings(input: {
     const rows = (input.mappings || []).map((row) => ({
       campaignId: String(row.campaignId || "").trim(),
       productParentId: String(row.productParentId || "").trim(),
+      merchantId: String(row.merchantId || "").trim() || null,
       sourceIds: cleanIds(row.sourceIds || []),
     }));
 
@@ -173,11 +195,14 @@ export async function saveMetaCampaignMappings(input: {
       new Set(rows.flatMap((row) => row.sourceIds))
     );
 
-    const [campaignCount, parentCount, sourceCount] = await Promise.all([
+    const [campaignCount, parentRows, sourceCount] = await Promise.all([
       prisma.metaCampaign.count({ where: { id: { in: campaignIds } } }),
       parentIds.length
-        ? prisma.productParent.count({ where: { id: { in: parentIds }, status: true } })
-        : Promise.resolve(0),
+        ? prisma.productParent.findMany({
+            where: { id: { in: parentIds }, status: true },
+            select: { id: true, merchantId: true },
+          })
+        : Promise.resolve([]),
       sourceIds.length
         ? prisma.orderSource.count({ where: { id: { in: sourceIds }, status: true } })
         : Promise.resolve(0),
@@ -186,8 +211,20 @@ export async function saveMetaCampaignMappings(input: {
     if (campaignCount !== campaignIds.length) {
       return { success: false, message: "One or more campaigns are invalid." };
     }
-    if (parentCount !== parentIds.length) {
+    if (parentRows.length !== parentIds.length) {
       return { success: false, message: "One or more Product Parents are invalid or inactive." };
+    }
+    const parentById = new Map(parentRows.map((parent) => [parent.id, parent]));
+    for (const row of rows) {
+      if (!row.productParentId) continue;
+      const parent = parentById.get(row.productParentId);
+      if (!parent || (parent.merchantId || null) !== row.merchantId) {
+        return {
+          success: false,
+          message:
+            "Merchant must match each Product Parent owner. Update Merchant Control first.",
+        };
+      }
     }
     if (sourceCount !== sourceIds.length) {
       return { success: false, message: "One or more Sources are invalid or inactive." };
@@ -224,12 +261,14 @@ export async function saveMetaCampaignMappings(input: {
         const oldSignature = existing
           ? mappingSignature(
               existing.productParentId,
-              existing.sources.map((item) => item.sourceId)
+              existing.sources.map((item) => item.sourceId),
+              existing.merchantId
             )
           : "";
         const nextSignature = mappingSignature(
           row.productParentId,
-          row.sourceIds
+          row.sourceIds,
+          row.merchantId
         );
         const shouldDisconnectGroup =
           Boolean(existing?.reportGroupId) && oldSignature !== nextSignature;
@@ -243,9 +282,11 @@ export async function saveMetaCampaignMappings(input: {
           create: {
             campaignId: row.campaignId,
             productParentId: row.productParentId,
+            merchantId: row.merchantId,
           },
           update: {
             productParentId: row.productParentId,
+            merchantId: row.merchantId,
             ...(shouldDisconnectGroup ? { reportGroupId: null } : {}),
           },
         });
@@ -334,11 +375,13 @@ export async function connectMetaCampaignToExisting(input: {
 
     const currentSignature = mappingSignature(
       current.productParentId,
-      current.sources.map((item) => item.sourceId)
+      current.sources.map((item) => item.sourceId),
+      current.merchantId
     );
     const targetSignature = mappingSignature(
       target.productParentId,
-      target.sources.map((item) => item.sourceId)
+      target.sources.map((item) => item.sourceId),
+      target.merchantId
     );
 
     if (currentSignature !== targetSignature) {

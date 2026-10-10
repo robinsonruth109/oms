@@ -1,0 +1,24 @@
+name: Validate Product Master UI reorganization
+
+on:
+  push:
+    branches:
+      - validation/reorganize-product-master-ui
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - name: Lint Product Master page
+        run: npx eslint src/app/dashboard/products/page.tsx
+      - name: Production build
+        run: npm run build

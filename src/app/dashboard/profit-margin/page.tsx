@@ -54,7 +54,8 @@ type AdsRow = {
   key: string;
   campaign: string;
   account: string;
-  amount: number;
+  periodAmount: number;
+  appliedAmount: number;
 };
 
 function validDate(value: string) {
@@ -222,7 +223,17 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           currency: true,
           campaignNameSnapshot: true,
           adAccount: { select: { id: true, name: true } },
-          campaign: { select: { id: true } },
+          campaign: {
+            select: {
+              id: true,
+              mapping: {
+                select: {
+                  productParentId: true,
+                  sources: { select: { sourceId: true } },
+                },
+              },
+            },
+          },
         },
       }),
       prisma.salaryProfile.findMany({
@@ -246,6 +257,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           sourceId: true,
           pathaoCourierId: true,
           totalAmount: true,
+          advance: true,
           deliveryCharge: true,
           pathaoDeliveryFee: true,
           pathaoAmountToCollect: true,
@@ -267,6 +279,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
                   unitsPerSale: true,
                   parent: {
                     select: {
+                      id: true,
                       sku: true,
                       name: true,
                       stockMode: true,
@@ -303,6 +316,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     partial: boolean;
     latest: string;
     revenue: number;
+    codRevenue: number;
+    advanceRevenue: number;
     billed: number;
     deliveryIncome: number;
     cogs: number;
@@ -401,14 +416,19 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         ])
       : null;
 
-    const billed = numberValue(order.totalAmount);
-    const revenue = delivered
+    const codDue = numberValue(order.totalAmount);
+    const advanceRevenue = delivered ? numberValue(order.advance) : 0;
+    const codRevenue = delivered
       ? collected !== null
         ? Math.max(0, collected)
         : numberValue(order.pathaoAmountToCollect) ||
           numberValue(order.pathaoAuthorizedCodAmount) ||
-          billed
+          codDue
       : 0;
+    // OMS totalAmount/COD is net of advance. The advance was already received,
+    // so realized order revenue must add it back exactly once.
+    const revenue = delivered ? codRevenue + advanceRevenue : 0;
+    const billed = delivered ? codDue + advanceRevenue : 0;
 
     let cogs = 0;
     let missingCost = 0;
@@ -439,7 +459,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       partial,
       latest,
       revenue,
-      billed: delivered ? billed : 0,
+      codRevenue,
+      advanceRevenue,
+      billed,
       deliveryIncome: delivered ? numberValue(order.deliveryCharge) : 0,
       cogs,
       deliveryCost,
@@ -462,6 +484,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     .reduce((sum, row) => sum + row.revenue, 0);
 
   const grossRevenue = delivered.reduce((sum, row) => sum + row.revenue, 0);
+  const codRevenue = delivered.reduce((sum, row) => sum + row.codRevenue, 0);
+  const advanceRevenue = delivered.reduce((sum, row) => sum + row.advanceRevenue, 0);
   const billedRevenue = delivered.reduce((sum, row) => sum + row.billed, 0);
   const customerDeliveryIncome = delivered.reduce(
     (sum, row) => sum + row.deliveryIncome,
@@ -789,8 +813,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           </div>
         </div>
         <div className="grid gap-x-8 gap-y-3 lg:grid-cols-2">
-          <CalcLine label="Pathao realized revenue" value={grossRevenue} positive />
-          <CalcLine label="OMS billed amount (reference)" value={billedRevenue} muted />
+          <CalcLine label="Pathao COD collected / due" value={codRevenue} positive />
+          <CalcLine label="Customer advance already received" value={advanceRevenue} positive />
+          <CalcLine label="Total realized revenue" value={grossRevenue} positive />
+          <CalcLine label="OMS full order value incl. advance (reference)" value={billedRevenue} muted />
           <CalcLine label="Merchandise revenue inside collected amount" value={merchandiseRevenue} muted />
           <CalcLine label="Customer delivery charge inside revenue" value={customerDeliveryIncome} muted />
           <CalcLine label="Product buying cost / COGS" value={-productCogs} />
@@ -955,6 +981,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
       <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
         <strong>Accounting basis:</strong> revenue is recognized only from full Delivered webhooks.
+        Realized revenue equals Pathao COD/collected amount plus any customer advance already received.
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.

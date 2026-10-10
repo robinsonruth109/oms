@@ -343,6 +343,60 @@ export async function runPendingProductSyncJobs(limit = 8) {
   };
 }
 
+export async function enqueueStockSyncForOwners(
+  tx: any,
+  owners: Array<{
+    ownerType: "PRODUCT" | "PRODUCT_PARENT";
+    ownerId: string;
+  }>
+) {
+  const productIds = new Set<string>();
+
+  const productOwnerIds = Array.from(
+    new Set(
+      owners
+        .filter((row) => row.ownerType === "PRODUCT")
+        .map((row) => row.ownerId)
+    )
+  );
+  const parentOwnerIds = Array.from(
+    new Set(
+      owners
+        .filter((row) => row.ownerType === "PRODUCT_PARENT")
+        .map((row) => row.ownerId)
+    )
+  );
+
+  if (productOwnerIds.length) {
+    for (const id of productOwnerIds) productIds.add(id);
+
+    const bundleLinks = await tx.productBundleComponent.findMany({
+      where: { componentProductId: { in: productOwnerIds } },
+      select: { bundleProductId: true },
+    });
+    for (const row of bundleLinks) productIds.add(row.bundleProductId);
+  }
+
+  if (parentOwnerIds.length) {
+    const siblings = await tx.product.findMany({
+      where: { parentId: { in: parentOwnerIds } },
+      select: { id: true },
+    });
+    const siblingIds = siblings.map((row: any) => row.id);
+    for (const id of siblingIds) productIds.add(id);
+
+    if (siblingIds.length) {
+      const bundleLinks = await tx.productBundleComponent.findMany({
+        where: { componentProductId: { in: siblingIds } },
+        select: { bundleProductId: true },
+      });
+      for (const row of bundleLinks) productIds.add(row.bundleProductId);
+    }
+  }
+
+  return enqueueStockSyncForProducts(tx, Array.from(productIds));
+}
+
 export async function enqueueStockSyncForProducts(
   tx: any,
   productIds: string[]

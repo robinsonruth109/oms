@@ -10,6 +10,28 @@ function positiveInt(value: unknown, fallback = 1) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
+
+async function queueWebsiteStockSync(
+  tx: any,
+  owners: Array<{
+    ownerType: "PRODUCT" | "PRODUCT_PARENT";
+    ownerId: string;
+  }>
+) {
+  if (!owners.length) return;
+
+  // Catalog publishing must never make physical stock transactions fail.
+  // Use a dynamic import to avoid a module cycle: the catalog worker uses the
+  // inventory resolver to calculate website-visible quantities.
+  try {
+    const { enqueueStockSyncForOwners } = await import(
+      "@/lib/product-catalog-sync"
+    );
+    await enqueueStockSyncForOwners(tx, owners);
+  } catch (error) {
+    console.error("[ProductCatalog] Could not queue stock sync:", error);
+  }
+}
 export type PhysicalRequirement = {
   ownerType: "PRODUCT" | "PRODUCT_PARENT";
   ownerId: string;
@@ -163,6 +185,11 @@ export async function deductOrderStock(
     include: { product: { include: { parent: true } } },
   });
   let deductedUnits = 0;
+  const affectedOwners: Array<{
+    ownerType: "PRODUCT" | "PRODUCT_PARENT";
+    ownerId: string;
+  }> = [];
+
   for (const item of items) {
     if (item.stockDeductedAt) continue;
     const product = await resolveProduct(tx, item);
@@ -202,8 +229,14 @@ export async function deductOrderStock(
         });
       }
       deductedUnits += row.requiredUnits;
+      affectedOwners.push({
+        ownerType: row.ownerType,
+        ownerId: row.ownerId,
+      });
     }
   }
+
+  await queueWebsiteStockSync(tx, affectedOwners);
   return { deductedUnits };
 }
 /** Always restore from original allocation snapshots (not today's editable recipe). */
@@ -287,6 +320,14 @@ export async function restoreReturnedStock(
         before, after,
       });
     }
+    await queueWebsiteStockSync(
+      tx,
+      item.stockAllocations.map((allocation) => ({
+        ownerType: allocation.ownerType,
+        ownerId: allocation.ownerId,
+      }))
+    );
+
     return {
       productId: product.id,
       ownerType: breakdown.length === 1 ? item.stockAllocations[0].ownerType : "BUNDLE",
@@ -335,6 +376,10 @@ export async function restoreReturnedStock(
           select: { stockQuantity: true },
         })
       : beforeRow;
+    await queueWebsiteStockSync(tx, [
+      { ownerType: "PRODUCT_PARENT", ownerId },
+    ]);
+
     return {
       productId: product.id,
       ownerType,
@@ -358,6 +403,10 @@ export async function restoreReturnedStock(
         select: { quantity: true },
       })
     : beforeRow;
+  await queueWebsiteStockSync(tx, [
+    { ownerType: "PRODUCT", ownerId },
+  ]);
+
   return {
     productId: product.id,
     ownerType,

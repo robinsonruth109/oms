@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
-  BadgeDollarSign,
+  CircleDollarSign,
   Banknote,
   Megaphone,
   PackageCheck,
@@ -782,7 +782,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5 flex items-center gap-2">
-          <BadgeDollarSign className="h-5 w-5 text-slate-700" />
+          <CircleDollarSign className="h-5 w-5 text-slate-700" />
           <div>
             <h2 className="text-lg font-bold">100% Profit / Loss Calculation</h2>
             <p className="text-sm text-slate-500">Every deducted component used in the final number.</p>

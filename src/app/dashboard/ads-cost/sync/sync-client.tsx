@@ -12,8 +12,14 @@ import {
   toggleMetaAdAccount,
 } from "./actions";
 
-type Parent = { id: string; sku: string; name: string };
+type Parent = {
+  id: string;
+  sku: string;
+  name: string;
+  merchantId: string | null;
+};
 type Source = { id: string; name: string; type: string };
+type Merchant = { id: string; name: string };
 
 type Connection = {
   id: string;
@@ -50,6 +56,7 @@ type Campaign = {
   spend: number;
   mapping: {
     productParentId: string;
+    merchantId: string | null;
     productParent: { sku: string; name: string };
     sourceIds: string[];
     sources: { id: string; name: string }[];
@@ -60,6 +67,7 @@ type Campaign = {
 
 type Draft = {
   productParentId: string;
+  merchantId: string;
   sourceIds: string[];
 };
 
@@ -223,6 +231,7 @@ function SearchableParentPicker({
 function sameMapping(a: Campaign, b: Campaign) {
   if (!a.mapping || !b.mapping) return false;
   if (a.mapping.productParentId !== b.mapping.productParentId) return false;
+  if ((a.mapping.merchantId || "") !== (b.mapping.merchantId || "")) return false;
 
   const aSources = [...a.mapping.sourceIds].sort();
   const bSources = [...b.mapping.sourceIds].sort();
@@ -357,6 +366,7 @@ export default function AdsCostSyncClient({
   flash,
   parents,
   sources,
+  merchants,
   connections,
   campaigns,
   summary,
@@ -369,6 +379,7 @@ export default function AdsCostSyncClient({
   flash: { connected: boolean; accounts: number; error: string };
   parents: Parent[];
   sources: Source[];
+  merchants: Merchant[];
   connections: Connection[];
   campaigns: Campaign[];
   summary: {
@@ -413,6 +424,7 @@ export default function AdsCostSyncClient({
         campaign.id,
         {
           productParentId: campaign.mapping?.productParentId || "",
+          merchantId: campaign.mapping?.merchantId || "",
           sourceIds: campaign.mapping?.sourceIds || [],
         },
       ])
@@ -448,7 +460,11 @@ export default function AdsCostSyncClient({
     setDrafts((current) => ({
       ...current,
       [campaignId]: {
-        ...(current[campaignId] || { productParentId: "", sourceIds: [] }),
+        ...(current[campaignId] || {
+          productParentId: "",
+          merchantId: "",
+          sourceIds: [],
+        }),
         ...patch,
       },
     }));
@@ -463,13 +479,16 @@ export default function AdsCostSyncClient({
       .map((campaign) => {
         const draft = drafts[campaign.id] || {
           productParentId: "",
+          merchantId: "",
           sourceIds: [],
         };
         const originalParentId = campaign.mapping?.productParentId || "";
+        const originalMerchantId = campaign.mapping?.merchantId || "";
         const originalSourceIds = normalizeIds(campaign.mapping?.sourceIds || []);
         const draftSourceIds = normalizeIds(draft.sourceIds || []);
 
         const parentChanged = draft.productParentId !== originalParentId;
+        const merchantChanged = draft.merchantId !== originalMerchantId;
         const sourcesChanged =
           originalSourceIds.length !== draftSourceIds.length ||
           originalSourceIds.some((id, index) => id !== draftSourceIds[index]);
@@ -477,8 +496,9 @@ export default function AdsCostSyncClient({
         return {
           campaignId: campaign.id,
           productParentId: draft.productParentId,
+          merchantId: draft.merchantId,
           sourceIds: draftSourceIds,
-          changed: parentChanged || sourcesChanged,
+          changed: parentChanged || merchantChanged || sourcesChanged,
         };
       })
       .filter((row) => row.changed);
@@ -513,6 +533,7 @@ export default function AdsCostSyncClient({
         mappings: dirtyMappings.map((row) => ({
           campaignId: row.campaignId,
           productParentId: row.productParentId,
+          merchantId: row.merchantId || undefined,
           sourceIds: row.sourceIds,
         })),
       });
@@ -815,12 +836,13 @@ export default function AdsCostSyncClient({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[1280px] w-full">
+          <table className="min-w-[1460px] w-full">
             <thead className="bg-slate-50">
               <tr className="border-b">
                 <Th>Ad Account / Campaign</Th>
                 <Th>Spend</Th>
                 <Th>Product Parent</Th>
+                <Th>Merchant</Th>
                 <Th>Sources (multiple)</Th>
                 <Th>Connect Existing Ad</Th>
               </tr>
@@ -829,6 +851,7 @@ export default function AdsCostSyncClient({
               {visibleCampaigns.map((campaign) => {
                 const draft = drafts[campaign.id] || {
                   productParentId: "",
+                  merchantId: "",
                   sourceIds: [],
                 };
 
@@ -848,10 +871,37 @@ export default function AdsCostSyncClient({
                       <SearchableParentPicker
                         parents={parents}
                         value={draft.productParentId}
-                        onChange={(productParentId) =>
-                          patchDraft(campaign.id, { productParentId })
-                        }
+                        onChange={(productParentId) => {
+                          const parent = parents.find(
+                            (item) => item.id === productParentId
+                          );
+                          patchDraft(campaign.id, {
+                            productParentId,
+                            merchantId: parent?.merchantId || "",
+                          });
+                        }}
                       />
+                    </td>
+                    <td className="px-4 py-4">
+                      <select
+                        value={draft.merchantId}
+                        onChange={(event) =>
+                          patchDraft(campaign.id, {
+                            merchantId: event.target.value,
+                          })
+                        }
+                        className="w-52 rounded-xl border bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="">OMS (Default)</option>
+                        {merchants.map((merchant) => (
+                          <option key={merchant.id} value={merchant.id}>
+                            {merchant.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 max-w-52 text-[11px] text-slate-400">
+                        Must match Product Parent ownership.
+                      </p>
                     </td>
                     <td className="px-4 py-4">
                       <div className="max-h-40 w-64 overflow-y-auto rounded-xl border p-2">

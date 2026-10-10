@@ -1,0 +1,23 @@
+name: Validate merchant view edit
+
+on:
+  push:
+    branches:
+      - validation/merchant-view-edit
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint changed Merchant Control files
+        run: npx eslint src/app/dashboard/merchant-control/actions.ts src/app/dashboard/merchant-control/merchant-control-client.tsx
+      - name: Production build
+        run: npm run build

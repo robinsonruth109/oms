@@ -5,6 +5,10 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  enqueueFullSyncForProduct,
+  enqueueStockSyncForOwners,
+} from "@/lib/product-catalog-sync";
 
 type ActionState = {
   success: boolean;
@@ -282,6 +286,7 @@ export async function updateProduct(
       include: {
         parent: true,
         usedInBundles: { select: { id: true } },
+        websiteListings: { select: { id: true } },
       },
     });
 
@@ -342,6 +347,17 @@ export async function updateProduct(
         message: "Bundle parent and stock mode cannot change. Edit the recipe instead.",
       };
     }
+    if (
+      sku !== currentProduct.sku &&
+      currentProduct.websiteListings.length > 0
+    ) {
+      return {
+        success: false,
+        message:
+          "This SKU is connected to one or more websites. Remove/unpublish the website listings before changing the SKU so remote product matching cannot break.",
+      };
+    }
+
     if (currentProduct.usedInBundles.length &&
         (parentSku !== currentProduct.parent.sku ||
          stockMode !== currentProduct.parent.stockMode || !status)) {
@@ -428,6 +444,18 @@ export async function updateProduct(
           status,
         },
       });
+
+      await enqueueFullSyncForProduct(tx, productId);
+
+      if (enteringParentCount) {
+        await enqueueStockSyncForOwners(tx, [
+          { ownerType: "PRODUCT_PARENT", ownerId: parent.id },
+        ]);
+      } else if (enteringSkuCount) {
+        await enqueueStockSyncForOwners(tx, [
+          { ownerType: "PRODUCT", ownerId: productId },
+        ]);
+      }
 
       const actorLabel = session.user.name || session.user.username || "OMS User";
       const actorId = session.user.id;

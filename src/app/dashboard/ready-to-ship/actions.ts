@@ -230,6 +230,8 @@ export async function createCsvBatch(
         id: { in: selectedIds },
         orderStatus: "READY_TO_SHIP",
         csvDownloaded: false,
+        pathaoConsignmentId: null,
+        pathaoSubmissionStatus: { in: ["NOT_SUBMITTED", "FAILED"] },
         courier: selectedCourierSlug,
       },
       include: {
@@ -246,21 +248,7 @@ export async function createCsvBatch(
       };
     }
 
-    const alreadyPathao = orders.filter(
-      (order) =>
-        Boolean(order.pathaoConsignmentId) ||
-        ["SUBMITTING", "SUBMITTED", "CONSIGNMENT_CREATED"].includes(
-          order.pathaoSubmissionStatus
-        )
-    );
-
-    const candidates = orders.filter(
-      (order) =>
-        !order.pathaoConsignmentId &&
-        !["SUBMITTING", "SUBMITTED", "CONSIGNMENT_CREATED"].includes(
-          order.pathaoSubmissionStatus
-        )
-    );
+    const candidates = orders;
 
     const invalid: { id: string; invoice: string; error: string }[] = [];
     const prepared: PreparedPathaoOrder[] = [];
@@ -290,8 +278,8 @@ export async function createCsvBatch(
         success: false,
         message:
           `Nothing was submitted to Pathao. ${
-            alreadyPathao.length
-              ? `${alreadyPathao.length} selected order(s) were already submitted. `
+            selectedIds.length > orders.length
+              ? `${selectedIds.length - orders.length} selected order(s) were already submitted, no longer eligible, or belong to another courier. `
               : ""
           }${reasons}`,
       };
@@ -441,10 +429,7 @@ export async function createCsvBatch(
             .join("; ")}${stockWarnings.length > 5 ? ` (+${stockWarnings.length - 5} more)` : ""}. Orders were still pushed and stock was deducted.`
         : "",
       missingFromCourier > 0
-        ? `${missingFromCourier} selected order(s) did not belong to the selected courier/eligible tab and were ignored.`
-        : "",
-      alreadyPathao.length
-        ? `${alreadyPathao.length} already-submitted Pathao order(s) were skipped.`
+        ? `${missingFromCourier} selected order(s) were already submitted, no longer eligible, or did not belong to the selected courier.`
         : "",
       invalid.length
         ? `${invalid.length} invalid order(s) were NOT marked CSV and remain retryable: ${invalid
@@ -519,6 +504,8 @@ export async function pushAllToAssignedCouriers(
       where: {
         orderStatus: "READY_TO_SHIP",
         csvDownloaded: false,
+        pathaoConsignmentId: null,
+        pathaoSubmissionStatus: { in: ["NOT_SUBMITTED", "FAILED"] },
         ...(courierFilter ? { courier: courierFilter } : {}),
         ...(readyToShipAt ? { readyToShipAt } : {}),
       },
@@ -592,22 +579,7 @@ export async function pushAllToAssignedCouriers(
         continue;
       }
 
-      const alreadyPathao = courierOrders.filter(
-        (order) =>
-          Boolean(order.pathaoConsignmentId) ||
-          ["SUBMITTING", "SUBMITTED", "CONSIGNMENT_CREATED"].includes(
-            order.pathaoSubmissionStatus
-          )
-      );
-      alreadySubmittedCount += alreadyPathao.length;
-
-      const candidates = courierOrders.filter(
-        (order) =>
-          !order.pathaoConsignmentId &&
-          !["SUBMITTING", "SUBMITTED", "CONSIGNMENT_CREATED"].includes(
-            order.pathaoSubmissionStatus
-          )
-      );
+      const candidates = courierOrders;
 
       const validPrepared: PreparedPathaoOrder[] = [];
       const invalidRows: { id: string; invoice: string; error: string }[] = [];

@@ -20,8 +20,17 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type PageProps = {
-  searchParams?: Promise<{ date?: string }>;
+  searchParams?: Promise<{ date?: string; from?: string; to?: string }>;
 };
+
+function validDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function dateLabel(value: string) {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
 
 function taka(value: unknown) {
   const amount = Number(value || 0);
@@ -45,19 +54,40 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
   const { prisma } = await import("@/lib/prisma");
 
   const params = (await searchParams) || {};
-  const date = String(params.date || getBangladeshDateInputValue()).trim();
-  const range = getBangladeshDayRange(date);
+  const today = getBangladeshDateInputValue();
+  const legacyDate = String(params.date || "").trim();
+
+  let from = validDate(String(params.from || "").trim())
+    ? String(params.from).trim()
+    : validDate(legacyDate)
+      ? legacyDate
+      : today;
+  let to = validDate(String(params.to || "").trim())
+    ? String(params.to).trim()
+    : validDate(legacyDate)
+      ? legacyDate
+      : today;
+
+  if (from > to) [from, to] = [to, from];
+
+  const fromRange = getBangladeshDayRange(from);
+  const toRange = getBangladeshDayRange(to);
+  const rangeLabel =
+    from === to ? dateLabel(from) : `${dateLabel(from)} – ${dateLabel(to)}`;
 
   const [entries, priorEntries] = await Promise.all([
     prisma.financeDailyCost.findMany({
-      where: { bookType: "OFFICE", costDate: { gte: range.start, lte: range.end } },
+      where: {
+        bookType: "OFFICE",
+        costDate: { gte: fromRange.start, lte: toRange.end },
+      },
       include: {
         createdByUser: { select: { name: true, username: true } },
       },
       orderBy: [{ createdAt: "asc" }],
     }),
     prisma.financeDailyCost.findMany({
-      where: { bookType: "OFFICE", costDate: { lt: range.start } },
+      where: { bookType: "OFFICE", costDate: { lt: fromRange.start } },
       select: { entryType: true, amount: true, paymentMethod: true },
       orderBy: [{ costDate: "asc" }, { createdAt: "asc" }],
     }),
@@ -82,11 +112,11 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
             </p>
           </div>
           <Link
-            href={`/api/finance/office-daily-costing/pdf?date=${encodeURIComponent(date)}`}
+            href={`/api/finance/office-daily-costing/pdf?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`}
             target="_blank"
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
-            <Download className="h-4 w-4" /> Download Daily PDF
+            <Download className="h-4 w-4" /> Download Range PDF
           </Link>
         </div>
       </section>
@@ -95,31 +125,31 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Existing Balance</p>
           <p className="mt-2 text-xl font-bold text-slate-900">{taka(totals.openingBalance)}</p>
-          <p className="mt-1 text-xs text-slate-400">Yesterday&apos;s lasting balance</p>
+          <p className="mt-1 text-xs text-slate-400">Balance before {dateLabel(from)}</p>
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Today Joma</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Range Joma</p>
           <p className="mt-2 text-xl font-bold text-emerald-600">+ {taka(totals.totalJoma)}</p>
-          <p className="mt-1 text-xs text-slate-400">Today&apos;s cash in</p>
+          <p className="mt-1 text-xs text-slate-400">{rangeLabel}</p>
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Today Khoroch</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Range Khoroch</p>
           <p className="mt-2 text-xl font-bold text-rose-600">- {taka(totals.totalKhoroch)}</p>
-          <p className="mt-1 text-xs text-slate-400">Today&apos;s total cash out</p>
+          <p className="mt-1 text-xs text-slate-400">{rangeLabel}</p>
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Today Lasting Balance</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Closing Balance</p>
           <p className={`mt-2 text-xl font-bold ${totals.closingBalance < 0 ? "text-rose-600" : "text-slate-900"}`}>
             {taka(totals.closingBalance)}
           </p>
-          <p className="mt-1 text-xs text-slate-400">Existing + Joma - Khoroch</p>
+          <p className="mt-1 text-xs text-slate-400">Opening + range Joma - range Khoroch</p>
         </div>
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4">
           <h2 className="font-bold text-slate-900">Method Balance</h2>
-          <p className="text-sm text-slate-500">See exactly where today&apos;s balance is held.</p>
+          <p className="text-sm text-slate-500">Opening, movement and closing balance for {rangeLabel}.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           {methodNames.map((method) => {
@@ -154,7 +184,7 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
             <input type="hidden" name="entryType" value="JOMA" />
             <label>
               <span className="mb-1 block text-sm font-medium text-slate-700">Date</span>
-              <input name="costDate" type="date" defaultValue={date} required className="min-h-11 w-full rounded-xl border px-3 text-sm" />
+              <input name="costDate" type="date" defaultValue={to} required className="min-h-11 w-full rounded-xl border px-3 text-sm" />
             </label>
             <label>
               <span className="mb-1 block text-sm font-medium text-slate-700">Method</span>
@@ -188,7 +218,7 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
             <input type="hidden" name="entryType" value="KHOROCH" />
             <label>
               <span className="mb-1 block text-sm font-medium text-slate-700">Date</span>
-              <input name="costDate" type="date" defaultValue={date} required className="min-h-11 w-full rounded-xl border px-3 text-sm" />
+              <input name="costDate" type="date" defaultValue={to} required className="min-h-11 w-full rounded-xl border px-3 text-sm" />
             </label>
             <label>
               <span className="mb-1 block text-sm font-medium text-slate-700">Expense Type</span>
@@ -224,20 +254,36 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
             <ReceiptText className="h-5 w-5 text-slate-600" />
             <div>
               <h2 className="font-bold text-slate-900">Office Daily Cash Book</h2>
-              <p className="text-sm text-slate-500">Office Joma and Khoroch for one Bangladesh business date.</p>
+              <p className="text-sm text-slate-500">Office Joma and Khoroch for a Bangladesh business date range.</p>
             </div>
           </div>
-          <form className="flex items-end gap-2" method="get">
+          <form className="flex flex-wrap items-end gap-2" method="get">
             <label>
-              <span className="mb-1 block text-xs font-medium text-slate-500">Date</span>
-              <input type="date" name="date" defaultValue={date} className="min-h-10 rounded-xl border px-3 text-sm" />
+              <span className="mb-1 block text-xs font-medium text-slate-500">From</span>
+              <input
+                type="date"
+                name="from"
+                defaultValue={from}
+                className="min-h-10 rounded-xl border px-3 text-sm"
+              />
             </label>
-            <button className="min-h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">Filter</button>
+            <label>
+              <span className="mb-1 block text-xs font-medium text-slate-500">To</span>
+              <input
+                type="date"
+                name="to"
+                defaultValue={to}
+                className="min-h-10 rounded-xl border px-3 text-sm"
+              />
+            </label>
+            <button className="min-h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
+              Filter
+            </button>
           </form>
         </div>
 
         <div className="border-b p-5">
-          <h3 className="mb-3 font-bold text-emerald-700">Today Cash In / Joma</h3>
+          <h3 className="mb-3 font-bold text-emerald-700">Cash In / Joma · {rangeLabel}</h3>
           <div className="overflow-x-auto rounded-xl border">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -246,7 +292,14 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
               <tbody>
                 {jomaEntries.map((entry) => (
                   <tr key={entry.id} className="border-t align-top">
-                    <td className="max-w-lg px-4 py-3 text-slate-700">{entryDetails(entry)}</td>
+                    <td className="max-w-lg px-4 py-3 text-slate-700">
+                      <div>{entryDetails(entry)}</div>
+                      {from !== to ? (
+                        <div className="mt-1 text-xs text-slate-400">
+                          {getBangladeshDateInputValue(entry.costDate)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 font-medium">{entry.paymentMethod || "-"}</td>
                     <td className="whitespace-nowrap px-4 py-3 font-bold text-emerald-700">{taka(entry.amount)}</td>
                     <td className="px-4 py-3">{entry.createdByUser.name}<div className="text-xs text-slate-400">@{entry.createdByUser.username}</div></td>
@@ -258,7 +311,7 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
                     </td>
                   </tr>
                 ))}
-                {jomaEntries.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No Joma entries for this date.</td></tr> : null}
+                {jomaEntries.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No Joma entries for this date range.</td></tr> : null}
               </tbody>
               {jomaEntries.length ? <tfoot className="border-t-2 bg-emerald-50"><tr><td colSpan={2} className="px-4 py-3 text-right font-bold">Total Joma</td><td className="px-4 py-3 font-bold text-emerald-700">{taka(totals.totalJoma)}</td><td colSpan={2} /></tr></tfoot> : null}
             </table>
@@ -266,7 +319,7 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
         </div>
 
         <div className="p-5">
-          <h3 className="mb-3 font-bold text-rose-700">Today Khoroch</h3>
+          <h3 className="mb-3 font-bold text-rose-700">Khoroch · {rangeLabel}</h3>
           <div className="overflow-x-auto rounded-xl border">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -276,7 +329,14 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
                 {khorochEntries.map((entry) => (
                   <tr key={entry.id} className="border-t align-top">
                     <td className="px-4 py-3 font-semibold text-slate-900">{entry.category}</td>
-                    <td className="max-w-lg px-4 py-3 text-slate-700">{entryDetails(entry)}</td>
+                    <td className="max-w-lg px-4 py-3 text-slate-700">
+                      <div>{entryDetails(entry)}</div>
+                      {from !== to ? (
+                        <div className="mt-1 text-xs text-slate-400">
+                          {getBangladeshDateInputValue(entry.costDate)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 font-medium">{entry.paymentMethod || "-"}</td>
                     <td className="whitespace-nowrap px-4 py-3 font-bold text-rose-700">{taka(entry.amount)}</td>
                     <td className="px-4 py-3">{entry.createdByUser.name}<div className="text-xs text-slate-400">@{entry.createdByUser.username}</div></td>
@@ -288,7 +348,7 @@ export default async function OfficeDailyCostingPage({ searchParams }: PageProps
                     </td>
                   </tr>
                 ))}
-                {khorochEntries.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No Khoroch entries for this date.</td></tr> : null}
+                {khorochEntries.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No Khoroch entries for this date range.</td></tr> : null}
               </tbody>
               {khorochEntries.length ? <tfoot className="border-t-2 bg-rose-50"><tr><td colSpan={3} className="px-4 py-3 text-right font-bold">Total Khoroch</td><td className="px-4 py-3 font-bold text-rose-700">{taka(totals.totalKhoroch)}</td><td colSpan={2} /></tr></tfoot> : null}
             </table>

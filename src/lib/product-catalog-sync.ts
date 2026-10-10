@@ -343,6 +343,48 @@ export async function runPendingProductSyncJobs(limit = 8) {
   };
 }
 
+export async function enqueueFullSyncForProduct(
+  tx: any,
+  productId: string
+) {
+  const listings = await tx.productWebsiteListing.findMany({
+    where: {
+      productId,
+      integration: {
+        status: true,
+        productSyncEnabled: true,
+      },
+    },
+    select: {
+      id: true,
+      productId: true,
+      integrationId: true,
+      active: true,
+    },
+  });
+
+  if (!listings.length) return 0;
+
+  await tx.productSyncJob.createMany({
+    data: listings.map((listing: any) => ({
+      productId: listing.productId,
+      integrationId: listing.integrationId,
+      listingId: listing.id,
+      operation: listing.active ? "FULL_UPSERT" : "UNPUBLISH",
+    })),
+  });
+
+  await tx.productWebsiteListing.updateMany({
+    where: { id: { in: listings.map((row: any) => row.id) } },
+    data: {
+      syncStatus: "PENDING",
+      lastSyncError: null,
+    },
+  });
+
+  return listings.length;
+}
+
 export async function enqueueStockSyncForOwners(
   tx: any,
   owners: Array<{

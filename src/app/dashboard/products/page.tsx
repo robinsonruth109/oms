@@ -149,6 +149,10 @@ export default async function ProductsPage({
                 Configure Bundles
               </Link>
             ) : null}
+            <Link href="/dashboard/products-purchases/local-purchase"
+              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">
+              Local Purchase
+            </Link>
             <Link href="/dashboard/stock-adjustments"
               className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white">
               Adjust Stock

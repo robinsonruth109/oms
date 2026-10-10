@@ -756,6 +756,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     pendingInvoiceIds: Set<string>;
     deliveredProductQty: number;
     returnCharge: number;
+    deliveryCost: number;
     invoicedTotal: number;
     merchandiseSales: number;
     cogs: number;
@@ -784,6 +785,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       pendingInvoiceIds: new Set<string>(),
       deliveredProductQty: 0,
       returnCharge: 0,
+      deliveryCost: 0,
       invoicedTotal: 0,
       merchandiseSales: 0,
       cogs: 0,
@@ -857,6 +859,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         current.invoiceIds.add(row.order.id);
         current.invoicedTotal += invoiceTotal * share;
         current.returnCharge += row.returnCost * share;
+        current.deliveryCost += row.deliveryCost * share;
 
         if (deliveredStatus) {
           current.deliveredInvoiceIds.add(row.order.id);
@@ -912,7 +915,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     adsCost: number,
     campaignNames: string[]
   ): ProductPerformanceChildRow {
-    const grossProfit = row.merchandiseSales - row.cogs;
+    const grossProfit =
+      row.merchandiseSales - row.cogs - row.deliveryCost;
     const totalInvoices = row.invoiceIds.size;
     const deliveredInvoices = row.deliveredInvoiceIds.size;
 
@@ -935,6 +939,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       pendingInvoices: row.pendingInvoiceIds.size,
       deliveredProductQty: row.deliveredProductQty,
       returnCharge: row.returnCharge,
+      deliveryCost: row.deliveryCost,
       invoicedTotal: row.invoicedTotal,
       adsCost,
       merchandiseSales: row.merchandiseSales,

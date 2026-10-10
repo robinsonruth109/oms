@@ -1,4 +1,5 @@
 import CreateIntegrationForm from "./create-integration-form";
+import CatalogSettings from "./catalog-settings";
 import {
   CopyTextButton,
   RegenerateApiKeyButton,
@@ -80,8 +81,8 @@ export default async function IntegrationsPage() {
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">Integrations</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Manage unlimited Shopify and Laravel stores using separate slugs and
-          API keys.
+          Connect every website to OMS for orders and catalog publishing. Website
+          engine and Collection/Subcategory URL style are managed separately.
         </p>
       </section>
 
@@ -121,7 +122,7 @@ export default async function IntegrationsPage() {
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="rounded-xl border bg-white p-3">
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Platform
+                          Website Engine
                         </p>
                         <p className="mt-1 text-sm font-semibold text-slate-900">
                           {integration.platform}
@@ -134,6 +135,17 @@ export default async function IntegrationsPage() {
                         </p>
                         <p className="mt-1 text-sm font-semibold text-slate-900">
                           {integration.source.name}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border bg-white p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                          Catalog Structure
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">
+                          {integration.catalogMode === "COLLECTION"
+                            ? "COLLECTIONS"
+                            : "SUBCATEGORIES"}
                         </p>
                       </div>
 
@@ -204,6 +216,23 @@ export default async function IntegrationsPage() {
                     </div>
                   </div>
                 </div>
+
+                <CatalogSettings
+                  integration={{
+                    id: integration.id,
+                    platform: integration.platform,
+                    catalogMode: integration.catalogMode,
+                    baseUrl: integration.baseUrl || "",
+                    hasCatalogApiToken: Boolean(integration.catalogApiToken),
+                    productSyncEnabled: integration.productSyncEnabled,
+                    lastTaxonomySyncAt: integration.lastTaxonomySyncAt
+                      ? integration.lastTaxonomySyncAt.toISOString()
+                      : null,
+                    lastCatalogSyncAt: integration.lastCatalogSyncAt
+                      ? integration.lastCatalogSyncAt.toISOString()
+                      : null,
+                  }}
+                />
 
                 <div className="mt-5 rounded-2xl border bg-white p-4">
                   <p className="mb-2 text-sm font-medium text-slate-700">

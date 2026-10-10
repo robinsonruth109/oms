@@ -60,6 +60,18 @@ const ALL_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"]
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    label: "Merchant",
+    items: [
+      { href: "/dashboard/merchant", label: "Merchant Dashboard", icon: LayoutDashboard, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/products", label: "Products & Stock", icon: Package, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/orders", label: "Merchant Orders", icon: ShoppingBag, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/purchases", label: "Purchase & Received", icon: BriefcaseBusiness, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/pathao-report", label: "Pathao Delivery Report", icon: Truck, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/profit-loss", label: "Profit & Loss", icon: CircleDollarSign, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/dollar-wallet", label: "Dollar Wallet", icon: Megaphone, roles: ["MERCHANT"] },
+    ],
+  },
+  {
     label: "Overview",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["ADMIN"] },
@@ -144,6 +156,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Administration",
     items: [
       { href: "/dashboard/recruitment", label: "Staff Recruitment", icon: BriefcaseBusiness, roles: ["ADMIN"] },
+      { href: "/dashboard/merchant-control", label: "Merchant Control", icon: Store, roles: ["ADMIN"] },
       { href: "/dashboard/users", label: "Manage Users", icon: Users, roles: ["ADMIN"] },
       { href: "/dashboard/customer-data-retention", label: "Customer Data", icon: UserRoundCog, roles: ["ADMIN"] },
     ],

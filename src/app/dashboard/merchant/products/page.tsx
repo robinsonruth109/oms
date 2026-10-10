@@ -1,12 +1,12 @@
 import { Fragment } from "react";
 import { requireMerchantContext, formatTaka } from "@/lib/merchant-portal";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function MerchantProductsPage() {
   const { merchant } = await requireMerchantContext();
+  const { prisma } = await import("@/lib/prisma");
 
   const parents = await prisma.productParent.findMany({
     where: { merchantId: merchant.id, status: true },

@@ -405,7 +405,7 @@ model ProductMedia {
 
   // Durable object key in Railway S3-compatible bucket. Never store a
   // temporary presigned URL as the canonical media reference.
-  objectKey String @unique @db.Text
+  objectKey String @unique @db.VarChar(768)
   originalFileName String @db.Text
   mimeType String
   sizeBytes BigInt

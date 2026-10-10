@@ -1,0 +1,51 @@
+name: Validate merchant operations suite v2
+
+on:
+  push:
+    branches:
+      - validation/merchant-operations-suite-v2
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - name: Lint Merchant feature files
+        run: >
+          npx eslint
+          src/app/dashboard/merchant-control/actions.ts
+          src/app/dashboard/merchant-control/merchant-control-client.tsx
+          src/app/dashboard/merchant-control/page.tsx
+          src/app/dashboard/merchant/dollar-wallet/page.tsx
+          src/app/dashboard/merchant/orders/page.tsx
+          src/app/dashboard/merchant/page.tsx
+          src/app/dashboard/merchant/pathao-report/page.tsx
+          src/app/dashboard/merchant/products/page.tsx
+          src/app/dashboard/merchant/profit-loss/page.tsx
+          src/app/dashboard/merchant/purchases/page.tsx
+          src/app/dashboard/products-purchases/purchase-orders/actions.ts
+          src/app/dashboard/products-purchases/purchase-orders/page.tsx
+          src/app/dashboard/products-purchases/purchase-orders/purchase-orders-client.tsx
+          src/app/dashboard/ads-cost/sync/actions.ts
+          src/app/dashboard/ads-cost/sync/page.tsx
+          src/app/dashboard/ads-cost/sync/sync-client.tsx
+          src/app/dashboard/dashboard-navigation.tsx
+          src/lib/auth.ts
+          src/lib/inventory.ts
+          src/lib/merchant-portal.ts
+          src/lib/merchant-profit.ts
+          src/proxy.ts
+          src/types/next-auth.d.ts
+      - name: Standalone TypeScript diagnostics
+        continue-on-error: true
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build

@@ -40,7 +40,7 @@ export default function CreateIntegrationForm({
           Create Integration
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Add a Shopify or Laravel store connection with its own slug and API key.
+          Add a website connection. Store engine and catalog URL style are configured separately.
         </p>
       </div>
 
@@ -88,10 +88,10 @@ export default function CreateIntegrationForm({
             required
           >
             <option value="" disabled>
-              Select platform
+              Select website engine
             </option>
-            <option value="SHOPIFY">SHOPIFY</option>
             <option value="LARAVEL">LARAVEL</option>
+            <option value="SHOPIFY">SHOPIFY</option>
           </select>
         </div>
 
@@ -116,6 +116,66 @@ export default function CreateIntegrationForm({
             ))}
           </select>
         </div>
+
+        <div className="space-y-2">
+          <label htmlFor="catalogMode" className="text-sm font-medium text-slate-700">
+            Catalog Structure
+          </label>
+          <select
+            id="catalogMode"
+            name="catalogMode"
+            defaultValue="SUBCATEGORY"
+            className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+          >
+            <option value="SUBCATEGORY">Subcategory — /subcategory/&#123;slug&#125;</option>
+            <option value="COLLECTION">Collection — /collections/&#123;slug&#125;</option>
+          </select>
+          <p className="text-xs text-slate-500">
+            Laravel websites may use either style. This does not change the website engine.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="baseUrl" className="text-sm font-medium text-slate-700">
+            Website Base URL
+          </label>
+          <input
+            id="baseUrl"
+            name="baseUrl"
+            type="url"
+            placeholder="https://shop.example.com"
+            className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+          />
+        </div>
+
+        <div className="space-y-2 md:col-span-2">
+          <label htmlFor="catalogApiToken" className="text-sm font-medium text-slate-700">
+            Laravel Catalog API Token
+          </label>
+          <input
+            id="catalogApiToken"
+            name="catalogApiToken"
+            type="password"
+            placeholder="Token generated on the Laravel website"
+            className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+            autoComplete="new-password"
+          />
+          <p className="text-xs text-slate-500">
+            OMS uses this token when calling /api/oms/v1 on the website. It is separate from the OMS order API key above.
+          </p>
+        </div>
+
+        <label className="flex items-start gap-3 rounded-xl border bg-slate-50 p-3 md:col-span-2">
+          <input
+            type="checkbox"
+            name="productSyncEnabled"
+            value="true"
+            className="mt-1"
+          />
+          <span className="text-sm text-slate-700">
+            Enable Product Sync immediately. Base URL and Catalog API Token are required.
+          </span>
+        </label>
 
         <div className="space-y-2 md:col-span-2">
           <label

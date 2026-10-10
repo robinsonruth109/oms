@@ -1,11 +1,14 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   createCsvBatch,
   createInvoiceBatch,
   pushAllToAssignedCouriers,
+  resetCourierIdByInvoice,
 } from "./actions";
 
 type OrderRow = {
@@ -41,6 +44,7 @@ type BatchRow = {
 type Props = {
   courier: string;
   activeTab: string;
+  canResetCourierId: boolean;
   fromDate: string;
   toDate: string;
   bangladeshToday: string;
@@ -75,6 +79,7 @@ function CourierLabel({
 export default function ReadyToShipClient({
   courier,
   activeTab,
+  canResetCourierId,
   fromDate,
   toDate,
   bangladeshToday,
@@ -86,7 +91,9 @@ export default function ReadyToShipClient({
   invoiceBatches,
   csvBatches,
 }: Props) {
+  const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [resetInvoiceId, setResetInvoiceId] = useState("");
   const [invoiceState, invoiceAction, invoicePending] = useActionState(
     createInvoiceBatch,
     initialState
@@ -97,6 +104,10 @@ export default function ReadyToShipClient({
   );
   const [pushAllState, pushAllAction, pushAllPending] = useActionState(
     pushAllToAssignedCouriers,
+    initialState
+  );
+  const [resetState, resetAction, resetPending] = useActionState(
+    resetCourierIdByInvoice,
     initialState
   );
 
@@ -113,6 +124,14 @@ export default function ReadyToShipClient({
       setSelectedIds([]);
     }
   }, [csvState]);
+
+  useEffect(() => {
+    if (resetState.success) {
+      setResetInvoiceId("");
+      setSelectedIds([]);
+      router.refresh();
+    }
+  }, [resetState.success, resetState.message, router]);
 
   const allSelected = useMemo(() => {
     return orders.length > 0 && selectedIds.length === orders.length;
@@ -143,6 +162,92 @@ export default function ReadyToShipClient({
 
   return (
     <div className="space-y-6">
+      {canResetCourierId ? (
+        <section className="rounded-3xl border border-amber-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                  <RotateCcw className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-950">
+                    Courier ID Reset
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    Use only when Pathao shows <strong>Pickup Failed</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                Enter the OMS invoice ID. Reset removes the failed Pathao
+                consignment link and sends the order back to
+                <strong> Non Invoiced</strong> + <strong>Non CSV</strong> so a
+                new invoice/courier submission can be created.
+              </p>
+              <p className="mt-1 text-xs font-medium text-amber-700">
+                Physical stock is not restored during this reset. The original
+                stock deduction snapshot stays intact, so re-submitting the same
+                order cannot deduct stock twice.
+              </p>
+            </div>
+
+            <form
+              action={resetAction}
+              className="w-full max-w-xl"
+              onSubmit={(event) => {
+                const invoice = resetInvoiceId.trim();
+                if (!invoice) {
+                  event.preventDefault();
+                  return;
+                }
+
+                const confirmed = window.confirm(
+                  `Reset courier ID for invoice ${invoice}?\n\nThis is only for Pickup Failed parcels. The old Pathao consignment ID and current Pathao shipment state will be cleared. The order will return to Non Invoiced + Non CSV. Stock will NOT be restored.`
+                );
+
+                if (!confirmed) event.preventDefault();
+              }}
+            >
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Invoice ID
+              </label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  name="invoiceId"
+                  value={resetInvoiceId}
+                  onChange={(event) => setResetInvoiceId(event.target.value)}
+                  placeholder="Example: GS119652"
+                  autoComplete="off"
+                  className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                />
+                <Button
+                  type="submit"
+                  disabled={resetPending || !resetInvoiceId.trim()}
+                  className="whitespace-nowrap bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  {resetPending ? "Resetting..." : "Reset Courier ID"}
+                </Button>
+              </div>
+
+              {resetState.message ? (
+                <div
+                  className={
+                    "mt-3 rounded-xl px-3 py-2.5 text-sm " +
+                    (resetState.success
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-red-50 text-red-700")
+                  }
+                >
+                  {resetState.message}
+                </div>
+              ) : null}
+            </form>
+          </div>
+        </section>
+      ) : null}
+
       {flashMessage && (
         <div
           className={`rounded-2xl px-4 py-3 text-sm ${

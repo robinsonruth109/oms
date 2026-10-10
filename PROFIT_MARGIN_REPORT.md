@@ -38,7 +38,7 @@ Delivered order items use Product Master physical buying cost:
 
 An unlinked/missing/zero-cost item is treated as BDT 0 COGS and produces an overstatement warning.
 
-Product Gross Margin uses order line totals for merchandise sales. Final company Net Profit uses actual Pathao realized revenue.
+Product Gross Margin reconciles to realized merchandise revenue: the delivered order's realized revenue minus customer delivery charge is allocated across its items by their historical order-line value share. This means discount/COD adjustments affect the product margin table instead of showing today's catalog selling price. Final company Net Profit uses actual Pathao realized revenue.
 
 ## Pathao courier cost
 

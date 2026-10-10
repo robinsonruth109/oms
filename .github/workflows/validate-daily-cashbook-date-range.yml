@@ -1,0 +1,23 @@
+name: Validate daily cashbook date range
+
+on:
+  push:
+    branches:
+      - validation/daily-cashbook-date-range
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint changed Daily Cash Book files
+        run: npx eslint src/app/dashboard/finance/daily-costing/page.tsx src/app/api/finance/daily-costing/pdf/route.ts
+      - name: Production build
+        run: npm run build

@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { enqueueStockSyncForOwners } from "@/lib/product-catalog-sync";
 
 export type MerchantActionResult = {
   success: boolean;
@@ -529,6 +530,13 @@ export async function omsBuyMerchantProduct(input: {
           data: { omsOwnedStockQuantity: { increment: physicalUnits } },
         });
       }
+
+      await enqueueStockSyncForOwners(tx, [
+        {
+          ownerType: parentStock ? "PRODUCT_PARENT" : "PRODUCT",
+          ownerId: parentStock ? product.parentId : product.id,
+        },
+      ]);
 
       await tx.merchantOmsPurchase.create({
         data: {

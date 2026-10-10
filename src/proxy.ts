@@ -36,11 +36,7 @@ function isAllowed(pathname: string, role: string, userId: string) {
   if (role === "MERCHANT") {
     return (
       pathname === "/dashboard/merchant" ||
-      pathname.startsWith("/dashboard/merchant/") ||
-      pathname === "/dashboard/products-purchases/purchase-orders" ||
-      pathname.startsWith("/dashboard/products-purchases/purchase-orders/") ||
-      pathname === "/dashboard/products-purchases/received-orders" ||
-      pathname.startsWith("/dashboard/products-purchases/received-orders/")
+      pathname.startsWith("/dashboard/merchant/")
     );
   }
 

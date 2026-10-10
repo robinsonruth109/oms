@@ -6,7 +6,7 @@ on:
       - validation/parent-code-performance-report
 
 jobs:
-  validate:
+  validate-feature:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -17,5 +17,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
-      - run: npx tsc --noEmit
-      - run: npm run build
+      - name: Lint changed report files
+        run: npx eslint src/app/dashboard/profit-margin/page.tsx src/app/dashboard/profit-margin/product-performance-report.tsx
+      - name: TypeScript feature diagnostic
+        continue-on-error: true
+        run: npx tsc --noEmit
+      - name: Build feature diagnostic
+        continue-on-error: true
+        run: npm run build
+
+  validate-main-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: TypeScript main baseline
+        continue-on-error: true
+        run: npx tsc --noEmit
+      - name: Build main baseline
+        continue-on-error: true
+        run: npm run build

@@ -5,7 +5,6 @@ import {
   bangladeshDateStartUtc,
   getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
-import { prisma } from "@/lib/prisma";
 import {
   cogsForMerchantItem,
   normalizePathaoEvent,
@@ -97,6 +96,7 @@ export async function calculateMerchantProfitLoss(
 ): Promise<MerchantProfitResult> {
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
+  const { prisma } = await import("@/lib/prisma");
 
   const [webhooks, dollarRates, adSpends, operatingCosts] = await Promise.all([
     prisma.pathaoWebhookEvent.findMany({

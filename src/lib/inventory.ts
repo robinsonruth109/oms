@@ -322,7 +322,7 @@ export async function restoreReturnedStock(
     }
     await queueWebsiteStockSync(
       tx,
-      item.stockAllocations.map((allocation) => ({
+      item.stockAllocations.map((allocation: any) => ({
         ownerType: allocation.ownerType,
         ownerId: allocation.ownerId,
       }))

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronRight, PackageCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 export type ProductPerformanceChildRow = {
   key: string;
@@ -195,7 +195,7 @@ export default function ProductPerformanceReport({
             {rows.map((row) => {
               const isOpen = expanded.has(row.key);
               return (
-                <>
+                <Fragment key={row.key}>
                   <tr
                     key={row.key}
                     className="border-t bg-white transition hover:bg-slate-50"
@@ -255,7 +255,7 @@ export default function ProductPerformanceReport({
                         </tr>
                       ))
                     : null}
-                </>
+                </Fragment>
               );
             })}
 

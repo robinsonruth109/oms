@@ -706,6 +706,15 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
   const productMap = new Map<string, ProductRow>();
   for (const row of delivered) {
+    const orderMerchandiseRevenue = Math.max(
+      0,
+      row.revenue - numberValue(row.order.deliveryCharge)
+    );
+    const orderLineTotal = row.order.items.reduce(
+      (sum, item) => sum + numberValue(item.lineTotal),
+      0
+    );
+
     for (const item of row.order.items) {
       const key = item.product?.parent.sku || item.productSku;
       const name = item.product?.parent.name || item.productName;
@@ -717,7 +726,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         cogs: 0,
       };
       current.quantity += Math.max(0, Number(item.quantity || 0));
-      current.sales += numberValue(item.lineTotal);
+      const revenueShare =
+        orderLineTotal > 0
+          ? numberValue(item.lineTotal) / orderLineTotal
+          : 1 / Math.max(1, row.order.items.length);
+      current.sales += orderMerchandiseRevenue * revenueShare;
       current.cogs += cogsForItem(item).amount;
       productMap.set(key, current);
     }
@@ -1026,7 +1039,13 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       <section className="rounded-3xl border bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
           <PackageCheck className="h-5 w-5" />
-          <h2 className="text-lg font-bold">Product Gross Margin</h2>
+          <div>
+            <h2 className="text-lg font-bold">Product Gross Margin</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Realized merchandise revenue after delivery charge/discount/COD adjustment,
+              allocated across order items by their line-value share.
+            </p>
+          </div>
         </div>
         <div className="mt-4 overflow-x-auto rounded-2xl border">
           <table className="min-w-[850px] w-full text-sm">

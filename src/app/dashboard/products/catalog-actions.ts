@@ -214,7 +214,7 @@ export async function saveProductWebsiteListing(input: {
       }
     }
 
-    const listing = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
       const row = await tx.productWebsiteListing.upsert({
         where: { productId_integrationId: { productId, integrationId } },
         create: {
@@ -745,7 +745,7 @@ export async function applyCatalogImportCandidate(
       success: true,
       message:
         "Website content imported into OMS for SKU " +
-        candidate.matchedProduct.sku +
+        (candidate.matchedProduct?.sku || candidate.sku) +
         ". Inventory quantities were not changed.",
     };
   } catch (error) {

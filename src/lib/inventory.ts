@@ -1,5 +1,7 @@
 import "server-only";
 
+import { findProductByFlexibleSku } from "@/lib/product-sku-match";
+
 export class InventoryError extends Error {
   constructor(message: string) {
     super(message);
@@ -51,11 +53,45 @@ export type InventoryStockWarning = {
 };
 async function resolveProduct(db: any, item: any) {
   if (item.product?.parent) return item.product;
-  const product = await db.product.findUnique({
-    where: { sku: item.productSku },
-    include: { parent: true },
-  });
-  if (!product) throw new InventoryError("Product " + item.productSku + " is not linked to Product Master.");
+
+  const match = await findProductByFlexibleSku(db, item.productSku);
+
+  if (match.matchedBy === "AMBIGUOUS") {
+    throw new InventoryError(
+      "Product " +
+        item.productSku +
+        " matches more than one Product Master SKU after spacing normalization: " +
+        match.candidates.join(", ") +
+        ". Please correct the order item manually."
+    );
+  }
+
+  const product = match.product;
+
+  if (!product) {
+    throw new InventoryError(
+      "Product " + item.productSku + " is not linked to Product Master."
+    );
+  }
+
+  // Repair historical/imported items once a unique normalized SKU match is
+  // proven. This turns old '- Combo' / '-Combo' variants into the canonical
+  // Product Master link before any stock is deducted.
+  if (
+    item.id &&
+    (!item.productId ||
+      item.productId !== product.id ||
+      item.productSku !== product.sku)
+  ) {
+    await db.orderItem.update({
+      where: { id: item.id },
+      data: {
+        productId: product.id,
+        productSku: product.sku,
+      },
+    });
+  }
+
   return product;
 }
 function ownerFor(product: any, qty: number): PhysicalRequirement {

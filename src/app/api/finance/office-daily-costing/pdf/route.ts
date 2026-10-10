@@ -29,18 +29,32 @@ export async function GET(request: NextRequest) {
   // the MariaDB adapter while collecting route configuration.
   const { prisma } = await import("@/lib/prisma");
 
-  const date = request.nextUrl.searchParams.get("date") || getBangladeshDateInputValue();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return new NextResponse("Invalid date", { status: 400 });
+  const today = getBangladeshDateInputValue();
+  const legacyDate = request.nextUrl.searchParams.get("date") || "";
+  let from = request.nextUrl.searchParams.get("from") || legacyDate || today;
+  let to = request.nextUrl.searchParams.get("to") || legacyDate || today;
 
-  const range = getBangladeshDayRange(date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return new NextResponse("Invalid date range", { status: 400 });
+  }
+
+  if (from > to) [from, to] = [to, from];
+
+  const fromRange = getBangladeshDayRange(from);
+  const toRange = getBangladeshDayRange(to);
+  const rangeText = from === to ? dateLabel(from) : `${dateLabel(from)} - ${dateLabel(to)}`;
+
   const [entries, priorEntries] = await Promise.all([
     prisma.financeDailyCost.findMany({
-      where: { bookType: "OFFICE", costDate: { gte: range.start, lte: range.end } },
+      where: {
+        bookType: "OFFICE",
+        costDate: { gte: fromRange.start, lte: toRange.end },
+      },
       include: { createdByUser: { select: { name: true } } },
       orderBy: [{ createdAt: "asc" }],
     }),
     prisma.financeDailyCost.findMany({
-      where: { bookType: "OFFICE", costDate: { lt: range.start } },
+      where: { bookType: "OFFICE", costDate: { lt: fromRange.start } },
       select: { entryType: true, amount: true, paymentMethod: true },
       orderBy: [{ costDate: "asc" }, { createdAt: "asc" }],
     }),
@@ -65,7 +79,7 @@ export async function GET(request: NextRequest) {
     page,
     font,
     title: "Office Daily Cash Book",
-    subtitle: `Date: ${dateLabel(date)}`,
+    subtitle: `Date range: ${rangeText}`,
     pageWidth,
     topY: pageHeight - 28,
     compact: useA5,
@@ -77,7 +91,7 @@ export async function GET(request: NextRequest) {
       page,
       font,
       title: "Office Daily Cash Book",
-      subtitle: continued ? `${dateLabel(date)} - continued` : `Date: ${dateLabel(date)}`,
+      subtitle: continued ? `${rangeText} - continued` : `Date range: ${rangeText}`,
       pageWidth,
       topY: pageHeight - 28,
       compact: useA5,
@@ -107,7 +121,7 @@ export async function GET(request: NextRequest) {
   };
 
   const drawJomaTable = () => {
-    drawSectionTitle("Today Cash In / Joma");
+    drawSectionTitle(from === to ? "Cash In / Joma" : "Range Cash In / Joma");
     if (!jomaEntries.length) {
       page.drawText("No Joma entries.", { x: margin, y: y - 8, size: normalSize, font });
       y -= 24;
@@ -200,9 +214,9 @@ export async function GET(request: NextRequest) {
 
   ensureSpace(useA5 ? 74 : 82);
   drawLabelValue("Existing Balance", money(totals.openingBalance), y - 3);
-  drawLabelValue("Today Cash In", money(totals.totalJoma), y - 3, true);
-  drawLabelValue("Today Khoroch", money(totals.totalKhoroch), y - (useA5 ? 20 : 23));
-  drawLabelValue("Today Lasting Balance", money(totals.closingBalance), y - (useA5 ? 20 : 23), true);
+  drawLabelValue("Range Cash In", money(totals.totalJoma), y - 3, true);
+  drawLabelValue("Range Khoroch", money(totals.totalKhoroch), y - (useA5 ? 20 : 23));
+  drawLabelValue("Closing Balance", money(totals.closingBalance), y - (useA5 ? 20 : 23), true);
   y -= useA5 ? 47 : 54;
 
   drawJomaTable();
@@ -226,7 +240,7 @@ export async function GET(request: NextRequest) {
   });
 
   ensureSpace(40);
-  const finalText = `TODAY LASTING BALANCE: ${money(totals.closingBalance)}`;
+  const finalText = `CLOSING BALANCE: ${money(totals.closingBalance)}`;
   page.drawText(finalText, { x: margin, y: y - 5, size: useA5 ? 10.5 : 12, font });
 
   // Footer on every page.
@@ -245,7 +259,7 @@ export async function GET(request: NextRequest) {
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="office-daily-cash-book-${date}.pdf"`,
+      "Content-Disposition": `attachment; filename="office-cash-book-${from}-to-${to}.pdf"`,
       "Cache-Control": "no-store",
     },
   });

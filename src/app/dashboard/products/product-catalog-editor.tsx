@@ -148,10 +148,6 @@ export default function ProductCatalogEditor({
     () => media.filter((row) => row.kind === "IMAGE"),
     [media]
   );
-  const videos = useMemo(
-    () => media.filter((row) => row.kind === "VIDEO"),
-    [media]
-  );
 
   function showResult(result: { success: boolean; message: string }) {
     setMessage(result.message);
@@ -418,7 +414,6 @@ export default function ProductCatalogEditor({
             <div key={row.id} className="overflow-hidden rounded-2xl border bg-slate-50">
               <div className="flex h-44 items-center justify-center bg-white">
                 {row.previewUrl && row.kind === "IMAGE" ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={row.previewUrl}
                     alt={row.originalFileName}

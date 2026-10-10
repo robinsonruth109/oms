@@ -583,10 +583,33 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     dollarByDay.set(key, current);
   }
 
+  // Source attribution for ads follows the saved Meta campaign mapping.
+  // When one campaign maps to multiple Sources, use delivered order share for
+  // that mapped parent product in the selected webhook period.
+  const parentSourceDeliveredCounts = new Map<string, number>();
+  for (const row of evaluated) {
+    if (!row.delivered) continue;
+    const parentIds = new Set(
+      row.order.items
+        .map((item) => item.product?.parent.id)
+        .filter((id): id is string => Boolean(id))
+    );
+    for (const parentId of parentIds) {
+      const key = parentId + "::" + row.order.sourceId;
+      parentSourceDeliveredCounts.set(
+        key,
+        (parentSourceDeliveredCounts.get(key) || 0) + 1
+      );
+    }
+  }
+
   const missingRateDays = new Set<string>();
   const unsupportedAdCurrencies = new Set<string>();
   const adMap = new Map<string, AdsRow>();
   let adsTotal = 0;
+  let adsSourceAttributed = 0;
+  let unmappedAdsForSource = 0;
+
   for (const row of adsRowsRaw) {
     const currency = String(row.currency || "USD").toUpperCase();
     const amount = numberValue(row.amountSpent);
@@ -605,21 +628,71 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     }
 
     adsTotal += bdt;
+    let sourceAmount = bdt;
+    const mapping = row.campaign.mapping;
+
+    if (sourceId) {
+      if (!mapping) {
+        sourceAmount = 0;
+        unmappedAdsForSource += bdt;
+      } else {
+        const mappedSourceIds = mapping.sources.map((item) => item.sourceId);
+        if (!mappedSourceIds.includes(sourceId)) {
+          sourceAmount = 0;
+        } else if (mappedSourceIds.length > 1) {
+          const counts = mappedSourceIds.map(
+            (mappedSourceId) =>
+              parentSourceDeliveredCounts.get(
+                mapping.productParentId + "::" + mappedSourceId
+              ) || 0
+          );
+          const totalCount = counts.reduce((sum, count) => sum + count, 0);
+          const selectedIndex = mappedSourceIds.indexOf(sourceId);
+          const sourceShare =
+            totalCount > 0
+              ? counts[selectedIndex] / totalCount
+              : 1 / mappedSourceIds.length;
+          sourceAmount = bdt * sourceShare;
+        }
+      }
+    }
+
+    adsSourceAttributed += sourceAmount;
+
     const key = row.campaign.id + "::" + row.adAccount.id;
     const current = adMap.get(key) || {
       key,
       campaign: row.campaignNameSnapshot,
       account: row.adAccount.name,
-      amount: 0,
+      periodAmount: 0,
+      appliedAmount: 0,
     };
-    current.amount += bdt;
+    current.periodAmount += bdt;
+    current.appliedAmount += sourceAmount;
     adMap.set(key, current);
+  }
+
+  // Campaigns do not have a courier dimension. Only the courier slice of the
+  // already source-attributed ad cost is applied when a Courier is selected.
+  let courierAdsShare = 1;
+  if (courierId) {
+    const denominator = evaluated
+      .filter(
+        (row) =>
+          row.delivered &&
+          (!sourceId || row.order.sourceId === sourceId)
+      )
+      .reduce((sum, row) => sum + row.revenue, 0);
+    courierAdsShare =
+      denominator > 0
+        ? Math.max(0, Math.min(1, grossRevenue / denominator))
+        : 0;
   }
 
   const salaryApplied = salaryTotal * allocationShare;
   const dailyApplied = daily.included * allocationShare;
   const officeApplied = office.included * allocationShare;
-  const adsApplied = adsTotal * allocationShare;
+  const adsApplied = adsSourceAttributed * courierAdsShare;
   const courierCost = deliveryCost + returnCost;
   const netProfit =
     grossRevenue -
@@ -689,7 +762,12 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
   const sourceRows = operationRows("source");
   const courierRows = operationRows("courier");
-  const adsRows = Array.from(adMap.values()).sort((a, b) => b.amount - a.amount);
+  const adsRows = Array.from(adMap.values())
+    .map((row) => ({
+      ...row,
+      appliedAmount: row.appliedAmount * courierAdsShare,
+    }))
+    .sort((a, b) => b.appliedAmount - a.appliedAmount);
 
   const warnings: string[] = [];
   if (missingCostLines) {
@@ -726,9 +804,27 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   }
   if (filteredView) {
     warnings.push(
-      "Shared costs (Meta ads, salary, Daily Costing and Office Daily Costing) are allocated to this filtered Source/Courier view using " +
+      "Salary, Daily Costing and Office Daily Costing are shared overhead. This filtered view applies " +
         (allocationShare * 100).toFixed(2) +
-        "% of company delivered revenue for the selected dates."
+        "% of those costs using the selected slice's share of company delivered revenue."
+    );
+  }
+  if (sourceId) {
+    warnings.push(
+      "Meta ads follow the saved campaign-to-Source mapping. Multi-Source campaigns are split by delivered order count for the mapped parent product in this date range."
+    );
+    if (unmappedAdsForSource > 0) {
+      warnings.push(
+        taka(unmappedAdsForSource) +
+          " of Meta spend has no campaign Source mapping and is excluded from this Source-filtered view."
+      );
+    }
+  }
+  if (courierId) {
+    warnings.push(
+      "Meta campaigns have no courier field. " +
+        (courierAdsShare * 100).toFixed(2) +
+        "% of the Source-attributed ad spend is applied to this courier using delivered-revenue share."
     );
   }
   const excludedDuplicates = daily.excluded + office.excluded;
@@ -895,7 +991,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
                   <p className="truncate font-semibold text-slate-800">{row.campaign}</p>
                   <p className="truncate text-xs text-slate-500">{row.account}</p>
                 </div>
-                <span className="shrink-0 font-semibold">{taka(row.amount * allocationShare)}</span>
+                <div className="shrink-0 text-right">
+                  <p className="font-semibold">{taka(row.appliedAmount)}</p>
+                  {row.appliedAmount !== row.periodAmount ? (
+                    <p className="text-[11px] text-slate-400">
+                      Period {taka(row.periodAmount)}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             ))}
             {!adsRows.length ? <p className="px-4 py-6 text-center text-sm text-slate-500">No Meta spend in this date range.</p> : null}

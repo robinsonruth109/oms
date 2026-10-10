@@ -60,6 +60,8 @@ function isAllowed(pathname: string, role: string, userId: string) {
       pathname.startsWith("/dashboard/pathao-daily-report/") ||
       pathname === "/dashboard/pathao-delivery-report" ||
       pathname.startsWith("/dashboard/pathao-delivery-report/") ||
+      pathname === "/dashboard/products-purchases/local-purchase" ||
+      pathname.startsWith("/dashboard/products-purchases/local-purchase/") ||
       pathname === "/dashboard/products-purchases/purchase-orders" ||
       pathname.startsWith("/dashboard/products-purchases/purchase-orders/") ||
       pathname === "/dashboard/products-purchases/received-orders" ||

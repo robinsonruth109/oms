@@ -5,6 +5,12 @@ import { authOptions } from "@/lib/auth";
 import CreateProductForm from "./create-product-form";
 import CsvImportForm from "./csv-import-form";
 import EditProductForm from "./edit-product-form";
+import ProductCatalogEditor from "./product-catalog-editor";
+import BundleRecipeEditor from "./bundles/bundle-recipe-editor";
+import {
+  createProductMediaDownloadUrl,
+  productMediaStorageConfigured,
+} from "@/lib/product-media-storage";
 
 
 type ProductsPageProps = {
@@ -60,29 +66,87 @@ export default async function ProductsPage({
         }
       : undefined;
 
-  const [products, editProduct] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      include: {
-        parent: true,
-        bundleComponents: { include: { componentProduct: true } },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 100,
-    }),
-    edit && canManageMaster
-      ? prisma.product.findUnique({
-          where: {
-            id: edit,
-          },
-          include: {
-            parent: true,
-          },
-        })
-      : null,
-  ]);
+  const [products, editProduct, integrations, componentOptions, importCandidates] =
+    await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          parent: true,
+          bundleComponents: { include: { componentProduct: true } },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 100,
+      }),
+      edit && canManageMaster
+        ? prisma.product.findUnique({
+            where: {
+              id: edit,
+            },
+            include: {
+              parent: true,
+              catalogContent: true,
+              media: {
+                orderBy: [
+                  { isPrimary: "desc" },
+                  { sortOrder: "asc" },
+                  { createdAt: "asc" },
+                ],
+              },
+              bundleComponents: true,
+              websiteListings: {
+                include: {
+                  taxonomyLinks: true,
+                },
+              },
+            },
+          })
+        : null,
+      canManageMaster
+        ? prisma.integration.findMany({
+            where: { status: true },
+            orderBy: { name: "asc" },
+            include: {
+              taxonomyTerms: {
+                where: { active: true },
+                orderBy: [{ type: "asc" }, { name: "asc" }],
+              },
+            },
+          })
+        : [],
+      edit && canManageMaster
+        ? prisma.product.findMany({
+            where: {
+              inventoryKind: "PHYSICAL",
+              status: true,
+              parent: { stockMode: "VARIANT_STOCK" },
+              NOT: { id: edit },
+            },
+            orderBy: { sku: "asc" },
+            take: 500,
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              quantity: true,
+              purchasePrice: true,
+            },
+          })
+        : [],
+      edit && canManageMaster
+        ? prisma.productCatalogImportCandidate.findMany({
+            where: {
+              matchedProductId: edit,
+            },
+            include: {
+              integration: { select: { name: true } },
+            },
+            orderBy: { updatedAt: "desc" },
+            take: 20,
+          })
+        : [],
+    ]);
 
   function displayStock(product: (typeof products)[number]) {
     return product.inventoryKind === "BUNDLE"
@@ -143,12 +207,6 @@ export default async function ProductsPage({
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {canManageMaster ? (
-              <Link href="/dashboard/products/bundles"
-                className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">
-                Configure Bundles
-              </Link>
-            ) : null}
             <Link href="/dashboard/products-purchases/local-purchase"
               className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">
               Local Purchase
@@ -180,29 +238,167 @@ export default async function ProductsPage({
       </section>
 
       {canManageMaster && editProduct ? (
-        <EditProductForm
-          product={{
-            id: editProduct.id,
-            sku: editProduct.sku,
-            name: editProduct.name,
-            quantity: editProduct.quantity,
-            unitsPerSale: editProduct.unitsPerSale,
-            inventoryKind: editProduct.inventoryKind,
-            stockVerified: editProduct.parent.stockMode === "PARENT_STOCK"
-              ? Boolean(editProduct.parent.stockVerifiedAt)
-              : Boolean(editProduct.stockVerifiedAt),
-            purchasePrice: String(editProduct.purchasePrice),
-            sellingPrice: String(editProduct.sellingPrice),
-            status: editProduct.status,
-            parent: {
-              sku: editProduct.parent.sku,
-              name: editProduct.parent.name,
-              stockMode: editProduct.parent.stockMode,
-              stockQuantity: editProduct.parent.stockQuantity,
-              purchasePrice: String(editProduct.parent.purchasePrice || 0),
-            },
-          }}
-        />
+        <>
+          <EditProductForm
+            product={{
+              id: editProduct.id,
+              sku: editProduct.sku,
+              name: editProduct.name,
+              quantity: editProduct.quantity,
+              unitsPerSale: editProduct.unitsPerSale,
+              inventoryKind: editProduct.inventoryKind,
+              stockVerified: editProduct.parent.stockMode === "PARENT_STOCK"
+                ? Boolean(editProduct.parent.stockVerifiedAt)
+                : Boolean(editProduct.stockVerifiedAt),
+              purchasePrice: String(editProduct.purchasePrice),
+              sellingPrice: String(editProduct.sellingPrice),
+              status: editProduct.status,
+              parent: {
+                sku: editProduct.parent.sku,
+                name: editProduct.parent.name,
+                stockMode: editProduct.parent.stockMode,
+                stockQuantity: editProduct.parent.stockQuantity,
+                purchasePrice: String(editProduct.parent.purchasePrice || 0),
+              },
+            }}
+          />
+
+          <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-slate-950">
+                Bundle / Composite Recipe
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Bundle Recipes are now part of Product Master. A bundle has no
+                independent physical stock or valuation; availability comes from
+                its physical component SKUs.
+              </p>
+            </div>
+            <BundleRecipeEditor
+              product={{
+                id: editProduct.id,
+                sku: editProduct.sku,
+                name: editProduct.name,
+                parentSku: editProduct.parent.sku,
+                mode: editProduct.parent.stockMode,
+                kind: editProduct.inventoryKind,
+                legacyQuantity: editProduct.quantity,
+                existing: editProduct.bundleComponents.map((part) => ({
+                  componentProductId: part.componentProductId,
+                  units: part.units,
+                })),
+              }}
+              options={componentOptions.map((option) => ({
+                id: option.id,
+                sku: option.sku,
+                name: option.name,
+                quantity: option.quantity,
+                cost: Number(option.purchasePrice),
+              }))}
+            />
+          </section>
+
+          <ProductCatalogEditor
+            product={{
+              id: editProduct.id,
+              sku: editProduct.sku,
+              name: editProduct.name,
+              sellingPrice: Number(editProduct.sellingPrice),
+              content: {
+                banglaName: editProduct.catalogContent?.banglaName || "",
+                englishName:
+                  editProduct.catalogContent?.englishName || editProduct.name,
+                productSlug:
+                  editProduct.catalogContent?.productSlug ||
+                  editProduct.slug ||
+                  "",
+                shortDescriptionHtml:
+                  editProduct.catalogContent?.shortDescriptionHtml || "",
+                fullDescriptionHtml:
+                  editProduct.catalogContent?.fullDescriptionHtml || "",
+                oldPrice:
+                  editProduct.catalogContent?.oldPrice !== null &&
+                  editProduct.catalogContent?.oldPrice !== undefined
+                    ? Number(editProduct.catalogContent.oldPrice)
+                    : null,
+                featured: Boolean(editProduct.catalogContent?.featured),
+                sortOrder: editProduct.catalogContent?.sortOrder || 0,
+                metaTitle: editProduct.catalogContent?.metaTitle || "",
+                metaDescription:
+                  editProduct.catalogContent?.metaDescription || "",
+                externalVideoUrl:
+                  editProduct.catalogContent?.externalVideoUrl || "",
+              },
+            }}
+            websites={integrations.map((integration) => {
+              const listing = editProduct.websiteListings.find(
+                (row) => row.integrationId === integration.id
+              );
+              return {
+                id: integration.id,
+                name: integration.name,
+                platform: integration.platform,
+                catalogMode: integration.catalogMode,
+                productSyncEnabled: integration.productSyncEnabled,
+                baseUrl: integration.baseUrl,
+                taxonomyTerms: integration.taxonomyTerms.map((term) => ({
+                  id: term.id,
+                  externalId: term.externalId,
+                  type: term.type,
+                  parentExternalId: term.parentExternalId,
+                  name: term.name,
+                  slug: term.slug,
+                })),
+                listing: listing
+                  ? {
+                      id: listing.id,
+                      productSlugOverride: listing.productSlugOverride,
+                      sellingPriceOverride:
+                        listing.sellingPriceOverride !== null
+                          ? Number(listing.sellingPriceOverride)
+                          : null,
+                      oldPriceOverride:
+                        listing.oldPriceOverride !== null
+                          ? Number(listing.oldPriceOverride)
+                          : null,
+                      active: listing.active,
+                      featuredOverride: listing.featuredOverride,
+                      remoteProductId: listing.remoteProductId,
+                      publicUrl: listing.publicUrl,
+                      syncStatus: listing.syncStatus,
+                      lastSyncedAt: listing.lastSyncedAt
+                        ? listing.lastSyncedAt.toISOString()
+                        : null,
+                      lastSyncError: listing.lastSyncError,
+                      taxonomyTermIds: listing.taxonomyLinks.map(
+                        (link) => link.termId
+                      ),
+                    }
+                  : null,
+              };
+            })}
+            media={editProduct.media.map((row) => ({
+              id: row.id,
+              kind: row.kind,
+              originalFileName: row.originalFileName,
+              mimeType: row.mimeType,
+              sizeBytes: Number(row.sizeBytes),
+              isPrimary: row.isPrimary,
+              sortOrder: row.sortOrder,
+              previewUrl: productMediaStorageConfigured()
+                ? createProductMediaDownloadUrl(row.objectKey, 1800)
+                : null,
+            }))}
+            importCandidates={importCandidates.map((candidate) => ({
+              id: candidate.id,
+              websiteName: candidate.integration.name,
+              externalProductId: candidate.remoteProductId,
+              status: candidate.status,
+              updatedAt: candidate.updatedAt.toISOString(),
+            }))}
+            bucketConfigured={productMediaStorageConfigured()}
+          />
+        </>
       ) : null}
 
       {canManageMaster ? (
@@ -242,14 +438,6 @@ export default async function ProductsPage({
                       className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
                     >
                       Edit
-                    </Link>
-                  ) : null}
-                  {canManageMaster ? (
-                    <Link
-                      href={"/dashboard/products/bundles?q=" + encodeURIComponent(product.sku)}
-                      className="rounded-lg border border-violet-300 px-3 py-1.5 text-xs font-semibold text-violet-700"
-                    >
-                      Bundle
                     </Link>
                   ) : null}
                 </div>

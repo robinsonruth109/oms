@@ -4,7 +4,6 @@ import crypto from "node:crypto";
 
 import { availableBundleSets, resolvePhysicalRequirements } from "@/lib/inventory";
 import { createProductMediaDownloadUrl } from "@/lib/product-media-storage";
-import { prisma } from "@/lib/prisma";
 
 function headers(token: string) {
   return {
@@ -29,6 +28,7 @@ async function websiteStock(product: {
 }
 
 export async function buildProductListingPayload(listingId: string) {
+  const { prisma } = await import("@/lib/prisma");
   const listing = await prisma.productWebsiteListing.findUnique({
     where: { id: listingId },
     include: {
@@ -122,6 +122,7 @@ export async function syncProductListingNow(
   operation?: "FULL_UPSERT" | "STOCK_ONLY" | "UNPUBLISH",
   existingJobId?: string
 ) {
+  const { prisma } = await import("@/lib/prisma");
   const { listing, payload } = await buildProductListingPayload(listingId);
   if (!listing.integration.productSyncEnabled) {
     throw new Error(
@@ -286,6 +287,7 @@ export async function syncProductListingNow(
 }
 
 export async function runPendingProductSyncJobs(limit = 8) {
+  const { prisma } = await import("@/lib/prisma");
   const jobs = await prisma.productSyncJob.findMany({
     where: {
       listingId: { not: null },

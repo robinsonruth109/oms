@@ -9,6 +9,12 @@ type Product = {
   sku: string;
   name: string;
   parentSku: string;
+  merchantId: string | null;
+};
+
+type Merchant = {
+  id: string;
+  name: string;
 };
 
 type PurchaseOrder = {
@@ -17,6 +23,8 @@ type PurchaseOrder = {
   productSku: string;
   productName: string;
   parentSku: string;
+  merchantId: string | null;
+  merchantName: string;
   quantity: number;
   quantityType: string;
   subtotalUsd: number;
@@ -27,6 +35,7 @@ type PurchaseOrder = {
 
 type GroupedRow = {
   parentSku: string;
+  merchantName: string;
   totalOrders: number;
   avgPrice: number;
   totalQty: number;
@@ -70,15 +79,20 @@ function StatusBadge({ status }: { status: string }) {
 export default function PurchaseOrdersClient({
   products,
   orders,
+  merchants,
+  canSelectMerchant,
 }: {
   products: Product[];
   orders: PurchaseOrder[];
+  merchants: Merchant[];
+  canSelectMerchant: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
 
   const [productId, setProductId] = useState("");
+  const [merchantId, setMerchantId] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
   const [quantity, setQuantity] = useState(1);
@@ -121,6 +135,7 @@ export default function PurchaseOrdersClient({
       } else {
         map.set(order.parentSku, {
           parentSku: order.parentSku,
+          merchantName: order.merchantName,
           totalOrders: 1,
           totalQty: order.quantity,
           totalPaidBdt: paidBdt,
@@ -151,6 +166,7 @@ export default function PurchaseOrdersClient({
     startTransition(async () => {
       const result = await createPurchaseOrder({
         productId,
+        merchantId: merchantId || undefined,
         orderDate,
         quantity,
         quantityType,
@@ -201,6 +217,7 @@ export default function PurchaseOrdersClient({
                     type="button"
                     onClick={() => {
                       setProductId(product.id);
+                      setMerchantId(product.merchantId || "");
                       setProductSearch(`${product.parentSku} - ${product.name}`);
                     }}
                     className="flex w-full flex-col items-start border-b px-4 py-3 text-left hover:bg-slate-50"
@@ -252,6 +269,28 @@ export default function PurchaseOrdersClient({
           <NumberInput label="Unit Price USD" value={unitPriceUsd} onChange={setUnitPriceUsd} />
           <NumberInput label="Platform Charge USD" value={platformChargeUsd} onChange={setPlatformChargeUsd} />
           <NumberInput label="Shipping Charge China USD" value={shippingUsd} onChange={setShippingUsd} />
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Merchant
+            </label>
+            <select
+              value={merchantId}
+              disabled={!canSelectMerchant}
+              onChange={(event) => setMerchantId(event.target.value)}
+              className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none disabled:bg-slate-100"
+            >
+              <option value="">Default OMS</option>
+              {merchants.map((merchant) => (
+                <option key={merchant.id} value={merchant.id}>
+                  {merchant.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Merchant must match the Product Parent owner. Unassigned parents use OMS.
+            </p>
+          </div>
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -313,6 +352,7 @@ export default function PurchaseOrdersClient({
             <thead className="bg-slate-50">
               <tr className="border-b">
                 <Th>Product Code</Th>
+                <Th>Merchant</Th>
                 <Th center>Purchase Orders</Th>
                 <Th center>Average Product Price</Th>
                 <Th center>Total QTY</Th>
@@ -338,6 +378,7 @@ export default function PurchaseOrdersClient({
                         </button>
                       </td>
 
+                      <Td>{row.merchantName}</Td>
                       <Td center>{row.totalOrders}</Td>
                       <Td center>{formatMoney(row.avgPrice)}</Td>
                       <Td center>{row.totalQty}</Td>
@@ -360,6 +401,7 @@ export default function PurchaseOrdersClient({
                               <p className="text-slate-500">{order.productName}</p>
                             </td>
 
+                            <Td>{order.merchantName}</Td>
                             <Td center>
                               {order.quantity} {order.quantityType}
                             </Td>
@@ -390,7 +432,7 @@ export default function PurchaseOrdersClient({
               {!groupedRows.length && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >
                     No purchase orders found.

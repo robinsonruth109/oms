@@ -338,8 +338,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   }
 
   const evaluated: Evaluated[] = [];
-  const statusCounts = new Map<string, number>();
-
   for (const [id, events] of eventMap) {
     const order = orderMap.get(id);
     if (!order) continue;
@@ -434,7 +432,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         )
       : 0;
 
-    statusCounts.set(latest, (statusCounts.get(latest) || 0) + 1);
     evaluated.push({
       order,
       delivered,
@@ -494,6 +491,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       const snapshot = profile.salaryMonths.find(
         (row) => getBangladeshDateInputValue(row.monthDate).slice(0, 7) === month
       );
+      const profileCreatedMonth = getBangladeshDateInputValue(profile.createdAt).slice(0, 7);
+      if (!snapshot && month < profileCreatedMonth) continue;
       if (!snapshot && !profile.enabled) continue;
 
       const totals = snapshot

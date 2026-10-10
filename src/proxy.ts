@@ -2,6 +2,7 @@ import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 
 function roleHome(role: string) {
+  if (role === "MERCHANT") return "/dashboard/merchant";
   if (role === "MANAGER") return "/dashboard/all-orders";
   if (role === "NOTE_AGENT") return "/dashboard/orders";
   if (role === "PACKAGING_AGENT") return "/dashboard/ready-to-ship";
@@ -30,6 +31,17 @@ function isAllowed(pathname: string, role: string, userId: string) {
         pathname === `/dashboard/finance/salary/${userId}`))
   ) {
     return true;
+  }
+
+  if (role === "MERCHANT") {
+    return (
+      pathname === "/dashboard/merchant" ||
+      pathname.startsWith("/dashboard/merchant/") ||
+      pathname === "/dashboard/products-purchases/purchase-orders" ||
+      pathname.startsWith("/dashboard/products-purchases/purchase-orders/") ||
+      pathname === "/dashboard/products-purchases/received-orders" ||
+      pathname.startsWith("/dashboard/products-purchases/received-orders/")
+    );
   }
 
   if (role === "MANAGER") {
@@ -120,7 +132,10 @@ export async function proxy(request: NextRequest) {
 
   if (
     pathname === "/dashboard" &&
-    (role === "MANAGER" || role === "NOTE_AGENT" || role === "PACKAGING_AGENT")
+    (role === "MERCHANT" ||
+      role === "MANAGER" ||
+      role === "NOTE_AGENT" ||
+      role === "PACKAGING_AGENT")
   ) {
     return NextResponse.redirect(new URL(roleHome(role), request.url));
   }

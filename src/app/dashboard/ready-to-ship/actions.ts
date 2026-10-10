@@ -56,6 +56,167 @@ async function requirePackagingSession() {
   return session;
 }
 
+async function requireCourierResetSession() {
+  const session = await getServerSession(authOptions);
+
+  if (!session || !["ADMIN", "MANAGER"].includes(session.user.role)) {
+    throw new Error("Only Admin or Manager can reset a courier consignment ID.");
+  }
+
+  return session;
+}
+
+function isPickupFailedStatus(
+  status: string | null | undefined,
+  slug: string | null | undefined
+) {
+  const value = `${status || ""} ${slug || ""}`
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return value.includes("pickup failed");
+}
+
+export async function resetCourierIdByInvoice(
+  _prevState: BatchActionState,
+  formData: FormData
+): Promise<BatchActionState> {
+  try {
+    const session = await requireCourierResetSession();
+    const { prisma } = await import("@/lib/prisma");
+
+    const invoiceId = String(formData.get("invoiceId") || "").trim();
+    if (!invoiceId) {
+      return { success: false, message: "Invoice ID is required." };
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { invoiceId },
+      select: {
+        id: true,
+        invoiceId: true,
+        orderId: true,
+        customerName: true,
+        phone: true,
+        orderStatus: true,
+        courier: true,
+        csvDownloaded: true,
+        invoiceDownloaded: true,
+        pathaoCourierId: true,
+        pathaoConsignmentId: true,
+        pathaoMerchantOrderId: true,
+        pathaoSubmissionStatus: true,
+        pathaoOrderStatus: true,
+        pathaoOrderStatusSlug: true,
+        pathaoSubmittedAt: true,
+      },
+    });
+
+    if (!order) {
+      return {
+        success: false,
+        message: `Invoice ${invoiceId} was not found.`,
+      };
+    }
+
+    if (!order.pathaoConsignmentId) {
+      return {
+        success: false,
+        message: `Invoice ${invoiceId} has no Pathao consignment ID to reset.`,
+      };
+    }
+
+    if (!isPickupFailedStatus(order.pathaoOrderStatus, order.pathaoOrderStatusSlug)) {
+      return {
+        success: false,
+        message:
+          `Courier ID reset is only allowed for Pickup Failed parcels. Current Pathao status: ${order.pathaoOrderStatus || order.pathaoOrderStatusSlug || order.pathaoSubmissionStatus}.`,
+      };
+    }
+
+    const previousConsignmentId = order.pathaoConsignmentId;
+    const previousStatus =
+      order.pathaoOrderStatus ||
+      order.pathaoOrderStatusSlug ||
+      order.pathaoSubmissionStatus;
+    const now = new Date();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          orderStatus: "READY_TO_SHIP",
+          invoiceDownloaded: false,
+          csvDownloaded: false,
+          readyToShipAt: now,
+
+          pathaoCourierId: null,
+          pathaoConsignmentId: null,
+          pathaoMerchantOrderId: null,
+          pathaoSubmissionStatus: "NOT_SUBMITTED",
+          pathaoOrderStatus: null,
+          pathaoOrderStatusSlug: null,
+          pathaoDeliveryFee: null,
+          pathaoAmountToCollect: null,
+          pathaoSubmittedAt: null,
+          pathaoCreatedAt: null,
+          pathaoLastSyncedAt: null,
+          pathaoLastError: null,
+          pathaoRawResponse: null,
+        },
+      });
+
+      await tx.orderAuditEvent.create({
+        data: {
+          orderId: order.id,
+          eventType: "COURIER_ID_RESET",
+          title: "Courier consignment reset after pickup failed",
+          details: {
+            invoiceId: order.invoiceId,
+            previousConsignmentId,
+            previousStatus,
+            previousCourier: order.courier,
+            previousPathaoCourierId: order.pathaoCourierId,
+            previousPathaoMerchantOrderId: order.pathaoMerchantOrderId,
+            previousSubmissionStatus: order.pathaoSubmissionStatus,
+            previousCsvDownloaded: order.csvDownloaded,
+            previousInvoiceDownloaded: order.invoiceDownloaded,
+            previousSubmittedAt: order.pathaoSubmittedAt
+              ? order.pathaoSubmittedAt.toISOString()
+              : null,
+            resetAt: now.toISOString(),
+            stockAction: "UNCHANGED",
+          },
+          performedByUserId: session.user.id,
+          actorLabel:
+            session.user.name || session.user.username || "OMS User",
+        },
+      });
+    });
+
+    revalidatePath("/dashboard/ready-to-ship");
+    revalidatePath("/dashboard/pathao-orders");
+    revalidatePath("/dashboard/pathao-delivery-report");
+    revalidatePath("/dashboard/pathao-daily-report");
+
+    return {
+      success: true,
+      message:
+        `Invoice ${invoiceId} reset successfully. Old CID ${previousConsignmentId} was removed. The order is now Non Invoiced + Non CSV and ready for a new courier submission. Stock was NOT restored, so re-submission will not deduct the same stock twice.`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to reset courier consignment ID.",
+    };
+  }
+}
+
 export async function createInvoiceBatch(
   _prevState: BatchActionState,
   formData: FormData

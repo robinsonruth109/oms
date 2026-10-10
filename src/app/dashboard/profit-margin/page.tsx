@@ -225,6 +225,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
               mapping: {
                 select: {
                   productParentId: true,
+                  reportGroupId: true,
                   sources: { select: { sourceId: true } },
                 },
               },
@@ -603,6 +604,15 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const unsupportedAdCurrencies = new Set<string>();
   const adMap = new Map<string, AdsRow>();
   const parentAdsSourceAttributed = new Map<string, number>();
+  type ParentCampaignGroup = {
+    key: string;
+    names: Set<string>;
+    sourceIds: Set<string>;
+  };
+  const parentCampaignGroups = new Map<
+    string,
+    Map<string, ParentCampaignGroup>
+  >();
   let adsTotal = 0;
   let adsSourceAttributed = 0;
   let unmappedAdsForSource = 0;
@@ -662,6 +672,26 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         (parentAdsSourceAttributed.get(mapping.productParentId) || 0) +
           sourceAmount
       );
+
+      const groupKey = mapping.reportGroupId
+        ? "GROUP::" + mapping.reportGroupId
+        : "CAMPAIGN::" + row.campaign.id;
+      const parentGroups =
+        parentCampaignGroups.get(mapping.productParentId) ||
+        new Map<string, ParentCampaignGroup>();
+      const campaignGroup =
+        parentGroups.get(groupKey) ||
+        {
+          key: groupKey,
+          names: new Set<string>(),
+          sourceIds: new Set<string>(),
+        };
+      campaignGroup.names.add(row.campaignNameSnapshot);
+      for (const source of mapping.sources) {
+        campaignGroup.sourceIds.add(source.sourceId);
+      }
+      parentGroups.set(groupKey, campaignGroup);
+      parentCampaignGroups.set(mapping.productParentId, parentGroups);
     }
 
     const key = row.campaign.id + "::" + row.adAccount.id;
@@ -715,12 +745,16 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     parentName: string;
     sku: string;
     name: string;
+    sourceId: string;
+    sourceName: string;
+    sourceType: string;
     qty: number;
     invoiceIds: Set<string>;
-    deliveredQty: number;
-    returnedToMerchantQty: number;
-    cancelledQty: number;
-    pendingQty: number;
+    deliveredInvoiceIds: Set<string>;
+    returnedToMerchantInvoiceIds: Set<string>;
+    cancelledInvoiceIds: Set<string>;
+    pendingInvoiceIds: Set<string>;
+    deliveredProductQty: number;
     returnCharge: number;
     invoicedTotal: number;
     merchandiseSales: number;
@@ -733,15 +767,22 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     parentName: string;
     sku: string;
     name: string;
+    sourceId?: string;
+    sourceName?: string;
+    sourceType?: string;
   }): ProductAccumulator {
     return {
       ...input,
+      sourceId: input.sourceId || "",
+      sourceName: input.sourceName || "",
+      sourceType: input.sourceType || "",
       qty: 0,
       invoiceIds: new Set<string>(),
-      deliveredQty: 0,
-      returnedToMerchantQty: 0,
-      cancelledQty: 0,
-      pendingQty: 0,
+      deliveredInvoiceIds: new Set<string>(),
+      returnedToMerchantInvoiceIds: new Set<string>(),
+      cancelledInvoiceIds: new Set<string>(),
+      pendingInvoiceIds: new Set<string>(),
+      deliveredProductQty: 0,
       returnCharge: 0,
       invoicedTotal: 0,
       merchandiseSales: 0,
@@ -796,7 +837,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           sku: parentSku,
           name: parentName,
         });
-      const childKey = parentId + "::" + childSku;
+      const childKey =
+        parentId + "::" + childSku + "::" + row.order.source.id;
       const child =
         childProductMap.get(childKey) ||
         newAccumulator({
@@ -805,6 +847,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           parentName,
           sku: childSku,
           name: childName,
+          sourceId: row.order.source.id,
+          sourceName: row.order.source.name,
+          sourceType: row.order.source.type,
         });
 
       for (const current of [parent, child]) {
@@ -813,13 +858,18 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         current.invoicedTotal += invoiceTotal * share;
         current.returnCharge += row.returnCost * share;
 
-        if (deliveredStatus) current.deliveredQty += qty;
-        else if (returnedToMerchantStatus) {
-          current.returnedToMerchantQty += qty;
-        } else if (cancelledStatus) current.cancelledQty += qty;
-        else current.pendingQty += qty;
+        if (deliveredStatus) {
+          current.deliveredInvoiceIds.add(row.order.id);
+          current.deliveredProductQty += qty;
+        } else if (returnedToMerchantStatus) {
+          current.returnedToMerchantInvoiceIds.add(row.order.id);
+        } else if (cancelledStatus) {
+          current.cancelledInvoiceIds.add(row.order.id);
+        } else {
+          current.pendingInvoiceIds.add(row.order.id);
+        }
 
-        if (row.delivered) {
+        if (deliveredStatus) {
           current.merchandiseSales += realizedMerchandise * share;
           current.cogs += cogsForItem(item).amount;
         }
@@ -835,21 +885,55 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     parentAdsApplied.set(parentId, amount * courierAdsShare);
   }
 
+  function campaignLabelsFor(parentId: string, childSourceId?: string) {
+    const groups = parentCampaignGroups.get(parentId);
+    if (!groups) return [] as string[];
+
+    return Array.from(groups.values())
+      .filter(
+        (group) =>
+          !childSourceId ||
+          group.sourceIds.size === 0 ||
+          group.sourceIds.has(childSourceId)
+      )
+      .map((group) => {
+        const names = Array.from(group.names).sort((a, b) =>
+          a.localeCompare(b)
+        );
+        return names.length > 1
+          ? "Connected: " + names.join(" + ")
+          : names[0] || "Mapped campaign";
+      })
+      .sort((a, b) => a.localeCompare(b));
+  }
+
   function finishProductRow(
     row: ProductAccumulator,
-    adsCost: number
+    adsCost: number,
+    campaignNames: string[]
   ): ProductPerformanceChildRow {
     const grossProfit = row.merchandiseSales - row.cogs;
+    const totalInvoices = row.invoiceIds.size;
+    const deliveredInvoices = row.deliveredInvoiceIds.size;
+
     return {
-      key: row.parentId + "::" + row.sku,
+      key:
+        row.parentId +
+        "::" +
+        row.sku +
+        (row.sourceId ? "::" + row.sourceId : ""),
       sku: row.sku,
       name: row.name,
+      sourceName: row.sourceName,
+      sourceType: row.sourceType,
+      campaignNames,
       qty: row.qty,
-      totalInvoices: row.invoiceIds.size,
-      deliveredQty: row.deliveredQty,
-      returnedToMerchantQty: row.returnedToMerchantQty,
-      cancelledQty: row.cancelledQty,
-      pendingQty: row.pendingQty,
+      totalInvoices,
+      deliveredInvoices,
+      returnedToMerchantInvoices: row.returnedToMerchantInvoiceIds.size,
+      cancelledInvoices: row.cancelledInvoiceIds.size,
+      pendingInvoices: row.pendingInvoiceIds.size,
+      deliveredProductQty: row.deliveredProductQty,
       returnCharge: row.returnCharge,
       invoicedTotal: row.invoicedTotal,
       adsCost,
@@ -861,9 +945,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           ? (grossProfit / row.merchandiseSales) * 100
           : 0,
       deliveryPercentage:
-        row.qty > 0 ? (row.deliveredQty / row.qty) * 100 : 0,
+        totalInvoices > 0 ? (deliveredInvoices / totalInvoices) * 100 : 0,
       costPerDeliveredProduct:
-        row.deliveredQty > 0 ? adsCost / row.deliveredQty : 0,
+        row.deliveredProductQty > 0
+          ? adsCost / row.deliveredProductQty
+          : 0,
     };
   }
 
@@ -876,27 +962,41 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         (child) => child.parentId === parent.parentId
       );
       const allocationDenominator =
-        parent.deliveredQty > 0 ? parent.deliveredQty : parent.qty;
+        parent.deliveredProductQty > 0
+          ? parent.deliveredProductQty
+          : parent.qty;
 
       const children = childAccumulators
         .map((child) => {
           const basis =
-            parent.deliveredQty > 0 ? child.deliveredQty : child.qty;
+            parent.deliveredProductQty > 0
+              ? child.deliveredProductQty
+              : child.qty;
           const childAds =
             allocationDenominator > 0
               ? adsCost * (basis / allocationDenominator)
               : 0;
-          return finishProductRow(child, childAds);
+          return finishProductRow(
+            child,
+            childAds,
+            campaignLabelsFor(parent.parentId, child.sourceId)
+          );
         })
         .sort(
           (a, b) =>
-            b.deliveredQty - a.deliveredQty ||
+            b.deliveredInvoices - a.deliveredInvoices ||
+            b.deliveredProductQty - a.deliveredProductQty ||
             b.qty - a.qty ||
-            a.sku.localeCompare(b.sku)
+            a.sku.localeCompare(b.sku) ||
+            a.sourceName.localeCompare(b.sourceName)
         );
 
       return {
-        ...finishProductRow(parent, adsCost),
+        ...finishProductRow(
+          parent,
+          adsCost,
+          campaignLabelsFor(parent.parentId)
+        ),
         parentId: parent.parentId,
         children,
       };
@@ -904,7 +1004,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     .sort(
       (a, b) =>
         b.merchandiseSales - a.merchandiseSales ||
-        b.deliveredQty - a.deliveredQty ||
+        b.deliveredInvoices - a.deliveredInvoices ||
         a.sku.localeCompare(b.sku)
     );
 

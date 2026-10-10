@@ -11,6 +11,7 @@ import {
   deleteProductMediaObject,
 } from "@/lib/product-media-storage";
 import { prisma } from "@/lib/prisma";
+import { enqueueFullSyncForProduct } from "@/lib/product-catalog-sync";
 
 export type CatalogActionResult = {
   success: boolean;
@@ -109,10 +110,7 @@ export async function saveProductCatalogContent(input: {
       },
     });
 
-    await prisma.productWebsiteListing.updateMany({
-      where: { productId },
-      data: { syncStatus: "PENDING", lastSyncError: null },
-    });
+    await enqueueFullSyncForProduct(prisma, productId);
 
     refreshProductMaster();
     return { success: true, message: "Product website content saved." };
@@ -348,10 +346,7 @@ export async function registerProductMedia(input: {
         },
       });
 
-      await tx.productWebsiteListing.updateMany({
-        where: { productId },
-        data: { syncStatus: "PENDING", lastSyncError: null },
-      });
+      await enqueueFullSyncForProduct(tx, productId);
     });
 
     refreshProductMaster();
@@ -387,10 +382,7 @@ export async function setPrimaryProductImage(
         where: { id: media.id },
         data: { isPrimary: true },
       });
-      await tx.productWebsiteListing.updateMany({
-        where: { productId: media.productId },
-        data: { syncStatus: "PENDING" },
-      });
+      await enqueueFullSyncForProduct(tx, media.productId);
     });
 
     refreshProductMaster();
@@ -427,10 +419,7 @@ export async function deleteProductMedia(
           });
         }
       }
-      await tx.productWebsiteListing.updateMany({
-        where: { productId: media.productId },
-        data: { syncStatus: "PENDING" },
-      });
+      await enqueueFullSyncForProduct(tx, media.productId);
     });
 
     refreshProductMaster();

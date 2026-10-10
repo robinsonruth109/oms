@@ -169,21 +169,9 @@ export async function createPurchaseOrder(
     };
   }
 
-  const parentMerchantId = product.parent.merchantId || null;
-  const merchantId = requestedMerchantId || parentMerchantId;
-
-  if (requestedMerchantId && requestedMerchantId !== parentMerchantId) {
-    return {
-      success: false,
-      message:
-        "Selected Merchant does not own this Product Parent. Assign the Parent Code in Merchant Control first.",
-    };
-  }
-
-  if (!requestedMerchantId && parentMerchantId) {
-    // Prevent a Merchant-owned product from accidentally becoming an OMS PO.
-    // The Parent ownership is authoritative when the form leaves Merchant empty.
-  }
+  // Purchase Order accounting ownership is chosen explicitly by Admin.
+  // Blank Merchant means the default OMS account, exactly like existing POs.
+  const merchantId = requestedMerchantId;
 
   if (merchantId) {
     const merchant = await prisma.merchant.findFirst({

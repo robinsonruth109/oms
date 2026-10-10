@@ -97,15 +97,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
       }),
       prisma.order.count({
         where: {
-          calledAt: { gte: start, lte: end },
-          orderStatus: {
-            notIn: [
-              "PENDING_CONFIRMATION",
-              "NO_ANSWER",
-              "PHONE_OFF",
-              "DOUBLE_ORDER",
-            ],
-          },
+          readyToShipAt: { gte: start, lte: end },
           items: {
             some: {
               product: {

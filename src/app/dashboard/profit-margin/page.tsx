@@ -22,6 +22,10 @@ import {
   getBangladeshDateInputValue,
 } from "@/lib/bangladesh-time";
 import { calculateSalaryTotals } from "@/lib/finance/salary";
+import ProductPerformanceReport, {
+  type ParentProductPerformanceRow,
+  type ProductPerformanceChildRow,
+} from "./product-performance-report";
 
 type Props = {
   searchParams?: Promise<{
@@ -42,13 +46,6 @@ type OperationRow = {
   cogs: number;
   deliveryCost: number;
   returnCost: number;
-};
-type ProductRow = {
-  key: string;
-  name: string;
-  quantity: number;
-  sales: number;
-  cogs: number;
 };
 type AdsRow = {
   key: string;
@@ -606,6 +603,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const missingRateDays = new Set<string>();
   const unsupportedAdCurrencies = new Set<string>();
   const adMap = new Map<string, AdsRow>();
+  const parentAdsSourceAttributed = new Map<string, number>();
   let adsTotal = 0;
   let adsSourceAttributed = 0;
   let unmappedAdsForSource = 0;
@@ -659,6 +657,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
     adsSourceAttributed += sourceAmount;
 
+    if (mapping?.productParentId && sourceAmount > 0) {
+      parentAdsSourceAttributed.set(
+        mapping.productParentId,
+        (parentAdsSourceAttributed.get(mapping.productParentId) || 0) +
+          sourceAmount
+      );
+    }
+
     const key = row.campaign.id + "::" + row.adAccount.id;
     const current = adMap.get(key) || {
       key,
@@ -704,39 +710,208 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     officeApplied;
   const netMargin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
 
-  const productMap = new Map<string, ProductRow>();
-  for (const row of delivered) {
-    const orderMerchandiseRevenue = Math.max(
-      0,
-      row.revenue - numberValue(row.order.deliveryCharge)
-    );
-    const orderLineTotal = row.order.items.reduce(
+  type ProductAccumulator = {
+    parentId: string;
+    parentSku: string;
+    parentName: string;
+    sku: string;
+    name: string;
+    qty: number;
+    invoiceIds: Set<string>;
+    deliveredQty: number;
+    returnedToMerchantQty: number;
+    cancelledQty: number;
+    pendingQty: number;
+    returnCharge: number;
+    invoicedTotal: number;
+    merchandiseSales: number;
+    cogs: number;
+  };
+
+  function newAccumulator(input: {
+    parentId: string;
+    parentSku: string;
+    parentName: string;
+    sku: string;
+    name: string;
+  }): ProductAccumulator {
+    return {
+      ...input,
+      qty: 0,
+      invoiceIds: new Set<string>(),
+      deliveredQty: 0,
+      returnedToMerchantQty: 0,
+      cancelledQty: 0,
+      pendingQty: 0,
+      returnCharge: 0,
+      invoicedTotal: 0,
+      merchandiseSales: 0,
+      cogs: 0,
+    };
+  }
+
+  const parentProductMap = new Map<string, ProductAccumulator>();
+  const childProductMap = new Map<string, ProductAccumulator>();
+
+  for (const row of selected) {
+    const lineTotal = row.order.items.reduce(
       (sum, item) => sum + numberValue(item.lineTotal),
       0
     );
+    const invoiceTotal =
+      numberValue(row.order.totalAmount) + numberValue(row.order.advance);
+    const realizedMerchandise = row.delivered
+      ? Math.max(0, row.revenue - numberValue(row.order.deliveryCharge))
+      : 0;
+    const latest = row.latest;
+    const returnedToMerchantStatus =
+      latest === "order.returned-to-merchant" ||
+      latest === "returned-to-merchant" ||
+      latest === "order.paid-return" ||
+      latest === "paid-return";
+    const cancelledStatus = latest.includes("cancel");
+    const deliveredStatus =
+      row.delivered && !returnedToMerchantStatus && !cancelledStatus;
 
     for (const item of row.order.items) {
-      const key = item.product?.parent.sku || item.productSku;
-      const name = item.product?.parent.name || item.productName;
-      const current = productMap.get(key) || {
-        key,
-        name,
-        quantity: 0,
-        sales: 0,
-        cogs: 0,
-      };
-      current.quantity += Math.max(0, Number(item.quantity || 0));
-      const revenueShare =
-        orderLineTotal > 0
-          ? numberValue(item.lineTotal) / orderLineTotal
+      const qty = Math.max(0, Number(item.quantity || 0));
+      if (qty <= 0) continue;
+
+      const parentId =
+        item.product?.parent.id || "legacy::" + item.productSku;
+      const parentSku = item.product?.parent.sku || item.productSku;
+      const parentName = item.product?.parent.name || item.productName;
+      const childSku = item.productSku;
+      const childName = item.productName;
+      const share =
+        lineTotal > 0
+          ? numberValue(item.lineTotal) / lineTotal
           : 1 / Math.max(1, row.order.items.length);
-      current.sales += orderMerchandiseRevenue * revenueShare;
-      current.cogs += cogsForItem(item).amount;
-      productMap.set(key, current);
+
+      const parent =
+        parentProductMap.get(parentId) ||
+        newAccumulator({
+          parentId,
+          parentSku,
+          parentName,
+          sku: parentSku,
+          name: parentName,
+        });
+      const childKey = parentId + "::" + childSku;
+      const child =
+        childProductMap.get(childKey) ||
+        newAccumulator({
+          parentId,
+          parentSku,
+          parentName,
+          sku: childSku,
+          name: childName,
+        });
+
+      for (const current of [parent, child]) {
+        current.qty += qty;
+        current.invoiceIds.add(row.order.id);
+        current.invoicedTotal += invoiceTotal * share;
+        current.returnCharge += row.returnCost * share;
+
+        if (deliveredStatus) current.deliveredQty += qty;
+        else if (returnedToMerchantStatus) {
+          current.returnedToMerchantQty += qty;
+        } else if (cancelledStatus) current.cancelledQty += qty;
+        else current.pendingQty += qty;
+
+        if (row.delivered) {
+          current.merchandiseSales += realizedMerchandise * share;
+          current.cogs += cogsForItem(item).amount;
+        }
+      }
+
+      parentProductMap.set(parentId, parent);
+      childProductMap.set(childKey, child);
     }
   }
-  const productRows = Array.from(productMap.values()).sort(
-    (a, b) => b.sales - a.sales
+
+  const parentAdsApplied = new Map<string, number>();
+  for (const [parentId, amount] of parentAdsSourceAttributed) {
+    parentAdsApplied.set(parentId, amount * courierAdsShare);
+  }
+
+  function finishProductRow(
+    row: ProductAccumulator,
+    adsCost: number
+  ): ProductPerformanceChildRow {
+    const grossProfit = row.merchandiseSales - row.cogs;
+    return {
+      key: row.parentId + "::" + row.sku,
+      sku: row.sku,
+      name: row.name,
+      qty: row.qty,
+      totalInvoices: row.invoiceIds.size,
+      deliveredQty: row.deliveredQty,
+      returnedToMerchantQty: row.returnedToMerchantQty,
+      cancelledQty: row.cancelledQty,
+      pendingQty: row.pendingQty,
+      returnCharge: row.returnCharge,
+      invoicedTotal: row.invoicedTotal,
+      adsCost,
+      merchandiseSales: row.merchandiseSales,
+      cogs: row.cogs,
+      grossProfit,
+      margin:
+        row.merchandiseSales > 0
+          ? (grossProfit / row.merchandiseSales) * 100
+          : 0,
+      deliveryPercentage:
+        row.qty > 0 ? (row.deliveredQty / row.qty) * 100 : 0,
+      costPerDeliveredProduct:
+        row.deliveredQty > 0 ? adsCost / row.deliveredQty : 0,
+    };
+  }
+
+  const productRows: ParentProductPerformanceRow[] = Array.from(
+    parentProductMap.values()
+  )
+    .map((parent) => {
+      const adsCost = parentAdsApplied.get(parent.parentId) || 0;
+      const childAccumulators = Array.from(childProductMap.values()).filter(
+        (child) => child.parentId === parent.parentId
+      );
+      const allocationDenominator =
+        parent.deliveredQty > 0 ? parent.deliveredQty : parent.qty;
+
+      const children = childAccumulators
+        .map((child) => {
+          const basis =
+            parent.deliveredQty > 0 ? child.deliveredQty : child.qty;
+          const childAds =
+            allocationDenominator > 0
+              ? adsCost * (basis / allocationDenominator)
+              : 0;
+          return finishProductRow(child, childAds);
+        })
+        .sort(
+          (a, b) =>
+            b.deliveredQty - a.deliveredQty ||
+            b.qty - a.qty ||
+            a.sku.localeCompare(b.sku)
+        );
+
+      return {
+        ...finishProductRow(parent, adsCost),
+        parentId: parent.parentId,
+        children,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.merchandiseSales - a.merchandiseSales ||
+        b.deliveredQty - a.deliveredQty ||
+        a.sku.localeCompare(b.sku)
+    );
+
+  const productAttributedAds = Array.from(parentAdsApplied.values()).reduce(
+    (sum, amount) => sum + amount,
+    0
   );
 
   function operationRows(kind: "source" | "courier") {
@@ -1036,49 +1211,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         </div>
       </section>
 
-      <section className="rounded-3xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2">
-          <PackageCheck className="h-5 w-5" />
-          <div>
-            <h2 className="text-lg font-bold">Product Gross Margin</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Realized merchandise revenue after delivery charge/discount/COD adjustment,
-              allocated across order items by their line-value share.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 overflow-x-auto rounded-2xl border">
-          <table className="min-w-[850px] w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Parent Product</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">Merchandise Sales</th>
-                <th className="px-4 py-3 text-right">COGS</th>
-                <th className="px-4 py-3 text-right">Gross Profit</th>
-                <th className="px-4 py-3 text-right">Margin</th>
-              </tr>
-            </thead>
-            <tbody>
-              {productRows.map((row) => {
-                const profit = row.sales - row.cogs;
-                const margin = row.sales > 0 ? (profit / row.sales) * 100 : 0;
-                return (
-                  <tr key={row.key} className="border-t">
-                    <td className="px-4 py-3"><p className="font-semibold">{row.key}</p><p className="text-xs text-slate-500">{row.name}</p></td>
-                    <td className="px-4 py-3 text-right">{row.quantity}</td>
-                    <td className="px-4 py-3 text-right">{taka(row.sales)}</td>
-                    <td className="px-4 py-3 text-right">{taka(row.cogs)}</td>
-                    <td className={"px-4 py-3 text-right font-semibold " + (profit >= 0 ? "text-emerald-700" : "text-rose-700")}>{taka(profit)}</td>
-                    <td className="px-4 py-3 text-right">{margin.toFixed(2)}%</td>
-                  </tr>
-                );
-              })}
-              {!productRows.length ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No delivered products in the selected filters.</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <ProductPerformanceReport rows={productRows} />
 
       <section className="grid gap-4 xl:grid-cols-2">
         <OperationTable title="Source-wise Delivery Economics" rows={sourceRows} />

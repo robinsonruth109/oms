@@ -13,18 +13,18 @@ The report uses one Bangladesh calendar range for all sections.
 - Daily/Office costing: `FinanceDailyCost.costDate`.
 - Salary: monthly salary expense accrued proportionally by calendar days that overlap the selected range.
 
-Source and Courier filters apply directly to order revenue, COGS and Pathao courier costs. Ads, salary and daily operating costs do not have a courier dimension, so filtered views allocate those shared costs by the selected slice's share of company Delivered revenue during the same dates. The unfiltered report deducts 100% of shared costs.
+Source and Courier filters apply directly to order revenue, COGS and Pathao courier costs. Salary and daily operating costs are company overhead, so filtered views allocate those shared costs by the selected slice's share of company Delivered revenue during the same dates. Meta Ads follows campaign Source mapping first; only its Courier slice uses Delivered-revenue share. The unfiltered report deducts 100% of company costs.
 
 ## Revenue
 
 Revenue is realized only when a verified Pathao `order.delivered` webhook is present inside the selected period and no later return event in the same period supersedes it.
 
-Revenue amount priority:
+Realized revenue has two parts:
 
-1. Delivered webhook `collected_amount` / `amount_collected` / `amount_to_collect` / `cod_amount`.
-2. Saved Pathao amount to collect.
-3. Approved Pathao COD override.
-4. Original OMS `totalAmount`.
+1. **COD / amount due:** Delivered webhook `collected_amount` / `amount_collected` / `amount_to_collect` / `cod_amount`; fallback to saved Pathao amount, approved COD override, then OMS `totalAmount`.
+2. **Customer advance:** OMS `Order.advance`, added back exactly once after delivery.
+
+This is required because OMS calculates `totalAmount = subtotal + deliveryCharge - discount - advance`. Without adding the already-received advance back, delivered revenue and profit would be understated.
 
 `order.partial-delivery` is not included in realized P&L yet because OMS has no authoritative item-level accepted quantity/amount. It is surfaced as a warning.
 
@@ -57,7 +57,9 @@ Meta synced daily spend is converted to BDT:
 - Missing USD rate: BDT 0 for that spend and a warning.
 - Other currencies: BDT 0 and a warning until a conversion rule exists.
 
-When Source/Courier filters are applied, Meta ad spend is treated as shared acquisition overhead and allocated by realized Delivered revenue share. This keeps filtered P&L slices reconcilable to the unfiltered company P&L.
+When a **Source** filter is applied, Meta spend follows the saved campaign-to-Source mapping from Ads Cost Sync. If one campaign maps to multiple Sources, its spend is split by delivered order count for that mapped parent product during the report period; if no matching delivered orders exist, it is split equally across its mapped Sources.
+
+Meta has no courier dimension. When a **Courier** filter is applied, the already Source-attributed spend is allocated by that courier's Delivered-revenue share.
 
 ## Salary
 
@@ -94,6 +96,7 @@ Other Daily and Office Daily Costing categories remain operating expenses, inclu
 ## Sections
 
 - Main Revenue / COGS / Operating Cost / Net Profit cards.
+- COD collected and Customer Advance are shown separately inside the full P&L calculation.
 - Full P&L calculation card.
 - Salary date-range card.
 - Daily Costing short list.

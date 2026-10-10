@@ -1,5 +1,7 @@
 "use server";
 
+import { findProductByFlexibleSku } from "@/lib/product-sku-match";
+
 export type IncomingIntegrationItem = {
   sku?: string | null;
   name?: string | null;
@@ -297,9 +299,29 @@ export async function importIntegrationOrderBySlug(
       })
     : [];
 
-  const productMap = new Map(
+  const productMap = new Map<string, (typeof matchedProducts)[number]>(
     matchedProducts.map((product) => [product.sku, product])
   );
+
+  // Existing sites sometimes send the same SKU with harmless spacing around
+  // separators, e.g. ')- Combo' while Product Master stores ')-Combo'.
+  // Exact matching remains first choice; normalized matching is only accepted
+  // when it resolves to one unique Product Master SKU.
+  for (const item of normalizedItems) {
+    if (!item.sku || productMap.has(item.sku)) continue;
+
+    const match = await findProductByFlexibleSku(prisma, item.sku);
+
+    if (match.product) {
+      productMap.set(item.sku, match.product);
+    } else if (match.matchedBy === "AMBIGUOUS") {
+      warnings.push(
+        "SKU " +
+          item.sku +
+          " is ambiguous in Product Master after spacing normalization"
+      );
+    }
+  }
 
   let subtotal = 0;
 

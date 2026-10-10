@@ -292,6 +292,7 @@ export default async function ReadyToShipPage({
       <ReadyToShipClient
         courier={courier}
         activeTab={activeTab}
+        canResetCourierId={["ADMIN", "MANAGER"].includes(session.user.role)}
         fromDate={from}
         toDate={to}
         bangladeshToday={bangladeshToday}

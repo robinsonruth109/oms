@@ -7,7 +7,7 @@ import {
   ChevronsUp,
   PackageCheck,
 } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 export type ProductPerformanceChildRow = {
   key: string;
@@ -175,6 +175,62 @@ export default function ProductPerformanceReport({
   rows: ParentProductPerformanceRow[];
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startScrollLeft: number;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null) {
+      const element = target instanceof HTMLElement ? target : null;
+      if (!element) return false;
+
+      return (
+        element.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(element.tagName)
+      );
+    }
+
+    function stopDrag() {
+      dragRef.current = null;
+      setIsDragging(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space" || event.repeat || isTypingTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      setSpaceHeld(true);
+    }
+
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.code !== "Space") return;
+      setSpaceHeld(false);
+      stopDrag();
+    }
+
+    function onBlur() {
+      setSpaceHeld(false);
+      stopDrag();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   const totals = useMemo(
     () => ({
@@ -254,11 +310,85 @@ export default function ProductPerformanceReport({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="flex items-center justify-between gap-3 border-b bg-slate-50/60 px-5 py-2.5 text-xs text-slate-500 sm:px-6">
+        <span>
+          The report list scrolls inside this panel while the column heading stays visible.
+        </span>
+        <span className="hidden shrink-0 rounded-lg border bg-white px-2.5 py-1 font-semibold text-slate-600 shadow-sm lg:inline-flex">
+          Desktop: hold Space + click-drag left/right
+        </span>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className={
+          "relative max-h-[68vh] min-h-[360px] overflow-auto overscroll-contain " +
+          (spaceHeld
+            ? isDragging
+              ? "cursor-grabbing select-none"
+              : "cursor-grab"
+            : "")
+        }
+        style={{ scrollbarGutter: "stable" }}
+        onPointerDown={(event) => {
+          if (!spaceHeld || event.button !== 0) return;
+
+          const scroller = scrollRef.current;
+          if (!scroller) return;
+
+          event.preventDefault();
+          suppressClickRef.current = true;
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startScrollLeft: scroller.scrollLeft,
+          };
+          scroller.setPointerCapture(event.pointerId);
+          setIsDragging(true);
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          const scroller = scrollRef.current;
+          if (!drag || !scroller || drag.pointerId !== event.pointerId) return;
+
+          const deltaX = event.clientX - drag.startX;
+          scroller.scrollLeft = drag.startScrollLeft - deltaX;
+        }}
+        onPointerUp={(event) => {
+          const scroller = scrollRef.current;
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+
+          if (scroller?.hasPointerCapture(event.pointerId)) {
+            scroller.releasePointerCapture(event.pointerId);
+          }
+          dragRef.current = null;
+          setIsDragging(false);
+          window.setTimeout(() => {
+            suppressClickRef.current = false;
+          }, 0);
+        }}
+        onPointerCancel={(event) => {
+          const scroller = scrollRef.current;
+          if (scroller?.hasPointerCapture(event.pointerId)) {
+            scroller.releasePointerCapture(event.pointerId);
+          }
+          dragRef.current = null;
+          setIsDragging(false);
+          window.setTimeout(() => {
+            suppressClickRef.current = false;
+          }, 0);
+        }}
+        onClickCapture={(event) => {
+          if (!spaceHeld && !suppressClickRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
         <table className="min-w-[2660px] w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="sticky top-0 z-30 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.35)]">
             <tr>
-              <th className="sticky left-0 z-20 min-w-[300px] bg-slate-50 px-4 py-3">
+              <th className="sticky left-0 top-0 z-40 min-w-[300px] bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(148,163,184,0.25)]">
                 Parent Code / Child SKU
               </th>
               <th className="min-w-[310px] px-4 py-3">Source / Campaign</th>
@@ -290,7 +420,7 @@ export default function ProductPerformanceReport({
               return (
                 <Fragment key={row.key}>
                   <tr className="border-t bg-white align-top transition hover:bg-slate-50">
-                    <td className="sticky left-0 z-[5] bg-white px-4 py-3">
+                    <td className="sticky left-0 z-20 bg-white px-4 py-3 shadow-[1px_0_0_rgba(226,232,240,0.9)]">
                       <button
                         type="button"
                         onClick={() => toggle(row.key)}
@@ -349,7 +479,7 @@ export default function ProductPerformanceReport({
                           key={row.key + "::" + child.key}
                           className="border-t bg-slate-50/80 align-top"
                         >
-                          <td className="sticky left-0 z-[5] bg-slate-50 px-4 py-3">
+                          <td className="sticky left-0 z-20 bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(226,232,240,0.9)]">
                             <div className="pl-6">
                               <p className="font-bold text-slate-800">
                                 ↳ {child.sku}

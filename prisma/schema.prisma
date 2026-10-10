@@ -56,6 +56,11 @@ model User {
   productDamageEntriesCreated ProductDamageEntry[] @relation("ProductDamageCreatedBy")
   productStockAdjustmentsCreated ProductStockAdjustment[] @relation("ProductStockAdjustmentCreatedBy")
 
+  merchant Merchant? @relation("MerchantUser")
+  merchantDollarRechargesCreated MerchantDollarRecharge[] @relation("MerchantDollarRechargeCreatedBy")
+  merchantOperatingCostsCreated MerchantOperatingCost[] @relation("MerchantOperatingCostCreatedBy")
+  merchantOmsPurchasesCreated MerchantOmsPurchase[] @relation("MerchantOmsPurchaseCreatedBy")
+
   staffEmploymentProfile StaffEmploymentProfile? @relation("StaffEmploymentProfileUser")
   staffEmploymentProfilesCreated StaffEmploymentProfile[] @relation("StaffEmploymentProfileCreatedBy")
   staffEmploymentEventsCreated StaffEmploymentEvent[] @relation("StaffEmploymentEventCreatedBy")
@@ -149,6 +154,12 @@ model ProductParent {
   // NULL means legacy / never physically counted. It is excluded from valuation.
   stockVerifiedAt DateTime?
   purchasePrice Decimal? @db.Decimal(10, 2)
+  // Ownership/accounting: NULL merchantId means OMS-owned/default.
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  // Physical units reserved after OMS buys stock from a Merchant. The global
+  // physical stock stays unchanged; merchant-available stock excludes this reserve.
+  omsOwnedStockQuantity Int @default(0)
   status    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -158,6 +169,9 @@ model ProductParent {
   metaCampaignMappings MetaCampaignMapping[]
   damageEntries ProductDamageEntry[]
   stockAdjustments ProductStockAdjustment[]
+  merchantOmsPurchases MerchantOmsPurchase[]
+
+  @@index([merchantId])
 }
 
 model ProductDamageEntry {
@@ -293,6 +307,7 @@ model Courier {
   pathaoOrders        Order[]              @relation("PathaoCourierOrders")
   pathaoWebhookEvents PathaoWebhookEvent[]
   pathaoReturnTracks  PathaoReturnTrack[] @relation("PathaoReturnCourier")
+  merchantAssignments MerchantCourier[]
 
   @@index([status])
   @@index([pathaoEnabled])
@@ -314,6 +329,7 @@ model Product {
   stockVerifiedAt DateTime?
   purchasePrice Decimal  @db.Decimal(10, 2)
   sellingPrice  Decimal  @db.Decimal(10, 2)
+  omsOwnedStockQuantity Int @default(0)
   status        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -325,6 +341,7 @@ model Product {
   exchangeCaseItems ExchangeCaseItem[]
   damageEntries ProductDamageEntry[]
   stockAdjustments ProductStockAdjustment[]
+  merchantOmsPurchases MerchantOmsPurchase[]
   bundleComponents ProductBundleComponent[] @relation("BundleSku")
   usedInBundles ProductBundleComponent[] @relation("BundleComponentSku")
 }
@@ -814,6 +831,10 @@ model MetaCampaignMapping {
   productParentId String
   productParent   ProductParent @relation(fields: [productParentId], references: [id], onDelete: Restrict)
 
+  // NULL means OMS. This must match ProductParent.merchantId.
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -823,6 +844,7 @@ model MetaCampaignMapping {
   reportGroup   MetaCampaignReportGroup? @relation(fields: [reportGroupId], references: [id], onDelete: SetNull)
 
   @@index([productParentId])
+  @@index([merchantId])
   @@index([reportGroupId])
 }
 
@@ -989,6 +1011,125 @@ model CsvBatch {
   @@index([courier])
 }
 
+model Merchant {
+  id String @id @default(uuid())
+
+  name    String
+  phone   String @unique
+  address String @db.Text
+  status  Boolean @default(true)
+
+  userId String? @unique
+  user   User? @relation("MerchantUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  productParents   ProductParent[]
+  purchaseOrders   PurchaseOrder[]
+  campaignMappings MetaCampaignMapping[]
+  couriers         MerchantCourier[]
+  dollarRecharges  MerchantDollarRecharge[]
+  operatingCosts   MerchantOperatingCost[]
+  omsPurchases     MerchantOmsPurchase[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([name])
+}
+
+model MerchantCourier {
+  id String @id @default(uuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  courierId String
+  courier   Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([merchantId, courierId])
+  @@index([courierId])
+}
+
+model MerchantDollarRecharge {
+  id String @id @default(uuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  rechargeDate DateTime
+  usdAmount Decimal @db.Decimal(12, 2)
+  bdtAmount Decimal @db.Decimal(14, 2)
+  usdRate   Decimal @db.Decimal(12, 4)
+  note      String? @db.Text
+
+  createdByUserId String
+  createdByUser   User @relation("MerchantDollarRechargeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([merchantId, rechargeDate])
+  @@index([createdByUserId])
+}
+
+model MerchantOperatingCost {
+  id String @id @default(uuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  // First day of the operating month (UTC date-only convention).
+  costMonth DateTime
+  amount Decimal @db.Decimal(14, 2)
+  note   String? @db.Text
+
+  createdByUserId String
+  createdByUser   User @relation("MerchantOperatingCostCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchantId, costMonth])
+  @@index([createdByUserId])
+}
+
+model MerchantOmsPurchase {
+  id String @id @default(uuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  purchaseDate DateTime
+  enteredQuantity Int
+  physicalUnits   Int
+
+  stockOwnerType StockOwnerType
+  stockOwnerId   String
+  stockBefore    Int
+  stockAfter     Int
+
+  unitCost  Decimal @db.Decimal(12, 2)
+  totalCost Decimal @db.Decimal(14, 2)
+  note String? @db.Text
+
+  createdByUserId String
+  createdByUser   User @relation("MerchantOmsPurchaseCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([merchantId, purchaseDate])
+  @@index([productId])
+  @@index([parentId])
+  @@index([createdByUserId])
+}
+
 model PurchaseOrder {
   id String @id @default(uuid())
 
@@ -1000,6 +1141,11 @@ model PurchaseOrder {
   productSku  String
   productName String
   parentSku   String
+
+  // NULL means this PO belongs to OMS. Merchant POs are read-only to the
+  // merchant account and continue using the same receiving/inventory engine.
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
 
   orderDate DateTime
 
@@ -1023,6 +1169,8 @@ model PurchaseOrder {
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
   receivedOrders PurchaseReceivedOrder[]
+
+  @@index([merchantId])
 }
 
 model PurchasePayment {
@@ -1125,6 +1273,7 @@ enum PostPrintActionMethod {
 enum Role {
   ADMIN
   MANAGER
+  MERCHANT
   AGENT
   NOTE_AGENT
   PACKAGING_AGENT

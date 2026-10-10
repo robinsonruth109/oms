@@ -108,6 +108,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/stock-adjustments", label: "Stock Adjustment", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/reel-categories", label: "Reel Categories", icon: PanelsTopLeft, roles: ["ADMIN"] },
       { href: "/dashboard/reel-products", label: "Reel Products", icon: PackageOpen, roles: ["ADMIN"] },
+      { href: "/dashboard/products-purchases/local-purchase", label: "Local Product Purchase", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/products-purchases/purchase-orders", label: "Purchase Orders", icon: BriefcaseBusiness, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/products-purchases/received-orders", label: "Received Orders", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },
     ],

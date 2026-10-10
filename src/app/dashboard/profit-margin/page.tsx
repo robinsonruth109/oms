@@ -908,8 +908,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         a.sku.localeCompare(b.sku)
     );
 
-  const productAttributedAds = Array.from(parentAdsApplied.values()).reduce(
-    (sum, amount) => sum + amount,
+  const productAttributedAds = Array.from(parentProductMap.keys()).reduce(
+    (sum, parentId) => sum + (parentAdsApplied.get(parentId) || 0),
     0
   );
 

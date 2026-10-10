@@ -1,0 +1,23 @@
+name: Validate profit report scroll UI
+
+on:
+  push:
+    branches:
+      - validation/profit-report-scroll-ui
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint changed component
+        run: npx eslint src/app/dashboard/profit-margin/product-performance-report.tsx
+      - name: Production build
+        run: npm run build

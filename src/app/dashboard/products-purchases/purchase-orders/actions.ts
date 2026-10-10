@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 
 type CreatePurchaseOrderInput = {
   productId: string;
+  merchantId?: string;
   orderDate: string;
   quantity: number;
   quantityType: string;
@@ -104,6 +105,7 @@ export async function createPurchaseOrder(
   }
 
   const productId = String(payload.productId || "").trim();
+  const requestedMerchantId = String(payload.merchantId || "").trim() || null;
   const quantity = Number(payload.quantity || 0);
   const quantityType = String(payload.quantityType || "").trim();
   const orderDate = String(payload.orderDate || "").trim();
@@ -167,6 +169,32 @@ export async function createPurchaseOrder(
     };
   }
 
+  const parentMerchantId = product.parent.merchantId || null;
+  const merchantId = requestedMerchantId || parentMerchantId;
+
+  if (requestedMerchantId && requestedMerchantId !== parentMerchantId) {
+    return {
+      success: false,
+      message:
+        "Selected Merchant does not own this Product Parent. Assign the Parent Code in Merchant Control first.",
+    };
+  }
+
+  if (!requestedMerchantId && parentMerchantId) {
+    // Prevent a Merchant-owned product from accidentally becoming an OMS PO.
+    // The Parent ownership is authoritative when the form leaves Merchant empty.
+  }
+
+  if (merchantId) {
+    const merchant = await prisma.merchant.findFirst({
+      where: { id: merchantId, status: true },
+      select: { id: true },
+    });
+    if (!merchant) {
+      return { success: false, message: "Merchant not found or inactive." };
+    }
+  }
+
   const subtotalUsd =
     quantity * unitPriceUsd + platformChargeUsd + shippingUsd;
 
@@ -181,6 +209,7 @@ export async function createPurchaseOrder(
         productSku: product.sku,
         productName: product.name,
         parentSku: product.parent.sku,
+        merchantId,
 
         orderDate: orderDate
           ? new Date(`${orderDate}T00:00:00`)

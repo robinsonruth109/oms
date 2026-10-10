@@ -871,15 +871,9 @@ export default function AdsCostSyncClient({
                       <SearchableParentPicker
                         parents={parents}
                         value={draft.productParentId}
-                        onChange={(productParentId) => {
-                          const parent = parents.find(
-                            (item) => item.id === productParentId
-                          );
-                          patchDraft(campaign.id, {
-                            productParentId,
-                            merchantId: parent?.merchantId || "",
-                          });
-                        }}
+                        onChange={(productParentId) =>
+                          patchDraft(campaign.id, { productParentId })
+                        }
                       />
                     </td>
                     <td className="px-4 py-4">
@@ -900,7 +894,7 @@ export default function AdsCostSyncClient({
                         ))}
                       </select>
                       <p className="mt-1 max-w-52 text-[11px] text-slate-400">
-                        Must match Product Parent ownership.
+                        Leave as OMS unless this campaign spend belongs to a Merchant.
                       </p>
                     </td>
                     <td className="px-4 py-4">

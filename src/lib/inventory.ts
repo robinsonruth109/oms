@@ -40,23 +40,40 @@ function ownerFor(product: any, qty: number): PhysicalRequirement {
   if (product.inventoryKind === "BUNDLE") {
     throw new InventoryError("Bundle " + product.sku + " has no physical stock owner.");
   }
+
+  // Merchant-owned parents can contain stock already purchased by OMS.
+  // That reserve stays in the same physical Product Master bucket, but normal
+  // merchant sales must not consume it. Existing OMS-owned products have
+  // merchantId = null, so their available stock is unchanged.
+  const merchantOwned = Boolean(product.parent?.merchantId);
+
   if (product.parent.stockMode === "PARENT_STOCK") {
     const factor = positiveInt(product.unitsPerSale);
+    const physical = Number(product.parent.stockQuantity || 0);
+    const omsReserve = merchantOwned
+      ? Number(product.parent.omsOwnedStockQuantity || 0)
+      : 0;
     return {
       ownerType: "PRODUCT_PARENT",
       ownerId: product.parent.id,
       ownerLabel: product.parent.sku,
-      available: Number(product.parent.stockQuantity || 0),
+      available: Math.max(0, physical - omsReserve),
       unitsPerSale: factor,
       requiredUnits: qty * factor,
       unitCost: Number(product.parent.purchasePrice || 0),
     };
   }
+
+  const physical = Number(product.quantity || 0);
+  const omsReserve = merchantOwned
+    ? Number(product.omsOwnedStockQuantity || 0)
+    : 0;
+
   return {
     ownerType: "PRODUCT",
     ownerId: product.id,
     ownerLabel: product.sku,
-    available: Number(product.quantity || 0),
+    available: Math.max(0, physical - omsReserve),
     unitsPerSale: 1,
     requiredUnits: qty,
     unitCost: Number(product.purchasePrice || 0),

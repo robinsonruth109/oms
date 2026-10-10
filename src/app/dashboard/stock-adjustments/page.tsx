@@ -36,17 +36,64 @@ function money(value: number) {
   }).format(value);
 }
 
+function breakdownKind(raw: string | null) {
+  if (!raw) return null;
+
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (Array.isArray(value)) return "BUNDLE" as const;
+    if (
+      value &&
+      typeof value === "object" &&
+      (value as Record<string, unknown>).kind === "LOCAL_PRODUCT_PURCHASE"
+    ) {
+      return "LOCAL_PURCHASE" as const;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function componentBreakdownLabel(raw: string) {
   try {
-    const rows = JSON.parse(raw) as Array<{
-      ownerSku: string; units: number; before: number; after: number;
-    }>;
-    return rows.map((row) =>
-      row.ownerSku + " × " + row.units + " (" +
-      row.before + " → " + row.after + ")"
-    ).join("; ");
+    const value = JSON.parse(raw) as unknown;
+
+    if (Array.isArray(value)) {
+      const rows = value as Array<{
+        ownerSku: string; units: number; before: number; after: number;
+      }>;
+      return rows.map((row) =>
+        row.ownerSku + " × " + row.units + " (" +
+        row.before + " → " + row.after + ")"
+      ).join("; ");
+    }
+
+    if (
+      value &&
+      typeof value === "object" &&
+      (value as Record<string, unknown>).kind === "LOCAL_PRODUCT_PURCHASE"
+    ) {
+      const row = value as Record<string, unknown>;
+      const amount = (key: string) =>
+        Number(row[key] || 0).toLocaleString("en-BD", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+      return (
+        "Unit purchase Tk " + amount("unitPurchaseCost") +
+        " · Vara Tk " + amount("transportCost") +
+        " · Other Tk " + amount("otherCost") +
+        " · Grand Tk " + amount("grandTotalCost") +
+        " · Buying " + amount("previousBuyingPrice") +
+        " → " + amount("newBuyingPrice")
+      );
+    }
+
+    return "Historical detail unavailable";
   } catch {
-    return "Historical component detail unavailable";
+    return "Historical detail unavailable";
   }
 }
 
@@ -471,9 +518,13 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
                   </td>
                   <td className="px-5 py-4 text-slate-700">{entry.productNameSnapshot}</td>
                   <td className="px-5 py-4 text-slate-700">
-                    {entry.componentBreakdown ? "Virtual Bundle" : entry.stockOwnerType === "PRODUCT_PARENT"
-                      ? `Parent Stock × ${entry.unitsPerSale}`
-                      : "Variation Stock"}
+                    {breakdownKind(entry.componentBreakdown) === "LOCAL_PURCHASE"
+                      ? "Local Purchase"
+                      : breakdownKind(entry.componentBreakdown) === "BUNDLE"
+                        ? "Virtual Bundle"
+                        : entry.stockOwnerType === "PRODUCT_PARENT"
+                          ? `Parent Stock × ${entry.unitsPerSale}`
+                          : "Variation Stock"}
                   </td>
                   <td className="px-5 py-4 text-right font-semibold">{entry.enteredQuantity}</td>
                   <td className="px-5 py-4 text-right font-semibold">
@@ -484,20 +535,23 @@ export default async function StockAdjustmentsPage({ searchParams }: Props) {
                   <td className="px-5 py-4 text-right font-semibold">
                     {money(Number(entry.adjustmentValue || 0))}
                   </td>
-                  <td className="px-5 py-4 text-right">{entry.componentBreakdown ? "—" : entry.stockBefore}</td>
+                  <td className="px-5 py-4 text-right">{breakdownKind(entry.componentBreakdown) === "BUNDLE" ? "—" : entry.stockBefore}</td>
                   <td
                     className={
                       "px-5 py-4 text-right font-semibold " +
                       (entry.stockAfter < 0 ? "text-red-600" : "text-slate-900")
                     }
                   >
-                    {entry.componentBreakdown ? "—" : entry.stockAfter}
+                    {breakdownKind(entry.componentBreakdown) === "BUNDLE" ? "—" : entry.stockAfter}
                   </td>
                   <td className="px-5 py-4 font-medium text-slate-700">{entry.reason}</td>
                   <td className="max-w-xs px-5 py-4 text-slate-600">{entry.note || "—"}
                     {entry.componentBreakdown ? (
                       <p className="mt-1 break-words text-xs text-violet-700">
-                        Components: {componentBreakdownLabel(entry.componentBreakdown)}
+                        {breakdownKind(entry.componentBreakdown) === "LOCAL_PURCHASE"
+                          ? "Purchase: "
+                          : "Components: "}
+                        {componentBreakdownLabel(entry.componentBreakdown)}
                       </p>
                     ) : null}</td>
                   <td className="px-5 py-4 text-slate-700">{entry.createdByName}</td>

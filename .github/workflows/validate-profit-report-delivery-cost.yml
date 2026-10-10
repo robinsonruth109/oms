@@ -1,0 +1,23 @@
+name: Validate profit report delivery cost
+
+on:
+  push:
+    branches:
+      - validation/profit-report-delivery-cost
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint changed report files
+        run: npx eslint src/app/dashboard/profit-margin/page.tsx src/app/dashboard/profit-margin/product-performance-report.tsx
+      - name: Production build
+        run: npm run build

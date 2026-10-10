@@ -1,0 +1,46 @@
+name: Validate Product Master catalog hub v2
+
+on:
+  push:
+    branches:
+      - validation/product-master-catalog-hub-v2
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - name: Lint catalog hub files
+        run: >
+          npx eslint
+          src/app/dashboard/integrations/actions.ts
+          src/app/dashboard/integrations/catalog-settings.tsx
+          src/app/dashboard/integrations/create-integration-form.tsx
+          src/app/dashboard/integrations/page.tsx
+          src/app/dashboard/products/catalog-actions.ts
+          src/app/dashboard/products/product-catalog-editor.tsx
+          src/app/dashboard/products/page.tsx
+          src/app/dashboard/products/actions.ts
+          src/app/dashboard/products/bundles/bundle-actions.ts
+          src/app/dashboard/dashboard-navigation.tsx
+          src/app/api/product-media/upload-url/route.ts
+          src/app/api/internal/scheduler/route.ts
+          src/lib/product-media-storage.ts
+          src/lib/product-catalog-sync.ts
+          src/lib/inventory.ts
+          src/app/dashboard/stock-adjustments/actions.ts
+          src/app/dashboard/products-purchases/local-purchase/actions.ts
+          src/app/dashboard/merchant-control/actions.ts
+      - name: TypeScript diagnostics
+        continue-on-error: true
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build

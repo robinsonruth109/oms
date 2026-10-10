@@ -6,13 +6,13 @@ import {
   formatUsd,
   requireMerchantContext,
 } from "@/lib/merchant-portal";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function MerchantDollarWalletPage() {
   const { merchant } = await requireMerchantContext();
+  const { prisma } = await import("@/lib/prisma");
 
   const [recharges, spends, rates] = await Promise.all([
     prisma.merchantDollarRecharge.findMany({

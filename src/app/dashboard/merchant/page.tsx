@@ -20,7 +20,6 @@ import {
   requireMerchantContext,
   validDate,
 } from "@/lib/merchant-portal";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -37,6 +36,7 @@ function shiftDate(value: string, days: number) {
 
 export default async function MerchantDashboardPage({ searchParams }: Props) {
   const { merchant } = await requireMerchantContext();
+  const { prisma } = await import("@/lib/prisma");
   const params = (await searchParams) || {};
   const today = getBangladeshDateInputValue();
 

@@ -26,6 +26,31 @@ function isExchangeLifecycleEvent(fields: {
   return combined.includes("exchang");
 }
 
+async function wasCourierConsignmentExplicitlyReset(
+  prisma: any,
+  orderId: string,
+  consignmentId: string
+) {
+  const recentResets = await prisma.orderAuditEvent.findMany({
+    where: {
+      orderId,
+      eventType: "COURIER_ID_RESET",
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { details: true },
+  });
+
+  return recentResets.some((event: { details: unknown }) => {
+    const details =
+      event.details && typeof event.details === "object"
+        ? (event.details as Record<string, unknown>)
+        : null;
+
+    return String(details?.previousConsignmentId || "") === consignmentId;
+  });
+}
+
 function response202(
   headerSecret: string,
   body: Record<string, unknown>
@@ -141,8 +166,27 @@ export async function POST(
   }
 
   let processingNote = order ? "Matched and processed." : "Stored; OMS order not matched yet.";
+  let ignoreOrderMutation = false;
 
-  if (order) {
+  if (
+    order &&
+    fields.consignmentId &&
+    !PATHAO_RETURN_LIFECYCLE_EVENTS.has(fields.event) &&
+    !fields.returnConsignmentId
+  ) {
+    ignoreOrderMutation = await wasCourierConsignmentExplicitlyReset(
+      prisma,
+      order.id,
+      fields.consignmentId
+    );
+
+    if (ignoreOrderMutation) {
+      processingNote =
+        "Ignored stale Pathao webhook for a consignment ID that was explicitly reset after Pickup Failed.";
+    }
+  }
+
+  if (order && !ignoreOrderMutation) {
     const isReturnLifecycleEvent =
       PATHAO_RETURN_LIFECYCLE_EVENTS.has(fields.event) ||
       Boolean(fields.returnConsignmentId);
@@ -192,7 +236,7 @@ export async function POST(
     }
   }
 
-  if (order && isExchangeLifecycleEvent(fields)) {
+  if (order && !ignoreOrderMutation && isExchangeLifecycleEvent(fields)) {
     const cidCandidates = [
       fields.consignmentId,
       fields.returnConsignmentId,
@@ -264,7 +308,7 @@ export async function POST(
       returnConsignmentId: fields.returnConsignmentId,
       merchantOrderId: fields.merchantOrderId,
       signatureValid: true,
-      processed: Boolean(order),
+      processed: Boolean(order) && !ignoreOrderMutation,
       processingNote,
       rawPayload: payload as object,
     },

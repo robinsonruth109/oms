@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -705,7 +706,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     );
   }
 
-  const topStatuses = Array.from(statusCounts.entries())
+  const filteredStatusCounts = new Map<string, number>();
+  for (const row of selected) {
+    filteredStatusCounts.set(row.latest, (filteredStatusCounts.get(row.latest) || 0) + 1);
+  }
+  const topStatuses = Array.from(filteredStatusCounts.entries())
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
@@ -824,8 +829,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           total={dailyApplied}
           periodTotal={daily.included}
           allocationShare={allocationShare}
-          rows={daily.categories.slice(0, 6).map((row) => ({ label: row.category, value: row.amount }))}
-          footnote={"Raw khoroch " + taka(daily.raw) + " · P&L included " + taka(daily.included)}
+          rows={daily.categories.filter((row) => costIncluded(row.category)).slice(0, 6).map((row) => ({ label: row.category, value: row.amount }))}
+          footnote={"Raw khoroch " + taka(daily.raw) + " · P&L included " + taka(daily.included) + " · Duplicate-protected/excluded " + taka(daily.excluded)}
         />
         <DetailCard
           icon={<Banknote className="h-5 w-5" />}
@@ -833,8 +838,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           total={officeApplied}
           periodTotal={office.included}
           allocationShare={allocationShare}
-          rows={office.categories.slice(0, 6).map((row) => ({ label: row.category, value: row.amount }))}
-          footnote={"Raw khoroch " + taka(office.raw) + " · P&L included " + taka(office.included)}
+          rows={office.categories.filter((row) => costIncluded(row.category)).slice(0, 6).map((row) => ({ label: row.category, value: row.amount }))}
+          footnote={"Raw khoroch " + taka(office.raw) + " · P&L included " + taka(office.included) + " · Duplicate-protected/excluded " + taka(office.excluded)}
         />
       </section>
 
@@ -1013,7 +1018,7 @@ function DetailCard({
   rows,
   footnote,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   total: number;
   periodTotal: number;

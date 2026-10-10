@@ -37,6 +37,11 @@ export const authOptions: NextAuthOptions = {
           where: {
             username,
           },
+          include: {
+            merchant: {
+              select: { id: true },
+            },
+          },
         });
 
         if (!user || !user.status) {
@@ -58,6 +63,7 @@ export const authOptions: NextAuthOptions = {
           email: null,
           username: user.username,
           role: user.role,
+          merchantId: user.merchant?.id || null,
         };
       },
     }),
@@ -71,6 +77,8 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.username = (user as { username: string }).username;
         token.role = (user as { role: string }).role;
+        token.merchantId =
+          (user as { merchantId?: string | null }).merchantId || null;
       }
 
       return token;
@@ -80,6 +88,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.username = token.username as string;
         session.user.role = token.role as string;
+        session.user.merchantId = (token.merchantId as string | null) || null;
       }
 
       return session;

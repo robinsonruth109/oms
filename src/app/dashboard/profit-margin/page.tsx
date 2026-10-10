@@ -421,7 +421,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     }
 
     const webhookDeliveryFee = delivered
-      ? rawNumber(deliveredPayload, ["delivery_fee", "delivery_charge"])
+      ? rawNumber(deliveredPayload, ["delivery_fee"])
       : null;
     const deliveryCost = delivered
       ? Math.max(
@@ -560,6 +560,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   }
 
   const missingRateDays = new Set<string>();
+  const unsupportedAdCurrencies = new Set<string>();
   const adMap = new Map<string, AdsRow>();
   let adsTotal = 0;
   for (const row of adsRowsRaw) {
@@ -575,6 +576,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       const rate = rateRow && rateRow.usd > 0 ? rateRow.bdt / rateRow.usd : 0;
       if (!rate && amount > 0) missingRateDays.add(day);
       bdt = amount * rate;
+    } else if (amount > 0) {
+      unsupportedAdCurrencies.add(currency);
     }
 
     adsTotal += bdt;
@@ -682,6 +685,13 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       "Missing USD rate for " +
         Array.from(missingRateDays).sort().join(", ") +
         "; affected Meta spend is BDT 0 until the dollar rate is entered."
+    );
+  }
+  if (unsupportedAdCurrencies.size) {
+    warnings.push(
+      "Unsupported Meta ad currency: " +
+        Array.from(unsupportedAdCurrencies).sort().join(", ") +
+        ". Add a conversion rule before relying on those campaign costs."
     );
   }
   if (partialCount) {

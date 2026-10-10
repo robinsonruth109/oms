@@ -24,6 +24,7 @@ export type ProductPerformanceChildRow = {
   pendingInvoices: number;
   deliveredProductQty: number;
   returnCharge: number;
+  deliveryCost: number;
   invoicedTotal: number;
   adsCost: number;
   merchandiseSales: number;
@@ -117,6 +118,7 @@ function MetricCells({
         tone="amber"
       />
       <NumberCell value={money(row.returnCharge)} tone="red" />
+      <NumberCell value={money(row.deliveryCost)} tone="red" />
       <NumberCell value={money(row.invoicedTotal)} />
       <NumberCell value={money(row.adsCost)} tone="violet" strong={!child} />
       <NumberCell value={money(row.merchandiseSales)} />
@@ -385,7 +387,7 @@ export default function ProductPerformanceReport({
           event.stopPropagation();
         }}
       >
-        <table className="min-w-[2660px] w-full text-sm">
+        <table className="min-w-[2820px] w-full text-sm">
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.35)]">
             <tr>
               <th className="sticky left-0 top-0 z-40 min-w-[300px] bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(148,163,184,0.25)]">
@@ -399,6 +401,7 @@ export default function ProductPerformanceReport({
               <th className="px-4 py-3 text-right">Pathao Cancelled</th>
               <th className="px-4 py-3 text-right">Pathao Pending</th>
               <th className="px-4 py-3 text-right">Pathao Return Charge</th>
+              <th className="px-4 py-3 text-right">Pathao Delivery Cost</th>
               <th className="px-4 py-3 text-right">Pathao Invoiced Total</th>
               <th className="px-4 py-3 text-right">Ads Costing BDT</th>
               <th className="px-4 py-3 text-right">Merchandise Sales</th>
@@ -517,7 +520,7 @@ export default function ProductPerformanceReport({
             {!rows.length ? (
               <tr>
                 <td
-                  colSpan={17}
+                  colSpan={18}
                   className="px-4 py-12 text-center text-slate-500"
                 >
                   No Pathao product activity found in the selected filters.
@@ -553,9 +556,10 @@ export default function ProductPerformanceReport({
           rows only allocate that parent amount and sum back to the parent.
         </p>
         <p>
-          <strong>Gross Profit</strong> = Merchandise Sales − COGS. Pathao
-          invoice money is allocated by order-line value so a multi-product
-          invoice is not duplicated into every Parent Code.
+          <strong>Gross Profit</strong> = Merchandise Sales − COGS − Pathao
+          Delivery Cost. Delivery cost uses the same verified Pathao fee logic
+          as the main Profit Margin report and is allocated by order-line value
+          so multi-product invoices are not duplicated across Parent Codes.
         </p>
       </div>
     </section>

@@ -127,6 +127,118 @@ export async function createMerchant(input: {
   }
 }
 
+export async function updateMerchant(input: {
+  merchantId: string;
+  name: string;
+  phone: string;
+  address: string;
+  newPassword?: string;
+}): Promise<MerchantActionResult> {
+  try {
+    await requireAdmin();
+
+    const merchantId = String(input.merchantId || "").trim();
+    const name = String(input.name || "").trim();
+    const phone = cleanPhone(input.phone);
+    const address = String(input.address || "").trim();
+    const newPassword = String(input.newPassword || "");
+
+    if (!merchantId || !name || !phone || !address) {
+      return {
+        success: false,
+        message: "Merchant, name, phone number and address are required.",
+      };
+    }
+
+    if (newPassword && newPassword.length < 8) {
+      return {
+        success: false,
+        message: "New password must be at least 8 characters.",
+      };
+    }
+
+    const merchant = await prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: {
+        id: true,
+        phone: true,
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            role: true,
+            username: true,
+          },
+        },
+      },
+    });
+
+    if (!merchant) {
+      return { success: false, message: "Merchant not found." };
+    }
+
+    if (!merchant.userId || !merchant.user || merchant.user.role !== "MERCHANT") {
+      return {
+        success: false,
+        message: "Merchant login account is missing or invalid.",
+      };
+    }
+
+    const phoneExists = await prisma.merchant.findFirst({
+      where: {
+        phone,
+        id: { not: merchantId },
+      },
+      select: { id: true },
+    });
+
+    if (phoneExists) {
+      return {
+        success: false,
+        message: "Another Merchant already uses this phone number.",
+      };
+    }
+
+    const password = newPassword
+      ? await bcrypt.hash(newPassword, 12)
+      : undefined;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.merchant.update({
+        where: { id: merchantId },
+        data: {
+          name,
+          phone,
+          address,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: merchant.userId! },
+        data: {
+          name,
+          ...(password ? { password } : {}),
+        },
+      });
+    });
+
+    refreshMerchantPages();
+
+    return {
+      success: true,
+      message: newPassword
+        ? "Merchant profile and login password updated successfully."
+        : "Merchant profile updated successfully.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error ? error.message : "Failed to update Merchant.",
+    };
+  }
+}
+
 export async function assignMerchantCouriers(input: {
   merchantId: string;
   courierIds: string[];

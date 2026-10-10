@@ -6,6 +6,7 @@ import {
 } from "@/lib/bangladesh-time";
 import { runReadyOrderSheetSync } from "@/lib/google-sheets/sync";
 import { syncMetaAdsRange } from "@/lib/meta-ads/sync";
+import { runPendingProductSyncJobs } from "@/lib/product-catalog-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -228,9 +229,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const [readyOrderSheet, metaAds] = await Promise.all([
+  const [readyOrderSheet, metaAds, productCatalog] = await Promise.all([
     runReadyOrderSheetIfDue(),
     runMetaAdsIfDue(),
+    runPendingProductSyncJobs(8).catch((error) => ({
+      processed: 0,
+      successCount: 0,
+      failureCount: 1,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Product catalog scheduler failed.",
+    })),
   ]);
 
   return NextResponse.json({
@@ -238,5 +248,6 @@ export async function POST(request: NextRequest) {
     businessDate: getBangladeshDateInputValue(),
     readyOrderSheet,
     metaAds,
+    productCatalog,
   });
 }

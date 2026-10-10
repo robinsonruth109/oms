@@ -1,0 +1,23 @@
+name: Validate office cashbook date range
+
+on:
+  push:
+    branches:
+      - validation/office-cashbook-date-range
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint changed Office Cash Book files
+        run: npx eslint src/app/dashboard/finance/office-daily-costing/page.tsx src/app/api/finance/office-daily-costing/pdf/route.ts
+      - name: Production build
+        run: npm run build

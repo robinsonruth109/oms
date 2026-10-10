@@ -81,14 +81,38 @@ export default async function ReadyToShipPage({
     };
   }
 
+  const submittedPathaoStates = [
+    "SUBMITTING",
+    "SUBMITTED",
+    "CONSIGNMENT_CREATED",
+  ] as const;
+
+  const nonCsvWhere = {
+    ...whereBase,
+    csvDownloaded: false,
+    pathaoConsignmentId: null,
+    pathaoSubmissionStatus: {
+      in: ["NOT_SUBMITTED", "FAILED"],
+    },
+  };
+
+  const submittedCsvWhere = {
+    ...whereBase,
+    OR: [
+      { csvDownloaded: true },
+      { pathaoConsignmentId: { not: null } },
+      { pathaoSubmissionStatus: { in: [...submittedPathaoStates] } },
+    ],
+  };
+
   const ordersWhere =
     activeTab === "non-invoiced"
       ? { ...whereBase, invoiceDownloaded: false }
       : activeTab === "invoiced"
       ? { ...whereBase, invoiceDownloaded: true }
       : activeTab === "non-csv"
-      ? { ...whereBase, csvDownloaded: false }
-      : { ...whereBase, csvDownloaded: true };
+      ? nonCsvWhere
+      : submittedCsvWhere;
 
   const [
     orders,
@@ -116,10 +140,10 @@ export default async function ReadyToShipPage({
       where: { ...whereBase, invoiceDownloaded: true },
     }),
     prisma.order.count({
-      where: { ...whereBase, csvDownloaded: false },
+      where: nonCsvWhere,
     }),
     prisma.order.count({
-      where: { ...whereBase, csvDownloaded: true },
+      where: submittedCsvWhere,
     }),
     prisma.invoiceBatch.findMany({
       where: courier ? { courier } : undefined,
@@ -260,7 +284,7 @@ export default async function ReadyToShipPage({
             activeTab === "csv-downloaded" ? "bg-slate-900 text-white" : "bg-white"
           }`}
         >
-          <p className="text-sm font-medium">CSV Downloaded</p>
+          <p className="text-sm font-medium">Submitted / CSV</p>
           <p className="mt-2 text-2xl font-bold">{csvDownloadedCount}</p>
         </Link>
       </section>

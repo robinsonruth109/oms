@@ -34,6 +34,7 @@ type PurchaseOrder = {
 };
 
 type GroupedRow = {
+  key: string;
   parentSku: string;
   merchantName: string;
   totalOrders: number;
@@ -122,7 +123,8 @@ export default function PurchaseOrdersClient({
 
     for (const order of orders) {
       const paidBdt = Number(order.totalPaidBdt || 0);
-      const existing = map.get(order.parentSku);
+      const groupKey = (order.merchantId || "OMS") + "::" + order.parentSku;
+      const existing = map.get(groupKey);
 
       if (existing) {
         existing.totalOrders += 1;
@@ -133,7 +135,8 @@ export default function PurchaseOrdersClient({
           existing.totalQty > 0 ? existing.totalPaidBdt / existing.totalQty : 0;
         existing.status = getGroupStatus(existing.orders);
       } else {
-        map.set(order.parentSku, {
+        map.set(groupKey, {
+          key: groupKey,
           parentSku: order.parentSku,
           merchantName: order.merchantName,
           totalOrders: 1,
@@ -362,15 +365,15 @@ export default function PurchaseOrdersClient({
 
             <tbody>
               {groupedRows.map((row) => {
-                const isOpen = Boolean(openRows[row.parentSku]);
+                const isOpen = Boolean(openRows[row.key]);
 
                 return (
-                  <Fragment key={row.parentSku}>
+                  <Fragment key={row.key}>
                     <tr className="border-b">
                       <td className="px-5 py-4 text-sm font-semibold text-slate-900">
                         <button
                           type="button"
-                          onClick={() => toggleRow(row.parentSku)}
+                          onClick={() => toggleRow(row.key)}
                           className="hover:underline"
                         >
                           {isOpen ? "▼" : "▶"} {row.parentSku}

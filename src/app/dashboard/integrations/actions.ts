@@ -512,72 +512,114 @@ export async function importIntegrationCatalog(
         products.map((product) => [product.sku, product.id])
       );
 
-      await prisma.$transaction(async (tx) => {
-        for (const item of items) {
+      const preparedRows = items
+        .map((item) => {
           const sku = String(item.sku || "").trim();
           const remoteProductId = String(item.externalProductId || "").trim();
-          if (!sku || !remoteProductId) continue;
+          if (!sku || !remoteProductId) return null;
 
-          const matchedProductId = productBySku.get(sku) || null;
-          received += 1;
-          if (matchedProductId) matched += 1;
-          else pending += 1;
+          return {
+            item,
+            sku,
+            remoteProductId,
+            matchedProductId: productBySku.get(sku) || null,
+          };
+        })
+        .filter(
+          (
+            row
+          ): row is {
+            item: RemoteCatalogProduct;
+            sku: string;
+            remoteProductId: string;
+            matchedProductId: string | null;
+          } => Boolean(row)
+        );
 
-          await tx.productCatalogImportCandidate.upsert({
-            where: {
-              integrationId_remoteProductId: {
-                integrationId,
-                remoteProductId,
-              },
-            },
-            create: {
-              integrationId,
-              remoteProductId,
-              sku,
-              payloadJson: JSON.stringify(item),
-              status: matchedProductId ? "MATCHED" : "PENDING",
-              matchedProductId,
-            },
-            update: {
-              sku,
-              payloadJson: JSON.stringify(item),
-              status: matchedProductId ? "MATCHED" : "PENDING",
-              matchedProductId,
-            },
-          });
+      received += preparedRows.length;
+      matched += preparedRows.filter((row) => row.matchedProductId).length;
+      pending += preparedRows.filter((row) => !row.matchedProductId).length;
 
-          if (matchedProductId) {
-            await tx.productWebsiteListing.upsert({
+      // Do not keep one interactive transaction open while scanning an entire
+      // remote page. A 100-product page can require ~200 upserts and exceeded
+      // Prisma's default 5-second interactive transaction timeout.
+      //
+      // Small array-transactions keep each batch atomic without the interactive
+      // callback timeout, and avoid flooding the database with all rows at once.
+      const writeChunkSize = 20;
+      for (
+        let start = 0;
+        start < preparedRows.length;
+        start += writeChunkSize
+      ) {
+        const chunk = preparedRows.slice(start, start + writeChunkSize);
+        const scannedAt = new Date();
+        const operations = [];
+
+        for (const row of chunk) {
+          operations.push(
+            prisma.productCatalogImportCandidate.upsert({
               where: {
-                productId_integrationId: {
-                  productId: matchedProductId,
+                integrationId_remoteProductId: {
                   integrationId,
+                  remoteProductId: row.remoteProductId,
                 },
               },
               create: {
-                productId: matchedProductId,
                 integrationId,
-                remoteProductId,
-                syncStatus: "SYNCED",
-                lastSyncedAt: new Date(),
+                remoteProductId: row.remoteProductId,
+                sku: row.sku,
+                payloadJson: JSON.stringify(row.item),
+                status: row.matchedProductId ? "MATCHED" : "PENDING",
+                matchedProductId: row.matchedProductId,
               },
               update: {
-                remoteProductId,
+                sku: row.sku,
+                payloadJson: JSON.stringify(row.item),
+                status: row.matchedProductId ? "MATCHED" : "PENDING",
+                matchedProductId: row.matchedProductId,
               },
-            });
+            })
+          );
+
+          if (row.matchedProductId) {
+            operations.push(
+              prisma.productWebsiteListing.upsert({
+                where: {
+                  productId_integrationId: {
+                    productId: row.matchedProductId,
+                    integrationId,
+                  },
+                },
+                create: {
+                  productId: row.matchedProductId,
+                  integrationId,
+                  remoteProductId: row.remoteProductId,
+                  syncStatus: "SYNCED",
+                  lastSyncedAt: scannedAt,
+                },
+                update: {
+                  remoteProductId: row.remoteProductId,
+                },
+              })
+            );
           }
         }
 
-        await tx.integration.update({
-          where: { id: integrationId },
-          data: { lastCatalogSyncAt: new Date() },
-        });
-      });
+        if (operations.length) {
+          await prisma.$transaction(operations);
+        }
+      }
 
       pages += 1;
       cursor = String(body.nextCursor || "");
       if (!cursor) break;
     }
+
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: { lastCatalogSyncAt: new Date() },
+    });
 
     revalidatePath("/dashboard/integrations");
     revalidatePath("/dashboard/products");

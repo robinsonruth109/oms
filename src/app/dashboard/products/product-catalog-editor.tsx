@@ -952,14 +952,31 @@ function WebsiteCard({
         {website.listing && enabled ? (
           <button
             type="button"
-            disabled={pending || !website.productSyncEnabled}
+            disabled={pending}
             onClick={() =>
               run(() => publishProductListing(website.listing!.id))
             }
-            className="inline-flex items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-xs font-semibold disabled:opacity-40"
+            title={
+              website.productSyncEnabled
+                ? "Synchronize this product now"
+                : "Manual one-product test sync. Automatic Product Sync stays off."
+            }
+            className={
+              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-40 " +
+              (website.productSyncEnabled
+                ? "bg-white"
+                : "border-amber-300 bg-amber-50 text-amber-800")
+            }
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Sync Now
+            <RefreshCw className="h-3.5 w-3.5" />{" "}
+            {website.productSyncEnabled ? "Sync Now" : "Test Sync This Product"}
           </button>
+        ) : null}
+
+        {!website.productSyncEnabled && website.listing && enabled ? (
+          <span className="inline-flex items-center rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">
+            Automatic Product Sync is OFF. Manual test affects only this product.
+          </span>
         ) : null}
 
         {website.listing?.publicUrl ? (

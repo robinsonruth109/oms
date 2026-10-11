@@ -781,27 +781,46 @@ export async function publishProductListing(
     await requireAdmin();
 
     const { listing, payload } = await buildListingPayload(listingId);
-    if (!listing.integration.productSyncEnabled) {
-      return {
-        success: false,
-        message: "Product Sync is disabled for " + listing.integration.name + ".",
-      };
-    }
 
-    const job = await prisma.productSyncJob.create({
-      data: {
-        productId: listing.productId,
-        integrationId: listing.integrationId,
+    // Manual admin sync is intentionally allowed even while automatic Product
+    // Sync is OFF. This provides a controlled one-product test path without
+    // enabling the scheduler for every queued website listing.
+    const operation = listing.active ? "FULL_UPSERT" : "UNPUBLISH";
+    const payloadHash = crypto
+      .createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex");
+
+    const queuedJob = await prisma.productSyncJob.findFirst({
+      where: {
         listingId: listing.id,
-        operation: listing.active ? "FULL_UPSERT" : "UNPUBLISH",
-        status: "RUNNING",
-        attempts: 1,
-        payloadHash: crypto
-          .createHash("sha256")
-          .update(JSON.stringify(payload))
-          .digest("hex"),
+        status: "PENDING",
+        operation,
       },
+      orderBy: { createdAt: "desc" },
     });
+
+    const job = queuedJob
+      ? await prisma.productSyncJob.update({
+          where: { id: queuedJob.id },
+          data: {
+            status: "RUNNING",
+            attempts: { increment: 1 },
+            lastError: null,
+            payloadHash,
+          },
+        })
+      : await prisma.productSyncJob.create({
+          data: {
+            productId: listing.productId,
+            integrationId: listing.integrationId,
+            listingId: listing.id,
+            operation,
+            status: "RUNNING",
+            attempts: 1,
+            payloadHash,
+          },
+        });
 
     await prisma.productWebsiteListing.update({
       where: { id: listing.id },
@@ -881,7 +900,13 @@ export async function publishProductListing(
     refreshProductMaster();
     return {
       success: true,
-      message: listing.product.sku + " synchronized to " + listing.integration.name + ".",
+      message:
+        listing.product.sku +
+        " synchronized to " +
+        listing.integration.name +
+        (listing.integration.productSyncEnabled
+          ? "."
+          : " with manual test sync. Automatic Product Sync remains OFF."),
     };
   } catch (error) {
     return {

@@ -162,13 +162,66 @@ function presign(
   );
 }
 
-export function productMediaStorageConfigured() {
-  try {
-    config();
-    return true;
-  } catch {
-    return false;
+export type ProductMediaStorageStatus = {
+  configured: boolean;
+  missingVariables: string[];
+  invalidVariables: string[];
+};
+
+export function getProductMediaStorageStatus(): ProductMediaStorageStatus {
+  const values = {
+    PRODUCT_MEDIA_S3_ENDPOINT: String(
+      process.env.PRODUCT_MEDIA_S3_ENDPOINT || ""
+    ).trim(),
+    PRODUCT_MEDIA_S3_BUCKET: String(
+      process.env.PRODUCT_MEDIA_S3_BUCKET || ""
+    ).trim(),
+    PRODUCT_MEDIA_S3_REGION: String(
+      process.env.PRODUCT_MEDIA_S3_REGION || ""
+    ).trim(),
+    PRODUCT_MEDIA_S3_ACCESS_KEY_ID: String(
+      process.env.PRODUCT_MEDIA_S3_ACCESS_KEY_ID || ""
+    ).trim(),
+    PRODUCT_MEDIA_S3_SECRET_ACCESS_KEY: String(
+      process.env.PRODUCT_MEDIA_S3_SECRET_ACCESS_KEY || ""
+    ).trim(),
+  };
+
+  const missingVariables = Object.entries(values)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+
+  const invalidVariables: string[] = [];
+
+  if (values.PRODUCT_MEDIA_S3_ENDPOINT) {
+    try {
+      const url = new URL(values.PRODUCT_MEDIA_S3_ENDPOINT);
+      if (!["http:", "https:"].includes(url.protocol)) {
+        invalidVariables.push("PRODUCT_MEDIA_S3_ENDPOINT");
+      }
+    } catch {
+      invalidVariables.push("PRODUCT_MEDIA_S3_ENDPOINT");
+    }
   }
+
+  const rawStyle = String(
+    process.env.PRODUCT_MEDIA_S3_URL_STYLE || "path"
+  ).trim().toLowerCase();
+
+  if (!["path", "virtual-host"].includes(rawStyle)) {
+    invalidVariables.push("PRODUCT_MEDIA_S3_URL_STYLE");
+  }
+
+  return {
+    configured:
+      missingVariables.length === 0 && invalidVariables.length === 0,
+    missingVariables,
+    invalidVariables,
+  };
+}
+
+export function productMediaStorageConfigured() {
+  return getProductMediaStorageStatus().configured;
 }
 
 export function createProductMediaObjectKey(input: {

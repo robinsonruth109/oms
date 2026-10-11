@@ -9,7 +9,7 @@ import ProductCatalogEditor from "./product-catalog-editor";
 import BundleRecipeEditor from "./bundles/bundle-recipe-editor";
 import {
   createProductMediaDownloadUrl,
-  productMediaStorageConfigured,
+  getProductMediaStorageStatus,
 } from "@/lib/product-media-storage";
 
 
@@ -46,6 +46,7 @@ export default async function ProductsPage({
     requestedSection === "bundle" || requestedSection === "catalog"
       ? requestedSection
       : "inventory";
+  const mediaStorageStatus = getProductMediaStorageStatus();
   const { prisma } = await import("@/lib/prisma");
   const where =
     q.length > 0
@@ -569,7 +570,7 @@ export default async function ProductsPage({
                   sizeBytes: Number(row.sizeBytes),
                   isPrimary: row.isPrimary,
                   sortOrder: row.sortOrder,
-                  previewUrl: productMediaStorageConfigured()
+                  previewUrl: mediaStorageStatus.configured
                     ? createProductMediaDownloadUrl(row.objectKey, 1800)
                     : null,
                 }))}
@@ -580,7 +581,9 @@ export default async function ProductsPage({
                   status: candidate.status,
                   updatedAt: candidate.updatedAt.toISOString(),
                 }))}
-                bucketConfigured={productMediaStorageConfigured()}
+                bucketConfigured={mediaStorageStatus.configured}
+                bucketMissingVariables={mediaStorageStatus.missingVariables}
+                bucketInvalidVariables={mediaStorageStatus.invalidVariables}
               />
             ) : null}
           </div>

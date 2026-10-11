@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileVideo2,
   ImageIcon,
+  Plus,
   RefreshCw,
   Search,
   Trash2,
@@ -14,6 +15,7 @@ import {
 
 import {
   applyCatalogImportCandidate,
+  createProductWebsiteTaxonomyTerm,
   deleteProductMedia,
   publishProductListing,
   registerProductMedia,
@@ -586,23 +588,180 @@ function WebsiteCard({
   const [terms, setTerms] = useState<string[]>(
     website.listing?.taxonomyTermIds || []
   );
+  const [availableTerms, setAvailableTerms] = useState<TaxonomyTerm[]>(
+    website.taxonomyTerms
+  );
 
   const groups = {
-    CATEGORY: website.taxonomyTerms.filter((term) => term.type === "CATEGORY"),
-    SUBCATEGORY: website.taxonomyTerms.filter(
+    CATEGORY: availableTerms.filter((term) => term.type === "CATEGORY"),
+    SUBCATEGORY: availableTerms.filter(
       (term) => term.type === "SUBCATEGORY"
     ),
-    COLLECTION: website.taxonomyTerms.filter(
+    COLLECTION: availableTerms.filter(
       (term) => term.type === "COLLECTION"
     ),
   };
 
   function toggleTerm(id: string, checked: boolean) {
-    setTerms((current) =>
-      checked
-        ? Array.from(new Set([...current, id]))
-        : current.filter((value) => value !== id)
-    );
+    const term = availableTerms.find((row) => row.id === id);
+
+    if (!term) {
+      setTerms((current) =>
+        checked
+          ? Array.from(new Set([...current, id]))
+          : current.filter((value) => value !== id)
+      );
+      return;
+    }
+
+    setTerms((current) => {
+      if (!checked) {
+        if (term.type === "CATEGORY") {
+          const categoryExternalId = term.externalId;
+          const childIds = new Set(
+            availableTerms
+              .filter(
+                (row) =>
+                  row.type === "SUBCATEGORY" &&
+                  row.parentExternalId === categoryExternalId
+              )
+              .map((row) => row.id)
+          );
+          return current.filter(
+            (value) => value !== id && !childIds.has(value)
+          );
+        }
+
+        return current.filter((value) => value !== id);
+      }
+
+      if (term.type === "COLLECTION") {
+        // Laravel COLLECTION mode stores exactly one collection relation.
+        return [id];
+      }
+
+      if (term.type === "CATEGORY") {
+        const categoryIds = new Set(
+          availableTerms
+            .filter((row) => row.type === "CATEGORY")
+            .map((row) => row.id)
+        );
+        const subcategoryIds = new Set(
+          availableTerms
+            .filter((row) => row.type === "SUBCATEGORY")
+            .map((row) => row.id)
+        );
+
+        return Array.from(
+          new Set([
+            ...current.filter(
+              (value) =>
+                !categoryIds.has(value) && !subcategoryIds.has(value)
+            ),
+            id,
+          ])
+        );
+      }
+
+      // Laravel SUBCATEGORY mode accepts exactly one subcategory. Selecting one
+      // also selects its real parent category returned by Laravel taxonomy.
+      const categoryId = availableTerms.find(
+        (row) =>
+          row.type === "CATEGORY" &&
+          row.externalId === term.parentExternalId
+      )?.id;
+      const categoryIds = new Set(
+        availableTerms
+          .filter((row) => row.type === "CATEGORY")
+          .map((row) => row.id)
+      );
+      const subcategoryIds = new Set(
+        availableTerms
+          .filter((row) => row.type === "SUBCATEGORY")
+          .map((row) => row.id)
+      );
+
+      return Array.from(
+        new Set([
+          ...current.filter(
+            (value) =>
+              !categoryIds.has(value) && !subcategoryIds.has(value)
+          ),
+          ...(categoryId ? [categoryId] : []),
+          id,
+        ])
+      );
+    });
+  }
+
+  function handleCreatedTerm(term: TaxonomyTerm) {
+    setAvailableTerms((current) => {
+      const withoutSame = current.filter(
+        (row) =>
+          !(
+            row.type === term.type &&
+            row.externalId === term.externalId
+          )
+      );
+      return [...withoutSame, term].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+    });
+
+    const nextPool = [
+      ...availableTerms.filter(
+        (row) =>
+          !(
+            row.type === term.type &&
+            row.externalId === term.externalId
+          )
+      ),
+      term,
+    ];
+
+    setTerms((current) => {
+      if (term.type === "COLLECTION") return [term.id];
+
+      const categoryIds = new Set(
+        nextPool
+          .filter((row) => row.type === "CATEGORY")
+          .map((row) => row.id)
+      );
+      const subcategoryIds = new Set(
+        nextPool
+          .filter((row) => row.type === "SUBCATEGORY")
+          .map((row) => row.id)
+      );
+
+      if (term.type === "CATEGORY") {
+        return Array.from(
+          new Set([
+            ...current.filter(
+              (value) =>
+                !categoryIds.has(value) && !subcategoryIds.has(value)
+            ),
+            term.id,
+          ])
+        );
+      }
+
+      const parentId = nextPool.find(
+        (row) =>
+          row.type === "CATEGORY" &&
+          row.externalId === term.parentExternalId
+      )?.id;
+
+      return Array.from(
+        new Set([
+          ...current.filter(
+            (value) =>
+              !categoryIds.has(value) && !subcategoryIds.has(value)
+          ),
+          ...(parentId ? [parentId] : []),
+          term.id,
+        ])
+      );
+    });
   }
 
   return (
@@ -692,30 +851,62 @@ function WebsiteCard({
           </div>
 
           {website.catalogMode === "COLLECTION" ? (
-            <TaxonomyGroup
-              title="Collections"
-              rows={groups.COLLECTION}
-              selected={terms}
-              toggle={toggleTerm}
-            />
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="space-y-3">
+              {website.platform === "LARAVEL" ? (
+                <TaxonomyCreateBox
+                  integrationId={website.id}
+                  type="COLLECTION"
+                  parentOptions={[]}
+                  disabled={pending}
+                  onCreated={handleCreatedTerm}
+                />
+              ) : null}
               <TaxonomyGroup
-                title="Categories"
-                rows={groups.CATEGORY}
-                selected={terms}
-                toggle={toggleTerm}
-              />
-              <TaxonomyGroup
-                title="Subcategories"
-                rows={groups.SUBCATEGORY}
+                title="Collections"
+                rows={groups.COLLECTION}
                 selected={terms}
                 toggle={toggleTerm}
               />
             </div>
+          ) : (
+            <div className="space-y-3">
+              {website.platform === "LARAVEL" ? (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <TaxonomyCreateBox
+                    integrationId={website.id}
+                    type="CATEGORY"
+                    parentOptions={[]}
+                    disabled={pending}
+                    onCreated={handleCreatedTerm}
+                  />
+                  <TaxonomyCreateBox
+                    integrationId={website.id}
+                    type="SUBCATEGORY"
+                    parentOptions={groups.CATEGORY}
+                    disabled={pending}
+                    onCreated={handleCreatedTerm}
+                  />
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <TaxonomyGroup
+                  title="Categories"
+                  rows={groups.CATEGORY}
+                  selected={terms}
+                  toggle={toggleTerm}
+                />
+                <TaxonomyGroup
+                  title="Subcategories"
+                  rows={groups.SUBCATEGORY}
+                  selected={terms}
+                  toggle={toggleTerm}
+                />
+              </div>
+            </div>
           )}
 
-          {!website.taxonomyTerms.length ? (
+          {!availableTerms.length ? (
             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               No taxonomy synced yet. Open Integrations and click Sync Categories /
               Collections after the Laravel API is installed.
@@ -888,6 +1079,174 @@ function TaxonomyGroup({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function TaxonomyCreateBox({
+  integrationId,
+  type,
+  parentOptions,
+  disabled,
+  onCreated,
+}: {
+  integrationId: string;
+  type: "CATEGORY" | "SUBCATEGORY" | "COLLECTION";
+  parentOptions: TaxonomyTerm[];
+  disabled: boolean;
+  onCreated: (term: TaxonomyTerm) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [parentTermId, setParentTermId] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const label =
+    type === "COLLECTION"
+      ? "Collection"
+      : type === "CATEGORY"
+        ? "Category"
+        : "Subcategory";
+
+  async function submit() {
+    if (!name.trim() || !slug.trim()) {
+      setMessage(label + " name and slug are required.");
+      return;
+    }
+
+    if (type === "SUBCATEGORY" && !parentTermId) {
+      setMessage("Choose the parent Category first.");
+      return;
+    }
+
+    setCreating(true);
+    setMessage("");
+
+    try {
+      const result = await createProductWebsiteTaxonomyTerm({
+        integrationId,
+        type,
+        name,
+        slug,
+        parentTermId: type === "SUBCATEGORY" ? parentTermId : null,
+      });
+
+      setMessage(result.message);
+
+      if (result.success && result.term) {
+        onCreated(result.term);
+        setName("");
+        setSlug("");
+        setParentTermId("");
+        setOpen(false);
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-blue-200 bg-blue-50/50 px-3 py-2.5">
+        <div>
+          <p className="text-xs font-semibold text-slate-700">
+            Need a new {label.toLowerCase()}?
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Create it on Laravel and select it for this product immediately.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          <Plus className="h-3.5 w-3.5" /> Create {label}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-bold text-slate-900">
+            Create {label}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            The slug is sent to Laravel exactly as entered, including Bangla,
+            English and emoji.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setMessage("");
+          }}
+          className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {type === "SUBCATEGORY" ? (
+          <label className="space-y-1.5 text-sm text-slate-700 md:col-span-2">
+            <span className="font-medium">Parent Category</span>
+            <select
+              value={parentTermId}
+              onChange={(event) => setParentTermId(event.target.value)}
+              className="w-full rounded-xl border bg-white px-3 py-2.5 text-sm"
+            >
+              <option value="">Choose category...</option>
+              {parentOptions.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.name} — {row.slug}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <Field
+          label={label + " Name"}
+          value={name}
+          onChange={setName}
+          placeholder={"New " + label.toLowerCase() + " name"}
+        />
+        <Field
+          label={label + " Slug"}
+          value={slug}
+          onChange={setSlug}
+          placeholder="Bangla / English / emoji supported"
+        />
+      </div>
+
+      {message ? (
+        <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
+          {message}
+        </p>
+      ) : null}
+
+      <button
+        type="button"
+        disabled={
+          disabled ||
+          creating ||
+          !name.trim() ||
+          !slug.trim() ||
+          (type === "SUBCATEGORY" && !parentTermId)
+        }
+        onClick={() => void submit()}
+        className="mt-3 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+      >
+        {creating ? "Creating..." : "Create & Select " + label}
+      </button>
     </div>
   );
 }

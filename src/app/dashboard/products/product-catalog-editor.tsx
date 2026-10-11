@@ -100,6 +100,8 @@ type Props = {
   media: MediaRow[];
   importCandidates: ImportCandidate[];
   bucketConfigured: boolean;
+  bucketMissingVariables: string[];
+  bucketInvalidVariables: string[];
 };
 
 async function sha256(file: File) {
@@ -122,6 +124,8 @@ export default function ProductCatalogEditor({
   media,
   importCandidates,
   bucketConfigured,
+  bucketMissingVariables,
+  bucketInvalidVariables,
 }: Props) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
@@ -362,6 +366,34 @@ export default function ProductCatalogEditor({
             {bucketConfigured ? "RAILWAY BUCKET READY" : "BUCKET NOT CONFIGURED"}
           </span>
         </div>
+
+        {!bucketConfigured ? (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            <p className="font-semibold">
+              Railway bucket settings are not available to the running OMS service.
+            </p>
+            {bucketMissingVariables.length ? (
+              <p className="mt-1 break-words">
+                Missing runtime variable{bucketMissingVariables.length === 1 ? "" : "s"}:{" "}
+                <span className="font-mono font-semibold">
+                  {bucketMissingVariables.join(", ")}
+                </span>
+              </p>
+            ) : null}
+            {bucketInvalidVariables.length ? (
+              <p className="mt-1 break-words">
+                Invalid runtime variable{bucketInvalidVariables.length === 1 ? "" : "s"}:{" "}
+                <span className="font-mono font-semibold">
+                  {bucketInvalidVariables.join(", ")}
+                </span>
+              </p>
+            ) : null}
+            <p className="mt-1 text-amber-700">
+              Values remain hidden. Fix the variable on the OMS Railway service,
+              apply/redeploy it, then refresh this page.
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="cursor-pointer rounded-2xl border border-dashed p-4 text-sm hover:bg-slate-50">

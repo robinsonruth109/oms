@@ -8,6 +8,7 @@ import {
   FileVideo2,
   ImageIcon,
   RefreshCw,
+  Search,
   Trash2,
 } from "lucide-react";
 
@@ -803,13 +804,61 @@ function TaxonomyGroup({
   selected: string[];
   toggle: (id: string, checked: boolean) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredRows = normalizedQuery
+    ? rows.filter((row) =>
+        (row.name + " " + row.slug)
+          .toLocaleLowerCase()
+          .includes(normalizedQuery)
+      )
+    : rows;
+
+  const selectedCount = rows.filter((row) => selected.includes(row.id)).length;
+
   return (
     <div className="rounded-xl border bg-white p-3">
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-        {title}
-      </p>
-      <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">
-        {rows.map((row) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+          {title}
+        </p>
+        {selectedCount ? (
+          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+            {selectedCount} selected
+          </span>
+        ) : null}
+      </div>
+
+      <div className="relative mt-2">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={"Search " + title.toLowerCase() + " by name or slug..."}
+          className="w-full rounded-xl border bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+        />
+      </div>
+
+      <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-slate-400">
+        <span>
+          {query
+            ? filteredRows.length + " of " + rows.length + " shown"
+            : rows.length + " available"}
+        </span>
+        {query ? (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="font-semibold text-blue-600 hover:underline"
+          >
+            Clear search
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+        {filteredRows.map((row) => (
           <label
             key={row.id}
             className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50"
@@ -830,8 +879,13 @@ function TaxonomyGroup({
             </span>
           </label>
         ))}
+
         {!rows.length ? (
           <p className="px-2 py-3 text-xs text-slate-400">None synced.</p>
+        ) : query && !filteredRows.length ? (
+          <p className="px-2 py-4 text-center text-xs text-slate-400">
+            No {title.toLowerCase()} match “{query}”.
+          </p>
         ) : null}
       </div>
     </div>

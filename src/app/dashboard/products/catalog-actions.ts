@@ -18,6 +18,17 @@ export type CatalogActionResult = {
   message: string;
 };
 
+export type WebsiteTaxonomyTermResult = CatalogActionResult & {
+  term?: {
+    id: string;
+    externalId: string;
+    type: "CATEGORY" | "SUBCATEGORY" | "COLLECTION";
+    parentExternalId: string | null;
+    name: string;
+    slug: string;
+  };
+};
+
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") {
@@ -286,6 +297,231 @@ export async function saveProductWebsiteListing(input: {
     return {
       success: false,
       message: error instanceof Error ? error.message : "Failed to save website assignment.",
+    };
+  }
+}
+
+
+export async function createProductWebsiteTaxonomyTerm(input: {
+  integrationId: string;
+  type: "CATEGORY" | "SUBCATEGORY" | "COLLECTION";
+  name: string;
+  slug: string;
+  parentTermId?: string | null;
+}): Promise<WebsiteTaxonomyTermResult> {
+  try {
+    await requireAdmin();
+
+    const integrationId = String(input.integrationId || "").trim();
+    const type = String(input.type || "").toUpperCase() as
+      | "CATEGORY"
+      | "SUBCATEGORY"
+      | "COLLECTION";
+    const name = String(input.name || "").trim();
+    const slug = unicodeSlug(input.slug);
+
+    if (!integrationId || !name || !slug) {
+      return {
+        success: false,
+        message: "Website, taxonomy name and slug are required.",
+      };
+    }
+
+    const integration = await prisma.integration.findUnique({
+      where: { id: integrationId },
+      select: {
+        id: true,
+        name: true,
+        platform: true,
+        catalogMode: true,
+        baseUrl: true,
+        catalogApiToken: true,
+      },
+    });
+
+    if (!integration) {
+      return { success: false, message: "Website integration not found." };
+    }
+
+    if (integration.platform !== "LARAVEL") {
+      return {
+        success: false,
+        message: "Create taxonomy from OMS is currently supported for Laravel websites only.",
+      };
+    }
+
+    if (!integration.baseUrl || !integration.catalogApiToken) {
+      return {
+        success: false,
+        message: "Website Base URL or Laravel Catalog API Token is missing.",
+      };
+    }
+
+    if (integration.catalogMode === "COLLECTION" && type !== "COLLECTION") {
+      return {
+        success: false,
+        message: "This website uses Collection mode. Create a Collection instead.",
+      };
+    }
+
+    if (
+      integration.catalogMode === "SUBCATEGORY" &&
+      !["CATEGORY", "SUBCATEGORY"].includes(type)
+    ) {
+      return {
+        success: false,
+        message: "This website uses Category/Subcategory mode.",
+      };
+    }
+
+    let parentExternalId: string | null = null;
+
+    if (type === "SUBCATEGORY") {
+      const parentTermId = String(input.parentTermId || "").trim();
+      if (!parentTermId) {
+        return {
+          success: false,
+          message: "Choose a parent Category before creating a Subcategory.",
+        };
+      }
+
+      const parent = await prisma.productWebsiteTaxonomyTerm.findFirst({
+        where: {
+          id: parentTermId,
+          integrationId,
+          type: "CATEGORY",
+          active: true,
+        },
+        select: { externalId: true },
+      });
+
+      if (!parent) {
+        return {
+          success: false,
+          message: "Selected parent Category is invalid.",
+        };
+      }
+
+      parentExternalId = parent.externalId;
+    }
+
+    const response = await fetch(
+      integration.baseUrl.replace(/\/+$/, "") + "/api/oms/v1/taxonomy",
+      {
+        method: "POST",
+        headers: catalogHeaders(integration.catalogApiToken),
+        body: JSON.stringify({
+          type,
+          name,
+          slug,
+          parentExternalId,
+          active: true,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+
+    const raw = await response.text();
+    let body: Record<string, unknown> = {};
+    try {
+      body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      body = {};
+    }
+
+    if (!response.ok) {
+      const apiMessage =
+        typeof body.message === "string" ? body.message : raw.slice(0, 250);
+
+      return {
+        success: false,
+        message:
+          response.status === 404
+            ? "Laravel taxonomy-create endpoint is not installed yet. Deploy POST /api/oms/v1/taxonomy on this website first."
+            : "Website taxonomy create failed (HTTP " +
+              response.status +
+              ")" +
+              (apiMessage ? ": " + apiMessage : "."),
+      };
+    }
+
+    const rawTerm =
+      body.term && typeof body.term === "object"
+        ? (body.term as Record<string, unknown>)
+        : body;
+
+    const externalId = String(rawTerm.externalId || "").trim();
+    const returnedType = String(rawTerm.type || type).toUpperCase();
+    const returnedName = String(rawTerm.name || name).trim();
+    const returnedSlug = unicodeSlug(rawTerm.slug || slug);
+    const returnedParentExternalId = rawTerm.parentExternalId
+      ? String(rawTerm.parentExternalId)
+      : parentExternalId;
+
+    if (
+      !externalId ||
+      !returnedName ||
+      !returnedSlug ||
+      !["CATEGORY", "SUBCATEGORY", "COLLECTION"].includes(returnedType)
+    ) {
+      return {
+        success: false,
+        message: "Laravel created taxonomy but returned an invalid response.",
+      };
+    }
+
+    const local = await prisma.productWebsiteTaxonomyTerm.upsert({
+      where: {
+        integrationId_type_externalId: {
+          integrationId,
+          type: returnedType as "CATEGORY" | "SUBCATEGORY" | "COLLECTION",
+          externalId,
+        },
+      },
+      create: {
+        integrationId,
+        externalId,
+        type: returnedType as "CATEGORY" | "SUBCATEGORY" | "COLLECTION",
+        parentExternalId: returnedParentExternalId,
+        name: returnedName,
+        slug: returnedSlug,
+        active: true,
+      },
+      update: {
+        parentExternalId: returnedParentExternalId,
+        name: returnedName,
+        slug: returnedSlug,
+        active: true,
+      },
+    });
+
+    refreshProductMaster();
+
+    return {
+      success: true,
+      message:
+        returnedType.charAt(0) +
+        returnedType.slice(1).toLowerCase() +
+        " created on " +
+        integration.name +
+        " and selected.",
+      term: {
+        id: local.id,
+        externalId: local.externalId,
+        type: local.type,
+        parentExternalId: local.parentExternalId,
+        name: local.name,
+        slug: local.slug,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to create website taxonomy.",
     };
   }
 }

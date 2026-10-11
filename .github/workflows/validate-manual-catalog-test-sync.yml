@@ -1,0 +1,27 @@
+name: Validate manual catalog test sync
+
+on:
+  push:
+    branches:
+      - validation/manual-catalog-test-sync
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - name: Lint changed files
+        run: >
+          npx eslint
+          src/app/dashboard/products/catalog-actions.ts
+          src/app/dashboard/products/product-catalog-editor.tsx
+      - name: Production build
+        run: npm run build

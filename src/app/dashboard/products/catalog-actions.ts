@@ -628,6 +628,74 @@ export async function setPrimaryProductImage(
   }
 }
 
+export async function moveProductGalleryImage(
+  mediaId: string,
+  direction: "UP" | "DOWN"
+): Promise<CatalogActionResult> {
+  try {
+    await requireAdmin();
+
+    const media = await prisma.productMedia.findUnique({
+      where: { id: mediaId },
+      select: { id: true, productId: true, kind: true, isPrimary: true },
+    });
+
+    if (!media || media.kind !== "IMAGE" || media.isPrimary) {
+      return { success: false, message: "Gallery image not found." };
+    }
+
+    const gallery = await prisma.productMedia.findMany({
+      where: {
+        productId: media.productId,
+        kind: "IMAGE",
+        isPrimary: false,
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { id: true },
+    });
+
+    const currentIndex = gallery.findIndex((row) => row.id === media.id);
+    if (currentIndex < 0) {
+      return { success: false, message: "Gallery image not found." };
+    }
+
+    const targetIndex =
+      direction === "UP" ? currentIndex - 1 : currentIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= gallery.length) {
+      return { success: true, message: "Gallery image is already at the edge." };
+    }
+
+    const ordered = gallery.map((row) => row.id);
+    [ordered[currentIndex], ordered[targetIndex]] = [
+      ordered[targetIndex],
+      ordered[currentIndex],
+    ];
+
+    await prisma.$transaction(async (tx) => {
+      for (let index = 0; index < ordered.length; index += 1) {
+        await tx.productMedia.update({
+          where: { id: ordered[index] },
+          data: { sortOrder: index + 1 },
+        });
+      }
+
+      await enqueueFullSyncForProduct(tx, media.productId);
+    });
+
+    refreshProductMaster();
+    return { success: true, message: "Gallery image order updated." };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to update gallery image order.",
+    };
+  }
+}
+
 export async function deleteProductMedia(
   mediaId: string
 ): Promise<CatalogActionResult> {

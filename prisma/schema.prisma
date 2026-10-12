@@ -2082,6 +2082,9 @@ model FinanceDailyCost {
   createdByUserId String
   createdByUser User @relation("FinanceDailyCostCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
+  salaryTransactionId String? @unique
+  salaryTransaction SalaryTransaction? @relation("SalaryTransactionCashBookEntry", fields: [salaryTransactionId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2161,6 +2164,8 @@ model SalaryTransaction {
 
   createdByUserId String
   createdByUser User @relation("SalaryTransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  cashBookEntry FinanceDailyCost? @relation("SalaryTransactionCashBookEntry")
 
   createdAt DateTime @default(now())
 

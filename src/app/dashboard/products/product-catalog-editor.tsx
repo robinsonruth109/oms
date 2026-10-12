@@ -41,7 +41,6 @@ import {
   createProductWebsiteTaxonomyTerm,
   deleteProductMedia,
   publishProductListing,
-  registerProductMedia,
   saveProductCatalogContent,
   saveProductWebsiteListing,
   setPrimaryProductImage,
@@ -152,6 +151,7 @@ export default function ProductCatalogEditor({
 }: Props) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
+  const [uploadMessage, setUploadMessage] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const [banglaName, setBanglaName] = useState(product.content.banglaName);
@@ -186,66 +186,53 @@ export default function ProductCatalogEditor({
 
   async function upload(file: File, primary = false) {
     if (!bucketConfigured) {
-      setMessage(
-        "Railway media bucket is not configured on the OMS service yet."
-      );
+      const text =
+        "Railway media bucket is not configured on the OMS service yet.";
+      setUploadMessage(text);
+      setMessage(text);
       return;
     }
 
     setUploading(true);
+    setUploadMessage("Preparing secure upload...");
     setMessage("");
 
     try {
-      const prep = await fetch("/api/product-media/upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: product.id,
-          originalFileName: file.name,
-          mimeType: file.type,
-          sizeBytes: file.size,
-        }),
-      });
-      const prepared = (await prep.json()) as {
-        success: boolean;
-        message?: string;
-        kind?: "IMAGE" | "VIDEO";
-        objectKey?: string;
-        uploadUrl?: string;
-      };
-
-      if (!prep.ok || !prepared.success || !prepared.uploadUrl || !prepared.objectKey || !prepared.kind) {
-        throw new Error(prepared.message || "Could not prepare media upload.");
-      }
-
       const checksum = await sha256(file);
-      const put = await fetch(prepared.uploadUrl, {
-        method: "PUT",
+      setUploadMessage("Uploading through OMS to Railway bucket...");
+
+      const response = await fetch("/api/product-media/upload", {
+        method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
+          "X-Product-Id": product.id,
+          "X-Original-File-Name": encodeURIComponent(file.name),
+          "X-Mime-Type": file.type || "application/octet-stream",
+          "X-File-Size": String(file.size),
+          "X-File-Sha256": checksum,
+          "X-Media-Primary": primary ? "true" : "false",
         },
         body: file,
       });
 
-      if (!put.ok) {
-        throw new Error("Railway bucket upload failed with HTTP " + put.status + ".");
+      const result = (await response.json().catch(() => null)) as
+        | { success?: boolean; message?: string }
+        | null;
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result?.message ||
+            "Product media upload failed with HTTP " + response.status + "."
+        );
       }
 
-      const result = await registerProductMedia({
-        productId: product.id,
-        kind: prepared.kind,
-        objectKey: prepared.objectKey,
-        originalFileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        checksum,
-        isPrimary: primary,
-      });
-      showResult(result);
+      setUploadMessage(result.message || "Media uploaded successfully.");
+      window.location.reload();
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Media upload failed."
-      );
+      const text =
+        error instanceof Error ? error.message : "Media upload failed.";
+      setUploadMessage(text);
+      setMessage(text);
     } finally {
       setUploading(false);
     }
@@ -464,8 +451,12 @@ export default function ProductCatalogEditor({
 
         {uploading ? (
           <div className="mt-3 flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-700">
-            <CloudUpload className="h-4 w-4 animate-pulse" /> Uploading directly
-            to Railway bucket…
+            <CloudUpload className="h-4 w-4 animate-pulse" />
+            {uploadMessage || "Uploading through OMS to Railway bucket..."}
+          </div>
+        ) : uploadMessage ? (
+          <div className="mt-3 rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {uploadMessage}
           </div>
         ) : null}
 

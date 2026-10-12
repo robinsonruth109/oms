@@ -1,0 +1,28 @@
+name: Validate server-side product media upload
+
+on:
+  push:
+    branches:
+      - validation/server-side-product-media-upload
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - name: Lint changed files
+        run: >
+          npx eslint
+          src/lib/product-media-storage.ts
+          src/app/api/product-media/upload/route.ts
+          src/app/dashboard/products/product-catalog-editor.tsx
+      - name: Production build
+        run: npm run build

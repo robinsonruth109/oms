@@ -22,9 +22,10 @@ type Props = {
     lastTaxonomySyncAt: string | null;
     lastCatalogSyncAt: string | null;
   };
+  embedded?: boolean;
 };
 
-export default function CatalogSettings({ integration }: Props) {
+export default function CatalogSettings({ integration, embedded = false }: Props) {
   const [pending, startTransition] = useTransition();
   const [platform, setPlatform] = useState(integration.platform);
   const [catalogMode, setCatalogMode] = useState(integration.catalogMode);
@@ -43,7 +44,7 @@ export default function CatalogSettings({ integration }: Props) {
   }
 
   return (
-    <div className="mt-5 rounded-2xl border bg-white p-4">
+    <div className={embedded ? "" : "mt-5 rounded-2xl border bg-white p-4"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-slate-900">Product Catalog Connection</h3>

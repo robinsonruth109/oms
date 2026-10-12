@@ -21,6 +21,15 @@ function taka(value: unknown) {
   return `Tk ${Number(value || 0).toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function monthLabel(value: string) {
+  const [year, month] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
 export default async function SalaryManagementPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") redirect("/dashboard");
@@ -69,7 +78,7 @@ export default async function SalaryManagementPage({ searchParams }: PageProps) 
             <p className="mt-1 text-sm text-slate-500">Set agent salary, permanent increment, monthly bonus, advance, partial/full salary, liabilities and fines.</p>
           </div>
           <Link href={`/api/finance/salary-sheet/pdf?month=${encodeURIComponent(month)}`} target="_blank" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-            <Download className="h-4 w-4" /> Download Salary Day PDF
+            <Download className="h-4 w-4" /> Download {monthLabel(month)} Salary Day PDF
           </Link>
         </div>
       </section>

@@ -156,6 +156,7 @@ export async function POST(request: Request) {
       objectKey,
       body: request.body,
       contentType: mimeType,
+      contentLength: declaredSize,
     });
 
     const currentCount = await prisma.productMedia.count({

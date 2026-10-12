@@ -27,9 +27,21 @@ function config(): StorageConfig {
       ? "virtual-host"
       : "path";
 
-  if (!endpoint || !bucket || !region || !accessKeyId || !secretAccessKey) {
+  const unresolvedReference = (value: string) =>
+    value.includes("{{") || value.includes("}}");
+
+  if (
+    !endpoint ||
+    !bucket ||
+    !region ||
+    !accessKeyId ||
+    !secretAccessKey ||
+    [endpoint, bucket, region, accessKeyId, secretAccessKey].some(
+      unresolvedReference
+    )
+  ) {
     throw new Error(
-      "Railway product media bucket is not configured. Set PRODUCT_MEDIA_S3_ENDPOINT, PRODUCT_MEDIA_S3_BUCKET, PRODUCT_MEDIA_S3_REGION, PRODUCT_MEDIA_S3_ACCESS_KEY_ID and PRODUCT_MEDIA_S3_SECRET_ACCESS_KEY."
+      "Railway product media bucket is not configured correctly. Set PRODUCT_MEDIA_S3_ENDPOINT, PRODUCT_MEDIA_S3_BUCKET, PRODUCT_MEDIA_S3_REGION, PRODUCT_MEDIA_S3_ACCESS_KEY_ID and PRODUCT_MEDIA_S3_SECRET_ACCESS_KEY to resolved values or valid Railway reference variables."
     );
   }
 
@@ -192,8 +204,19 @@ export function getProductMediaStorageStatus(): ProductMediaStorageStatus {
     .map(([name]) => name);
 
   const invalidVariables: string[] = [];
+  const unresolvedReference = (value: string) =>
+    value.includes("{{") || value.includes("}}");
 
-  if (values.PRODUCT_MEDIA_S3_ENDPOINT) {
+  for (const [name, value] of Object.entries(values)) {
+    if (value && unresolvedReference(value)) {
+      invalidVariables.push(name);
+    }
+  }
+
+  if (
+    values.PRODUCT_MEDIA_S3_ENDPOINT &&
+    !unresolvedReference(values.PRODUCT_MEDIA_S3_ENDPOINT)
+  ) {
     try {
       const url = new URL(values.PRODUCT_MEDIA_S3_ENDPOINT);
       if (!["http:", "https:"].includes(url.protocol)) {

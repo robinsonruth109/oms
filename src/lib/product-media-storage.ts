@@ -282,6 +282,36 @@ export function createProductMediaDownloadUrl(
   return presign("GET", objectKey, expiresSeconds);
 }
 
+export async function uploadProductMediaObject(input: {
+  objectKey: string;
+  body: BodyInit;
+  contentType: string;
+}) {
+  const requestInit = {
+    method: "PUT",
+    headers: {
+      "Content-Type": input.contentType || "application/octet-stream",
+    },
+    body: input.body,
+    cache: "no-store" as const,
+    duplex: "half" as const,
+  } as RequestInit & { duplex: "half" };
+
+  const response = await fetch(
+    createProductMediaUploadUrl(input.objectKey, 900),
+    requestInit
+  );
+
+  if (!response.ok) {
+    const raw = await response.text().catch(() => "");
+    throw new Error(
+      "Railway bucket rejected upload with HTTP " +
+        response.status +
+        (raw ? ": " + raw.slice(0, 300) : ".")
+    );
+  }
+}
+
 export async function deleteProductMediaObject(objectKey: string) {
   const response = await fetch(presign("DELETE", objectKey, 300), {
     method: "DELETE",

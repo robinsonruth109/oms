@@ -85,7 +85,7 @@ export default async function SalaryDetailsPage({ params, searchParams }: PagePr
       {canManage && profile?.enabled ? (
         <section className="grid gap-5 xl:grid-cols-2">
           <div className="rounded-3xl border bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><CircleDollarSign className="h-5 w-5" /><div><h2 className="font-bold">Add Monthly Adjustment</h2><p className="text-sm text-slate-500">Bonus and liability add to payable; fine deducts from salary.</p></div></div>
+            <div className="mb-4 flex items-center gap-2"><CircleDollarSign className="h-5 w-5" /><div><h2 className="font-bold">Add Monthly Adjustment</h2><p className="text-sm text-slate-500">Bonus and liability use the selected month. Fine always posts to the calendar month of its Date.</p></div></div>
             <form action={addSalaryTransactionAction} className="grid gap-3 sm:grid-cols-2">
               <input type="hidden" name="userId" value={userId} /><input type="hidden" name="month" value={month} />
               <label><span className="mb-1 block text-sm font-medium">Type</span><select name="type" className="min-h-11 w-full rounded-xl border px-3 text-sm"><option value="BONUS">Bonus</option><option value="LIABILITY_ADD">Liability / Other Payable</option><option value="FINE">Fine</option></select></label>
@@ -97,13 +97,14 @@ export default async function SalaryDetailsPage({ params, searchParams }: PagePr
           </div>
 
           <div className="rounded-3xl border bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><Banknote className="h-5 w-5" /><div><h2 className="font-bold">Pay Agent</h2><p className="text-sm text-slate-500">Record advance salary, partial salary, full balance or liability payment.</p></div></div>
+            <div className="mb-4 flex items-center gap-2"><Banknote className="h-5 w-5" /><div><h2 className="font-bold">Pay Agent</h2><p className="text-sm text-slate-500">Advance goes to the oldest unpaid salary month first. Salary payments automatically create a Cash Khoroch entry in Daily Costing.</p></div></div>
             <form action={addSalaryTransactionAction} className="grid gap-3 sm:grid-cols-2">
               <input type="hidden" name="userId" value={userId} /><input type="hidden" name="month" value={month} />
               <label><span className="mb-1 block text-sm font-medium">Payment Type</span><select name="type" className="min-h-11 w-full rounded-xl border px-3 text-sm"><option value="ADVANCE_SALARY">Advance Salary</option><option value="PARTIAL_SALARY">Partial Salary</option><option value="LIABILITY_PAYMENT">Pay Liability</option></select></label>
               <label><span className="mb-1 block text-sm font-medium">Amount</span><input name="amount" type="number" min="0.01" step="0.01" required className="min-h-11 w-full rounded-xl border px-3 text-sm" /></label>
               <label><span className="mb-1 block text-sm font-medium">Date</span><input name="transactionDate" type="date" defaultValue={today} required className="min-h-11 w-full rounded-xl border px-3 text-sm" /></label>
               <label><span className="mb-1 block text-sm font-medium">Note</span><input name="note" className="min-h-11 w-full rounded-xl border px-3 text-sm" placeholder="Optional note" /></label>
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800 sm:col-span-2">Payment source: <strong>Cash</strong>. Advance Salary is automatically applied to the oldest unpaid month before the current month.</div>
               <button className="min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white sm:col-span-2">Record Payment</button>
             </form>
             <form action={addSalaryTransactionAction} className="mt-3">

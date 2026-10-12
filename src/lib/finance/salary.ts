@@ -1,6 +1,6 @@
 import type { SalaryTransactionType } from "@prisma/client";
 
-import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
+import { bangladeshBusinessDateToUtc, getBangladeshDateInputValue } from "@/lib/bangladesh-time";
 
 async function getPrisma() {
   const { prisma } = await import("@/lib/prisma");
@@ -119,6 +119,51 @@ export function calculateSalaryTotals(input: {
     liabilityBalance,
     totalOutstanding: salaryBalance + liabilityBalance,
   };
+}
+
+export async function findOldestUnpaidSalaryMonth(
+  userId: string,
+  throughMonth: string
+) {
+  const prisma = await getPrisma();
+  const normalizedThroughMonth = normalizeSalaryMonth(throughMonth);
+  const profile = await prisma.salaryProfile.findUnique({
+    where: { userId },
+  });
+
+  if (!profile || !profile.enabled) {
+    throw new Error("Salary is not configured for this employee.");
+  }
+
+  const startMonth = getBangladeshDateInputValue(profile.createdAt).slice(0, 7);
+  let [year, month] = startMonth.split("-").map(Number);
+  const [endYear, endMonth] = normalizedThroughMonth.split("-").map(Number);
+
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    const candidateMonth = `${year}-${String(month).padStart(2, "0")}`;
+    const salaryMonth = await ensureSalaryMonth(userId, candidateMonth);
+    const totals = calculateSalaryTotals({
+      baseSalary: salaryMonth.baseSalary,
+      incrementAmount: salaryMonth.incrementAmount,
+      transactions: salaryMonth.transactions,
+    });
+
+    if (totals.salaryBalance > 0.009) {
+      return {
+        month: candidateMonth,
+        salaryMonth,
+        totals,
+      };
+    }
+
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
+  return null;
 }
 
 export async function ensureSalaryMonth(userId: string, month: string) {

@@ -3,6 +3,7 @@
 import type { SalaryTransactionType } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { authOptions } from "@/lib/auth";
 import {
@@ -12,6 +13,7 @@ import {
 import {
   calculateSalaryTotals,
   ensureSalaryMonth,
+  findOldestUnpaidSalaryMonth,
   money,
   normalizeSalaryMonth,
 } from "@/lib/finance/salary";
@@ -230,14 +232,50 @@ export async function addSalaryTransactionAction(formData: FormData) {
   const prisma = await getPrisma();
 
   const userId = requiredString(formData.get("userId"), "Employee");
-  const month = normalizeSalaryMonth(requiredString(formData.get("month"), "Month"));
-  const rawType = requiredString(formData.get("type"), "Transaction type") as SalaryTransactionType;
-  if (!TRANSACTION_TYPES.has(rawType)) throw new Error("Invalid salary transaction type.");
+  const requestedMonth = normalizeSalaryMonth(
+    requiredString(formData.get("month"), "Month")
+  );
+  const rawType = requiredString(
+    formData.get("type"),
+    "Transaction type"
+  ) as SalaryTransactionType;
+  if (!TRANSACTION_TYPES.has(rawType)) {
+    throw new Error("Invalid salary transaction type.");
+  }
 
-  const transactionDate = String(formData.get("transactionDate") || getBangladeshDateInputValue()).trim();
+  const transactionDate = String(
+    formData.get("transactionDate") || getBangladeshDateInputValue()
+  ).trim();
+  const transactionMonth = normalizeSalaryMonth(transactionDate.slice(0, 7));
   const note = String(formData.get("note") || "").trim() || null;
 
-  const salaryMonth = await ensureSalaryMonth(userId, month);
+  let effectiveMonth = requestedMonth;
+  let salaryMonth;
+
+  if (rawType === "FINE") {
+    // Fines always belong to the Bangladesh calendar month in which they happen,
+    // regardless of which historical salary page the admin currently has open.
+    effectiveMonth = transactionMonth;
+    salaryMonth = await ensureSalaryMonth(userId, effectiveMonth);
+  } else if (rawType === "ADVANCE_SALARY") {
+    // Advance salary settles the oldest unpaid salary first. Example:
+    // if September is still unpaid on 13 October, an October advance is posted
+    // against September until September is cleared.
+    const oldestUnpaid = await findOldestUnpaidSalaryMonth(
+      userId,
+      transactionMonth
+    );
+    if (!oldestUnpaid) {
+      throw new Error(
+        "There is no unpaid salary balance through " + transactionMonth + "."
+      );
+    }
+    effectiveMonth = oldestUnpaid.month;
+    salaryMonth = oldestUnpaid.salaryMonth;
+  } else {
+    salaryMonth = await ensureSalaryMonth(userId, effectiveMonth);
+  }
+
   const totals = calculateSalaryTotals({
     baseSalary: salaryMonth.baseSalary,
     incrementAmount: salaryMonth.incrementAmount,
@@ -253,34 +291,113 @@ export async function addSalaryTransactionAction(formData: FormData) {
   if (amount <= 0) throw new Error("Amount must be greater than 0.");
 
   if (["ADVANCE_SALARY", "PARTIAL_SALARY", "FULL_SALARY"].includes(rawType)) {
-    if (totals.salaryBalance <= 0) throw new Error("This month's salary is already fully paid.");
+    if (totals.salaryBalance <= 0) {
+      throw new Error("This salary month is already fully paid.");
+    }
     if (amount > totals.salaryBalance + 0.009) {
-      throw new Error(`Payment cannot exceed salary balance of Tk ${totals.salaryBalance.toFixed(2)}.`);
+      const monthText =
+        rawType === "ADVANCE_SALARY"
+          ? "oldest unpaid month " + effectiveMonth
+          : "salary month " + effectiveMonth;
+      throw new Error(
+        "Payment cannot exceed " +
+          monthText +
+          " balance of Tk " +
+          totals.salaryBalance.toFixed(2) +
+          "."
+      );
     }
   }
 
   if (rawType === "LIABILITY_PAYMENT") {
-    if (totals.liabilityBalance <= 0) throw new Error("There is no unpaid liability for this month.");
+    if (totals.liabilityBalance <= 0) {
+      throw new Error("There is no unpaid liability for this month.");
+    }
     if (amount > totals.liabilityBalance + 0.009) {
-      throw new Error(`Liability payment cannot exceed Tk ${totals.liabilityBalance.toFixed(2)}.`);
+      throw new Error(
+        "Liability payment cannot exceed Tk " +
+          totals.liabilityBalance.toFixed(2) +
+          "."
+      );
     }
   }
 
-  await prisma.salaryTransaction.create({
-    data: {
-      salaryMonthId: salaryMonth.id,
-      userId,
-      type: rawType,
-      amount,
-      transactionDate: bangladeshBusinessDateToUtc(transactionDate),
-      note,
-      createdByUserId: session.user.id,
-    },
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, username: true },
+  });
+  if (!user) throw new Error("Employee not found.");
+
+  await prisma.$transaction(async (tx) => {
+    const salaryTransaction = await tx.salaryTransaction.create({
+      data: {
+        salaryMonthId: salaryMonth.id,
+        userId,
+        type: rawType,
+        amount,
+        transactionDate: bangladeshBusinessDateToUtc(transactionDate),
+        note,
+        createdByUserId: session.user.id,
+      },
+    });
+
+    if (
+      rawType === "ADVANCE_SALARY" ||
+      rawType === "PARTIAL_SALARY" ||
+      rawType === "FULL_SALARY"
+    ) {
+      const category =
+        rawType === "ADVANCE_SALARY" ? "Salary Advance" : "Salary";
+      const paymentLabel =
+        rawType === "ADVANCE_SALARY"
+          ? "Salary advance"
+          : rawType === "FULL_SALARY"
+            ? "Full salary payment"
+            : "Partial salary payment";
+
+      await tx.financeDailyCost.create({
+        data: {
+          costDate: bangladeshBusinessDateToUtc(transactionDate),
+          bookType: "GENERAL",
+          entryType: "KHOROCH",
+          category,
+          description:
+            paymentLabel +
+            " - " +
+            user.name +
+            " (@" +
+            user.username +
+            ") - " +
+            effectiveMonth,
+          amount,
+          paymentMethod: "Cash",
+          note:
+            (note ? note + " | " : "") +
+            "Auto-created from Salary Management for salary month " +
+            effectiveMonth +
+            ".",
+          createdByUserId: session.user.id,
+          salaryTransactionId: salaryTransaction.id,
+        },
+      });
+    }
   });
 
   revalidatePath("/dashboard/finance/salary");
   revalidatePath(`/dashboard/finance/salary/${userId}`);
   revalidatePath("/dashboard/finance/my-salary");
+  revalidatePath("/dashboard/finance/daily-costing");
+
+  if (
+    effectiveMonth !== requestedMonth &&
+    (rawType === "ADVANCE_SALARY" || rawType === "FINE")
+  ) {
+    redirect(
+      `/dashboard/finance/salary/${userId}?month=${encodeURIComponent(
+        effectiveMonth
+      )}`
+    );
+  }
 }
 
 export async function deleteSalaryTransactionAction(formData: FormData) {
@@ -290,6 +407,7 @@ export async function deleteSalaryTransactionAction(formData: FormData) {
   const userId = requiredString(formData.get("userId"), "Employee");
 
   await prisma.salaryTransaction.delete({ where: { id } });
+  revalidatePath("/dashboard/finance/daily-costing");
   revalidatePath("/dashboard/finance/salary");
   revalidatePath(`/dashboard/finance/salary/${userId}`);
   revalidatePath("/dashboard/finance/my-salary");

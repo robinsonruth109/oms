@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { ReactNode } from "react";
 import {
   AlignCenter,
   AlignJustify,
@@ -1355,6 +1356,34 @@ function Field({
   );
 }
 
+function EditorToolbarButton({
+  title,
+  onAction,
+  children,
+  active = false,
+}: {
+  title: string;
+  onAction: () => void;
+  children: ReactNode;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onAction}
+      className={
+        "inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-slate-700 transition hover:bg-slate-100 " +
+        (active ? "bg-slate-200" : "bg-white")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 function RichTextEditor({
   label,
   value,
@@ -1540,29 +1569,6 @@ function RichTextEditor({
     saveSelection();
   }
 
-  function toolbarButton(
-    title: string,
-    action: () => void,
-    icon: React.ReactNode,
-    active = false
-  ) {
-    return (
-      <button
-        type="button"
-        title={title}
-        aria-label={title}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={action}
-        className={
-          "inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-slate-700 transition hover:bg-slate-100 " +
-          (active ? "bg-slate-200" : "bg-white")
-        }
-      >
-        {icon}
-      </button>
-    );
-  }
-
   return (
     <div
       className={
@@ -1611,8 +1617,12 @@ function RichTextEditor({
         {!sourceMode ? (
           <>
             <div className="flex flex-wrap gap-1 border-b bg-slate-50 p-2">
-              {toolbarButton("Undo", () => command("undo"), <Undo2 className="h-4 w-4" />)}
-              {toolbarButton("Redo", () => command("redo"), <Redo2 className="h-4 w-4" />)}
+              <EditorToolbarButton title="Undo" onAction={() => command("undo")}>
+                <Undo2 className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Redo" onAction={() => command("redo")}>
+                <Redo2 className="h-4 w-4" />
+              </EditorToolbarButton>
 
               <select
                 defaultValue="p"
@@ -1656,10 +1666,18 @@ function RichTextEditor({
                 <option value="7">48</option>
               </select>
 
-              {toolbarButton("Bold", () => command("bold"), <Bold className="h-4 w-4" />)}
-              {toolbarButton("Italic", () => command("italic"), <Italic className="h-4 w-4" />)}
-              {toolbarButton("Underline", () => command("underline"), <Underline className="h-4 w-4" />)}
-              {toolbarButton("Strikethrough", () => command("strikeThrough"), <Strikethrough className="h-4 w-4" />)}
+              <EditorToolbarButton title="Bold" onAction={() => command("bold")}>
+                <Bold className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Italic" onAction={() => command("italic")}>
+                <Italic className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Underline" onAction={() => command("underline")}>
+                <Underline className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Strikethrough" onAction={() => command("strikeThrough")}>
+                <Strikethrough className="h-4 w-4" />
+              </EditorToolbarButton>
 
               <label
                 className="flex h-9 items-center gap-1 rounded-lg border bg-white px-2 text-[11px] text-slate-600"
@@ -1687,10 +1705,18 @@ function RichTextEditor({
                 />
               </label>
 
-              {toolbarButton("Align left", () => command("justifyLeft"), <AlignLeft className="h-4 w-4" />)}
-              {toolbarButton("Align center", () => command("justifyCenter"), <AlignCenter className="h-4 w-4" />)}
-              {toolbarButton("Align right", () => command("justifyRight"), <AlignRight className="h-4 w-4" />)}
-              {toolbarButton("Justify", () => command("justifyFull"), <AlignJustify className="h-4 w-4" />)}
+              <EditorToolbarButton title="Align left" onAction={() => command("justifyLeft")}>
+                <AlignLeft className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Align center" onAction={() => command("justifyCenter")}>
+                <AlignCenter className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Align right" onAction={() => command("justifyRight")}>
+                <AlignRight className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Justify" onAction={() => command("justifyFull")}>
+                <AlignJustify className="h-4 w-4" />
+              </EditorToolbarButton>
 
               <select
                 defaultValue="1.6"
@@ -1706,21 +1732,43 @@ function RichTextEditor({
                 <option value="2">Line 2.0</option>
               </select>
 
-              {toolbarButton("Bulleted list", () => command("insertUnorderedList"), <List className="h-4 w-4" />)}
-              {toolbarButton("Numbered list", () => command("insertOrderedList"), <ListOrdered className="h-4 w-4" />)}
-              {toolbarButton("Outdent", () => command("outdent"), <IndentDecrease className="h-4 w-4" />)}
-              {toolbarButton("Indent", () => command("indent"), <IndentIncrease className="h-4 w-4" />)}
+              <EditorToolbarButton title="Bulleted list" onAction={() => command("insertUnorderedList")}>
+                <List className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Numbered list" onAction={() => command("insertOrderedList")}>
+                <ListOrdered className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Outdent" onAction={() => command("outdent")}>
+                <IndentDecrease className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Indent" onAction={() => command("indent")}>
+                <IndentIncrease className="h-4 w-4" />
+              </EditorToolbarButton>
 
-              {toolbarButton("Insert link", () => {
-                const url = promptForUrl("Link URL:");
-                if (url) command("createLink", url);
-              }, <Link2 className="h-4 w-4" />)}
-              {toolbarButton("Remove link", () => command("unlink"), <Unlink className="h-4 w-4" />)}
-              {toolbarButton("Insert image URL", () => {
-                const url = promptForUrl("Image URL:");
-                if (url) command("insertImage", url);
-              }, <ImageIcon className="h-4 w-4" />)}
-              {toolbarButton("Insert video", insertVideo, <Video className="h-4 w-4" />)}
+              <EditorToolbarButton
+                title="Insert link"
+                onAction={() => {
+                  const url = promptForUrl("Link URL:");
+                  if (url) command("createLink", url);
+                }}
+              >
+                <Link2 className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Remove link" onAction={() => command("unlink")}>
+                <Unlink className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton
+                title="Insert image URL"
+                onAction={() => {
+                  const url = promptForUrl("Image URL:");
+                  if (url) command("insertImage", url);
+                }}
+              >
+                <ImageIcon className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Insert video" onAction={insertVideo}>
+                <Video className="h-4 w-4" />
+              </EditorToolbarButton>
 
               <button
                 type="button"
@@ -1731,8 +1779,12 @@ function RichTextEditor({
                 <Code2 className="h-4 w-4" /> HTML / Embed
               </button>
 
-              {toolbarButton("Horizontal line", () => command("insertHorizontalRule"), <Minus className="h-4 w-4" />)}
-              {toolbarButton("Clear formatting", () => command("removeFormat"), <Eraser className="h-4 w-4" />)}
+              <EditorToolbarButton title="Horizontal line" onAction={() => command("insertHorizontalRule")}>
+                <Minus className="h-4 w-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton title="Clear formatting" onAction={() => command("removeFormat")}>
+                <Eraser className="h-4 w-4" />
+              </EditorToolbarButton>
             </div>
 
             <div

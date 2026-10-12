@@ -1,16 +1,38 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  Bold,
   CheckCircle2,
   CloudUpload,
+  Code2,
+  Eraser,
   ExternalLink,
   FileVideo2,
   ImageIcon,
+  IndentDecrease,
+  IndentIncrease,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  Maximize2,
+  Minimize2,
+  Minus,
   Plus,
+  Redo2,
   RefreshCw,
   Search,
+  Strikethrough,
   Trash2,
+  Underline,
+  Undo2,
+  Unlink,
+  Video,
 } from "lucide-react";
 
 import {
@@ -293,19 +315,21 @@ export default function ProductCatalogEditor({
             placeholder="YouTube / Vimeo / direct URL"
           />
 
-          <TextArea
-            label="Short Description HTML"
+          <RichTextEditor
+            label="Short Description"
             value={shortHtml}
             onChange={setShortHtml}
             className="md:col-span-2"
-            rows={7}
+            minHeightClass="min-h-[190px]"
+            helpText="Style the short sales copy visually. The saved value remains HTML and syncs to Laravel."
           />
-          <TextArea
-            label="Full Product Details HTML"
+          <RichTextEditor
+            label="Full Product Details"
             value={fullHtml}
             onChange={setFullHtml}
             className="md:col-span-2"
-            rows={12}
+            minHeightClass="min-h-[320px]"
+            helpText="Build the full product description with headings, lists, links, colors, images, video embeds and HTML."
           />
 
           <Field label="Meta Title" value={metaTitle} onChange={setMetaTitle} />
@@ -1328,6 +1352,421 @@ function Field({
         className="w-full rounded-xl border px-3 py-2.5 text-sm"
       />
     </label>
+  );
+}
+
+function RichTextEditor({
+  label,
+  value,
+  onChange,
+  className = "",
+  minHeightClass = "min-h-[220px]",
+  helpText,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  minHeightClass?: string;
+  helpText?: string;
+}) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const savedRangeRef = useRef<Range | null>(null);
+  const [sourceMode, setSourceMode] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || sourceMode) return;
+
+    if (document.activeElement !== editor && editor.innerHTML !== value) {
+      editor.innerHTML = value || "";
+    }
+  }, [value, sourceMode]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [fullscreen]);
+
+  function syncValue() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const html = editor.innerHTML === "<br>" ? "" : editor.innerHTML;
+    onChange(html);
+  }
+
+  function saveSelection() {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      savedRangeRef.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const range = savedRangeRef.current;
+    const selection = window.getSelection();
+    if (!range || !selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function command(name: string, commandValue?: string) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    restoreSelection();
+    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand(name, false, commandValue);
+    syncValue();
+    saveSelection();
+  }
+
+  function promptForUrl(message: string) {
+    const raw = window.prompt(message, "https://");
+    if (!raw) return null;
+    const candidate = raw.trim();
+    try {
+      const parsed = new URL(candidate);
+      return ["http:", "https:"].includes(parsed.protocol)
+        ? parsed.toString()
+        : null;
+    } catch {
+      window.alert("Please enter a complete http:// or https:// URL.");
+      return null;
+    }
+  }
+
+  function escapeAttribute(input: string) {
+    return input
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function insertVideo() {
+    const url = promptForUrl("Video URL (YouTube, Vimeo, MP4, WebM, MOV):");
+    if (!url) return;
+
+    const parsed = new URL(url);
+    let html = "";
+
+    if (parsed.hostname.includes("youtube.com")) {
+      const id = parsed.searchParams.get("v");
+      if (id) {
+        html =
+          '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;margin:12px 0">' +
+          '<iframe src="https://www.youtube.com/embed/' +
+          escapeAttribute(id) +
+          '" style="position:absolute;inset:0;width:100%;height:100%" frameborder="0" allowfullscreen></iframe></div>';
+      }
+    } else if (parsed.hostname === "youtu.be") {
+      const id = parsed.pathname.replace(/^\//, "");
+      if (id) {
+        html =
+          '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;margin:12px 0">' +
+          '<iframe src="https://www.youtube.com/embed/' +
+          escapeAttribute(id) +
+          '" style="position:absolute;inset:0;width:100%;height:100%" frameborder="0" allowfullscreen></iframe></div>';
+      }
+    } else if (parsed.hostname.includes("vimeo.com")) {
+      const id = parsed.pathname.split("/").filter(Boolean).pop();
+      if (id && /^\d+$/.test(id)) {
+        html =
+          '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;margin:12px 0">' +
+          '<iframe src="https://player.vimeo.com/video/' +
+          escapeAttribute(id) +
+          '" style="position:absolute;inset:0;width:100%;height:100%" frameborder="0" allowfullscreen></iframe></div>';
+      }
+    }
+
+    if (!html) {
+      html =
+        '<video controls style="max-width:100%;height:auto;margin:12px 0"><source src="' +
+        escapeAttribute(url) +
+        '"></video>';
+    }
+
+    command("insertHTML", html);
+  }
+
+  function insertHtmlEmbed() {
+    const raw = window.prompt(
+      "Paste HTML / embed code. Script tags and inline event handlers are removed."
+    );
+    if (!raw) return;
+
+    const cleaned = raw
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+
+    command("insertHTML", cleaned);
+  }
+
+  function applyLineHeight(lineHeight: string) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    restoreSelection();
+
+    const selection = window.getSelection();
+    const node = selection?.anchorNode;
+    let element =
+      node instanceof HTMLElement ? node : node?.parentElement || null;
+
+    while (
+      element &&
+      element !== editor &&
+      !/^(P|DIV|LI|H1|H2|H3|H4|H5|H6|BLOCKQUOTE)$/.test(element.tagName)
+    ) {
+      element = element.parentElement;
+    }
+
+    if (element && element !== editor) {
+      element.style.lineHeight = lineHeight;
+    } else {
+      editor.style.lineHeight = lineHeight;
+    }
+
+    syncValue();
+    saveSelection();
+  }
+
+  function toolbarButton(
+    title: string,
+    action: () => void,
+    icon: React.ReactNode,
+    active = false
+  ) {
+    return (
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={action}
+        className={
+          "inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-slate-700 transition hover:bg-slate-100 " +
+          (active ? "bg-slate-200" : "bg-white")
+        }
+      >
+        {icon}
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className={
+        (fullscreen
+          ? "fixed inset-3 z-[100] overflow-auto rounded-2xl border bg-white p-4 shadow-2xl sm:inset-6 "
+          : "") + className
+      }
+    >
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium text-slate-700">{label}</p>
+          {helpText ? (
+            <p className="mt-0.5 text-xs text-slate-500">{helpText}</p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSourceMode((current) => !current)}
+            className={
+              "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold " +
+              (sourceMode
+                ? "border-blue-300 bg-blue-50 text-blue-700"
+                : "bg-white text-slate-600")
+            }
+          >
+            <Code2 className="h-3.5 w-3.5" />
+            {sourceMode ? "Visual" : "HTML"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFullscreen((current) => !current)}
+            className="inline-flex items-center gap-1.5 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600"
+          >
+            {fullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+            {fullscreen ? "Exit" : "Fullscreen"}
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border bg-white">
+        {!sourceMode ? (
+          <>
+            <div className="flex flex-wrap gap-1 border-b bg-slate-50 p-2">
+              {toolbarButton("Undo", () => command("undo"), <Undo2 className="h-4 w-4" />)}
+              {toolbarButton("Redo", () => command("redo"), <Redo2 className="h-4 w-4" />)}
+
+              <select
+                defaultValue="p"
+                onChange={(event) => command("formatBlock", event.target.value)}
+                className="h-9 rounded-lg border bg-white px-2 text-xs text-slate-700"
+                title="Paragraph / heading"
+              >
+                <option value="p">Paragraph</option>
+                <option value="h1">Heading 1</option>
+                <option value="h2">Heading 2</option>
+                <option value="h3">Heading 3</option>
+                <option value="blockquote">Quote</option>
+              </select>
+
+              <select
+                defaultValue="Arial"
+                onChange={(event) => command("fontName", event.target.value)}
+                className="h-9 rounded-lg border bg-white px-2 text-xs text-slate-700"
+                title="Font family"
+              >
+                <option value="Arial">Arial</option>
+                <option value="Helvetica">Helvetica</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Noto Sans Bengali">Noto Sans Bengali</option>
+              </select>
+
+              <select
+                defaultValue="3"
+                onChange={(event) => command("fontSize", event.target.value)}
+                className="h-9 rounded-lg border bg-white px-2 text-xs text-slate-700"
+                title="Font size"
+              >
+                <option value="1">10</option>
+                <option value="2">13</option>
+                <option value="3">16</option>
+                <option value="4">18</option>
+                <option value="5">24</option>
+                <option value="6">32</option>
+                <option value="7">48</option>
+              </select>
+
+              {toolbarButton("Bold", () => command("bold"), <Bold className="h-4 w-4" />)}
+              {toolbarButton("Italic", () => command("italic"), <Italic className="h-4 w-4" />)}
+              {toolbarButton("Underline", () => command("underline"), <Underline className="h-4 w-4" />)}
+              {toolbarButton("Strikethrough", () => command("strikeThrough"), <Strikethrough className="h-4 w-4" />)}
+
+              <label
+                className="flex h-9 items-center gap-1 rounded-lg border bg-white px-2 text-[11px] text-slate-600"
+                title="Text color"
+              >
+                A
+                <input
+                  type="color"
+                  defaultValue="#111827"
+                  onChange={(event) => command("foreColor", event.target.value)}
+                  className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+                />
+              </label>
+
+              <label
+                className="flex h-9 items-center gap-1 rounded-lg border bg-white px-2 text-[11px] text-slate-600"
+                title="Highlight color"
+              >
+                ▰
+                <input
+                  type="color"
+                  defaultValue="#fff3a3"
+                  onChange={(event) => command("hiliteColor", event.target.value)}
+                  className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+                />
+              </label>
+
+              {toolbarButton("Align left", () => command("justifyLeft"), <AlignLeft className="h-4 w-4" />)}
+              {toolbarButton("Align center", () => command("justifyCenter"), <AlignCenter className="h-4 w-4" />)}
+              {toolbarButton("Align right", () => command("justifyRight"), <AlignRight className="h-4 w-4" />)}
+              {toolbarButton("Justify", () => command("justifyFull"), <AlignJustify className="h-4 w-4" />)}
+
+              <select
+                defaultValue="1.6"
+                onChange={(event) => applyLineHeight(event.target.value)}
+                className="h-9 rounded-lg border bg-white px-2 text-xs text-slate-700"
+                title="Line height"
+              >
+                <option value="1">Line 1.0</option>
+                <option value="1.2">Line 1.2</option>
+                <option value="1.4">Line 1.4</option>
+                <option value="1.6">Line 1.6</option>
+                <option value="1.8">Line 1.8</option>
+                <option value="2">Line 2.0</option>
+              </select>
+
+              {toolbarButton("Bulleted list", () => command("insertUnorderedList"), <List className="h-4 w-4" />)}
+              {toolbarButton("Numbered list", () => command("insertOrderedList"), <ListOrdered className="h-4 w-4" />)}
+              {toolbarButton("Outdent", () => command("outdent"), <IndentDecrease className="h-4 w-4" />)}
+              {toolbarButton("Indent", () => command("indent"), <IndentIncrease className="h-4 w-4" />)}
+
+              {toolbarButton("Insert link", () => {
+                const url = promptForUrl("Link URL:");
+                if (url) command("createLink", url);
+              }, <Link2 className="h-4 w-4" />)}
+              {toolbarButton("Remove link", () => command("unlink"), <Unlink className="h-4 w-4" />)}
+              {toolbarButton("Insert image URL", () => {
+                const url = promptForUrl("Image URL:");
+                if (url) command("insertImage", url);
+              }, <ImageIcon className="h-4 w-4" />)}
+              {toolbarButton("Insert video", insertVideo, <Video className="h-4 w-4" />)}
+
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={insertHtmlEmbed}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <Code2 className="h-4 w-4" /> HTML / Embed
+              </button>
+
+              {toolbarButton("Horizontal line", () => command("insertHorizontalRule"), <Minus className="h-4 w-4" />)}
+              {toolbarButton("Clear formatting", () => command("removeFormat"), <Eraser className="h-4 w-4" />)}
+            </div>
+
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={() => {
+                syncValue();
+                saveSelection();
+              }}
+              onMouseUp={saveSelection}
+              onKeyUp={saveSelection}
+              onBlur={saveSelection}
+              className={
+                "prose prose-slate max-w-none overflow-y-auto px-4 py-3 text-[16px] leading-[1.6] outline-none " +
+                minHeightClass +
+                (fullscreen ? " max-h-[calc(100vh-190px)]" : " max-h-[620px]")
+              }
+            />
+          </>
+        ) : (
+          <textarea
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            spellCheck={false}
+            className={
+              "w-full resize-y bg-slate-950 p-4 font-mono text-sm leading-6 text-slate-100 outline-none " +
+              minHeightClass +
+              (fullscreen ? " min-h-[calc(100vh-180px)]" : "")
+            }
+          />
+        )}
+      </div>
+    </div>
   );
 }
 

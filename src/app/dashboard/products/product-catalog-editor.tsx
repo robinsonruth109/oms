@@ -7,6 +7,8 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  ArrowLeft,
+  ArrowRight,
   Bold,
   CheckCircle2,
   CloudUpload,
@@ -40,6 +42,7 @@ import {
   applyCatalogImportCandidate,
   createProductWebsiteTaxonomyTerm,
   deleteProductMedia,
+  moveProductGalleryImage,
   publishProductListing,
   saveProductCatalogContent,
   saveProductWebsiteListing,
@@ -179,12 +182,33 @@ export default function ProductCatalogEditor({
     [media]
   );
 
+  const primaryImage = useMemo(
+    () => images.find((row) => row.isPrimary) || null,
+    [images]
+  );
+
+  const galleryImages = useMemo(
+    () =>
+      images
+        .filter((row) => !row.isPrimary)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [images]
+  );
+
+  const videos = useMemo(
+    () =>
+      media
+        .filter((row) => row.kind === "VIDEO")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [media]
+  );
+
   function showResult(result: { success: boolean; message: string }) {
     setMessage(result.message);
     if (result.success) window.location.reload();
   }
 
-  async function upload(file: File, primary = false) {
+  async function upload(file: File, primary = false, reloadAfter = true) {
     if (!bucketConfigured) {
       const text =
         "Railway media bucket is not configured on the OMS service yet.";
@@ -227,15 +251,35 @@ export default function ProductCatalogEditor({
       }
 
       setUploadMessage(result.message || "Media uploaded successfully.");
-      window.location.reload();
+      if (reloadAfter) window.location.reload();
+      return true;
     } catch (error) {
       const text =
         error instanceof Error ? error.message : "Media upload failed.";
       setUploadMessage(text);
       setMessage(text);
+      return false;
     } finally {
       setUploading(false);
     }
+  }
+
+  async function uploadGalleryFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (!list.length) return;
+
+    let uploaded = 0;
+    for (const file of list) {
+      const success = await upload(file, false, false);
+      if (!success) break;
+      uploaded += 1;
+      setUploadMessage(
+        "Uploaded " + uploaded + " of " + list.length + " gallery image" +
+          (list.length === 1 ? "." : "s...")
+      );
+    }
+
+    if (uploaded > 0) window.location.reload();
   }
 
   return (
@@ -407,28 +451,222 @@ export default function ProductCatalogEditor({
           </div>
         ) : null}
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="cursor-pointer rounded-2xl border border-dashed p-4 text-sm hover:bg-slate-50">
-            <span className="flex items-center gap-2 font-semibold">
-              <ImageIcon className="h-4 w-4" /> Upload Image
-            </span>
-            <span className="mt-1 block text-xs text-slate-500">
-              JPG, PNG, WebP, GIF · max 12 MB
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              disabled={uploading || !bucketConfigured}
-              className="mt-3 block w-full text-xs"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void upload(file, images.length === 0);
-                event.currentTarget.value = "";
-              }}
-            />
-          </label>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border bg-slate-50/50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-slate-950">Main Image</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  One primary product image. Uploading a new Main Image keeps the
+                  previous image in Gallery Images.
+                </p>
+              </div>
+              {primaryImage ? (
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                  MAIN IMAGE
+                </span>
+              ) : null}
+            </div>
 
-          <label className="cursor-pointer rounded-2xl border border-dashed p-4 text-sm hover:bg-slate-50">
+            <label className="mt-3 block cursor-pointer rounded-xl border border-dashed bg-white p-3 text-sm hover:bg-slate-50">
+              <span className="flex items-center gap-2 font-semibold">
+                <ImageIcon className="h-4 w-4" />
+                {primaryImage ? "Replace Main Image" : "Upload Main Image"}
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">
+                JPG, PNG, WebP, GIF · max 12 MB
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                disabled={uploading || !bucketConfigured}
+                className="mt-3 block w-full text-xs"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void upload(file, true);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+
+            <div className="mt-3 overflow-hidden rounded-xl border bg-white">
+              {primaryImage ? (
+                <>
+                  <div className="flex h-64 items-center justify-center bg-white">
+                    {primaryImage.previewUrl ? (
+                      <img
+                        src={primaryImage.previewUrl}
+                        alt={primaryImage.originalFileName}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <ImageIcon className="h-12 w-12 text-slate-300" />
+                    )}
+                  </div>
+                  <div className="border-t p-3">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {primaryImage.originalFileName}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {(primaryImage.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => {
+                        if (!window.confirm("Delete the Main Image? Another gallery image will become Main Image automatically if available.")) return;
+                        startTransition(async () =>
+                          showResult(await deleteProductMedia(primaryImage.id))
+                        );
+                      }}
+                      className="mt-3 inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-64 items-center justify-center p-6 text-center text-sm text-slate-500">
+                  No Main Image uploaded yet.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border bg-slate-50/50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-slate-950">Gallery Images</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Upload multiple images together. Use arrows to control storefront order.
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                {galleryImages.length} IMAGE{galleryImages.length === 1 ? "" : "S"}
+              </span>
+            </div>
+
+            <label className="mt-3 block cursor-pointer rounded-xl border border-dashed bg-white p-3 text-sm hover:bg-slate-50">
+              <span className="flex items-center gap-2 font-semibold">
+                <ImageIcon className="h-4 w-4" /> Upload Gallery Images
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">
+                Select one or many · JPG, PNG, WebP, GIF · max 12 MB each
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={uploading || !bucketConfigured}
+                className="mt-3 block w-full text-xs"
+                onChange={(event) => {
+                  const files = event.target.files;
+                  if (files?.length) void uploadGalleryFiles(files);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {galleryImages.map((row, index) => (
+                <div key={row.id} className="overflow-hidden rounded-xl border bg-white">
+                  <div className="flex h-40 items-center justify-center">
+                    {row.previewUrl ? (
+                      <img
+                        src={row.previewUrl}
+                        alt={row.originalFileName}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <ImageIcon className="h-10 w-10 text-slate-300" />
+                    )}
+                  </div>
+                  <div className="border-t p-3">
+                    <p className="truncate text-xs font-semibold text-slate-900">
+                      {row.originalFileName}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Gallery #{index + 1} · {(row.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={pending || index === 0}
+                        title="Move earlier"
+                        onClick={() =>
+                          startTransition(async () =>
+                            showResult(await moveProductGalleryImage(row.id, "UP"))
+                          )
+                        }
+                        className="rounded-lg border bg-white p-1.5 disabled:opacity-40"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending || index === galleryImages.length - 1}
+                        title="Move later"
+                        onClick={() =>
+                          startTransition(async () =>
+                            showResult(await moveProductGalleryImage(row.id, "DOWN"))
+                          )
+                        }
+                        className="rounded-lg border bg-white p-1.5 disabled:opacity-40"
+                      >
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() =>
+                          startTransition(async () =>
+                            showResult(await setPrimaryProductImage(row.id))
+                          )
+                        }
+                        className="rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold"
+                      >
+                        Set Main
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          if (!window.confirm("Delete this Gallery Image?")) return;
+                          startTransition(async () =>
+                            showResult(await deleteProductMedia(row.id))
+                          );
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-600"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {!galleryImages.length ? (
+                <div className="rounded-xl border border-dashed bg-white p-6 text-center text-sm text-slate-500 sm:col-span-2">
+                  No Gallery Images uploaded yet.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border bg-slate-50/50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-slate-950">Product Videos</h4>
+              <p className="mt-1 text-xs text-slate-500">
+                Product Master videos stay separate from Main and Gallery images.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+              {videos.length} VIDEO{videos.length === 1 ? "" : "S"}
+            </span>
+          </div>
+
+          <label className="mt-3 block cursor-pointer rounded-xl border border-dashed bg-white p-3 text-sm hover:bg-slate-50">
             <span className="flex items-center gap-2 font-semibold">
               <FileVideo2 className="h-4 w-4" /> Upload Video
             </span>
@@ -447,87 +685,63 @@ export default function ProductCatalogEditor({
               }}
             />
           </label>
-        </div>
 
-        {uploading ? (
-          <div className="mt-3 flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-700">
-            <CloudUpload className="h-4 w-4 animate-pulse" />
-            {uploadMessage || "Uploading through OMS to Railway bucket..."}
-          </div>
-        ) : uploadMessage ? (
-          <div className="mt-3 rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            {uploadMessage}
-          </div>
-        ) : null}
+          {uploading ? (
+            <div className="mt-3 flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              <CloudUpload className="h-4 w-4 animate-pulse" />
+              {uploadMessage || "Uploading through OMS to Railway bucket..."}
+            </div>
+          ) : uploadMessage ? (
+            <div className="mt-3 rounded-xl border bg-white px-3 py-2 text-sm text-slate-700">
+              {uploadMessage}
+            </div>
+          ) : null}
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {media.map((row) => (
-            <div key={row.id} className="overflow-hidden rounded-2xl border bg-slate-50">
-              <div className="flex h-44 items-center justify-center bg-white">
-                {row.previewUrl && row.kind === "IMAGE" ? (
-                  <img
-                    src={row.previewUrl}
-                    alt={row.originalFileName}
-                    className="h-full w-full object-contain"
-                  />
-                ) : row.previewUrl && row.kind === "VIDEO" ? (
-                  <video
-                    src={row.previewUrl}
-                    controls
-                    preload="metadata"
-                    className="h-full w-full"
-                  />
-                ) : row.kind === "IMAGE" ? (
-                  <ImageIcon className="h-10 w-10 text-slate-300" />
-                ) : (
-                  <FileVideo2 className="h-10 w-10 text-slate-300" />
-                )}
-              </div>
-              <div className="p-3">
-                <p className="truncate text-sm font-semibold text-slate-900">
-                  {row.originalFileName}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {(row.sizeBytes / 1024 / 1024).toFixed(2)} MB
-                  {row.isPrimary ? " · MAIN IMAGE" : ""}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {row.kind === "IMAGE" && !row.isPrimary ? (
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() =>
-                        startTransition(async () =>
-                          showResult(await setPrimaryProductImage(row.id))
-                        )
-                      }
-                      className="rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold"
-                    >
-                      Set Main
-                    </button>
-                  ) : null}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {videos.map((row) => (
+              <div key={row.id} className="overflow-hidden rounded-xl border bg-white">
+                <div className="flex h-44 items-center justify-center bg-black">
+                  {row.previewUrl ? (
+                    <video
+                      src={row.previewUrl}
+                      controls
+                      preload="metadata"
+                      className="h-full w-full"
+                    />
+                  ) : (
+                    <FileVideo2 className="h-10 w-10 text-slate-300" />
+                  )}
+                </div>
+                <div className="border-t p-3">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {row.originalFileName}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {(row.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                  </p>
                   <button
                     type="button"
                     disabled={pending}
                     onClick={() => {
-                      if (!window.confirm("Delete this Product Master media file?")) return;
+                      if (!window.confirm("Delete this Product Video?")) return;
                       startTransition(async () =>
                         showResult(await deleteProductMedia(row.id))
                       );
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-600"
+                    className="mt-3 inline-flex items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-600"
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Delete
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
-          {!media.length ? (
-            <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-slate-500 sm:col-span-2 lg:col-span-3">
-              No Product Master media uploaded yet.
-            </div>
-          ) : null}
+            ))}
+            {!videos.length ? (
+              <div className="rounded-xl border border-dashed bg-white p-6 text-center text-sm text-slate-500 sm:col-span-2 lg:col-span-3">
+                No Product Videos uploaded yet.
+              </div>
+            ) : null}
+          </div>
+        </div>
         </div>
       </div>
 

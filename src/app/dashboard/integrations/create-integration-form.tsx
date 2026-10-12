@@ -17,8 +17,10 @@ type SourceOption = {
 
 export default function CreateIntegrationForm({
   sources,
+  embedded = false,
 }: {
   sources: SourceOption[];
+  embedded?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(createIntegration, initialState);
   const [resetKey, setResetKey] = useState(0);
@@ -33,7 +35,11 @@ export default function CreateIntegrationForm({
     <form
       key={resetKey}
       action={formAction}
-      className="space-y-4 rounded-3xl border bg-white p-5 shadow-sm sm:p-6"
+      className={
+        embedded
+          ? "space-y-4 rounded-2xl border bg-white p-4 sm:p-5"
+          : "space-y-4 rounded-3xl border bg-white p-5 shadow-sm sm:p-6"
+      }
     >
       <div>
         <h2 className="text-lg font-semibold text-slate-900">

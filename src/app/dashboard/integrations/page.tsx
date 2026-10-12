@@ -1,5 +1,6 @@
 import CreateIntegrationForm from "./create-integration-form";
 import CatalogSettings from "./catalog-settings";
+import CatalogImportHub, { type CatalogImportHubRow } from "./catalog-import-hub";
 import {
   CopyTextButton,
   RegenerateApiKeyButton,
@@ -55,7 +56,7 @@ function samplePayload(apiKey: string) {
 export default async function IntegrationsPage() {
   const { prisma } = await import("@/lib/prisma");
 
-  const [sources, integrations] = await Promise.all([
+  const [sources, integrations, catalogCandidates] = await Promise.all([
     prisma.orderSource.findMany({
       orderBy: {
         name: "asc",
@@ -74,7 +75,130 @@ export default async function IntegrationsPage() {
         createdAt: "desc",
       },
     }),
+    prisma.productCatalogImportCandidate.findMany({
+      select: {
+        sku: true,
+        remoteProductId: true,
+        payloadJson: true,
+        matchedProductId: true,
+        integrationId: true,
+        integration: {
+          select: {
+            name: true,
+          },
+        },
+        matchedProduct: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    }),
   ]);
+
+  const contentSignature = (payloadJson: string) => {
+    try {
+      const payload = JSON.parse(payloadJson) as Record<string, unknown>;
+      return JSON.stringify({
+        banglaName: payload.banglaName ?? null,
+        englishName: payload.englishName ?? null,
+        productSlug: payload.productSlug ?? null,
+        sellingPrice: payload.sellingPrice ?? null,
+        oldPrice: payload.oldPrice ?? null,
+        shortDescriptionHtml: payload.shortDescriptionHtml ?? null,
+        fullDescriptionHtml: payload.fullDescriptionHtml ?? null,
+        metaTitle: payload.metaTitle ?? null,
+        metaDescription: payload.metaDescription ?? null,
+        externalVideoUrl: payload.externalVideoUrl ?? null,
+        featured: payload.featured ?? null,
+        active: payload.active ?? null,
+        media: payload.media ?? null,
+      });
+    } catch {
+      return payloadJson;
+    }
+  };
+
+  const grouped = new Map<
+    string,
+    {
+      sku: string;
+      matchedProductId: string | null;
+      matchedProductName: string | null;
+      integrationIds: Set<string>;
+      websiteNames: Set<string>;
+      remoteProductIds: Set<string>;
+      signatures: Set<string>;
+    }
+  >();
+
+  for (const candidate of catalogCandidates) {
+    const sku = candidate.sku.trim();
+    if (!sku) continue;
+
+    const current = grouped.get(sku) || {
+      sku,
+      matchedProductId: candidate.matchedProductId,
+      matchedProductName: candidate.matchedProduct?.name || null,
+      integrationIds: new Set<string>(),
+      websiteNames: new Set<string>(),
+      remoteProductIds: new Set<string>(),
+      signatures: new Set<string>(),
+    };
+
+    if (!current.matchedProductId && candidate.matchedProductId) {
+      current.matchedProductId = candidate.matchedProductId;
+      current.matchedProductName = candidate.matchedProduct?.name || null;
+    }
+
+    current.integrationIds.add(candidate.integrationId);
+    current.websiteNames.add(candidate.integration.name);
+    current.remoteProductIds.add(
+      candidate.integrationId + ":" + candidate.remoteProductId
+    );
+    current.signatures.add(contentSignature(candidate.payloadJson));
+
+    grouped.set(sku, current);
+  }
+
+  const catalogHubRows: CatalogImportHubRow[] = Array.from(grouped.values())
+    .map((row) => ({
+      sku: row.sku,
+      matchedProductId: row.matchedProductId,
+      matchedProductName: row.matchedProductName,
+      websiteCount: row.integrationIds.size,
+      websiteNames: Array.from(row.websiteNames).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+      remoteProductCount: row.remoteProductIds.size,
+      hasConflict: row.integrationIds.size > 1 && row.signatures.size > 1,
+    }))
+    .sort((a, b) => {
+      if (a.matchedProductId === null && b.matchedProductId !== null) return -1;
+      if (a.matchedProductId !== null && b.matchedProductId === null) return 1;
+      if (a.hasConflict !== b.hasConflict) return a.hasConflict ? -1 : 1;
+      return a.sku.localeCompare(b.sku);
+    });
+
+  const catalogSummary = {
+    websiteCount: integrations.filter(
+      (integration) =>
+        integration.status &&
+        integration.platform === "LARAVEL" &&
+        Boolean(integration.baseUrl) &&
+        Boolean(integration.catalogApiToken)
+    ).length,
+    remoteProductCount: catalogCandidates.length,
+    uniqueSkuCount: catalogHubRows.length,
+    matchedSkuCount: catalogHubRows.filter((row) => row.matchedProductId).length,
+    missingSkuCount: catalogHubRows.filter((row) => !row.matchedProductId).length,
+    multiWebsiteSkuCount: catalogHubRows.filter((row) => row.websiteCount > 1).length,
+    conflictSkuCount: catalogHubRows.filter((row) => row.hasConflict).length,
+  };
 
   return (
     <div className="space-y-6">
@@ -87,6 +211,8 @@ export default async function IntegrationsPage() {
       </section>
 
       <CreateIntegrationForm sources={sources} />
+
+      <CatalogImportHub summary={catalogSummary} rows={catalogHubRows} />
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         <div className="border-b px-5 py-4 sm:px-6">

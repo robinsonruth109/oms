@@ -286,11 +286,13 @@ export async function uploadProductMediaObject(input: {
   objectKey: string;
   body: BodyInit;
   contentType: string;
+  contentLength: number;
 }) {
   const requestInit = {
     method: "PUT",
     headers: {
       "Content-Type": input.contentType || "application/octet-stream",
+      "Content-Length": String(input.contentLength),
     },
     body: input.body,
     cache: "no-store" as const,

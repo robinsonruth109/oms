@@ -250,7 +250,7 @@ export async function addSalaryTransactionAction(formData: FormData) {
   const note = String(formData.get("note") || "").trim() || null;
 
   let effectiveMonth = requestedMonth;
-  let salaryMonth;
+  let salaryMonth: Awaited<ReturnType<typeof ensureSalaryMonth>>;
 
   if (rawType === "FINE") {
     // Fines always belong to the Bangladesh calendar month in which they happen,

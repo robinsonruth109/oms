@@ -253,8 +253,6 @@ export default async function IntegrationsPage() {
         </div>
       </section>
 
-      <CatalogImportHub summary={catalogSummary} rows={catalogHubRows} />
-
       <section className="overflow-hidden rounded-3xl border bg-slate-50/50 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b bg-white px-5 py-4 sm:px-6">
           <div>
@@ -313,6 +311,8 @@ export default async function IntegrationsPage() {
           ) : null}
         </div>
       </section>
+
+      <CatalogImportHub summary={catalogSummary} rows={catalogHubRows} />
 
       <details
         id="new-integration"

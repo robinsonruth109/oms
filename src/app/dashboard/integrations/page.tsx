@@ -1,12 +1,10 @@
+import { Layers3, Plus, Radio, Store } from "lucide-react";
+
 import CreateIntegrationForm from "./create-integration-form";
-import CatalogSettings from "./catalog-settings";
-import CatalogImportHub, { type CatalogImportHubRow } from "./catalog-import-hub";
-import {
-  CopyTextButton,
-  RegenerateApiKeyButton,
-  SecretField,
-  ToggleIntegrationButton,
-} from "./integration-row-actions";
+import CatalogImportHub, {
+  type CatalogImportHubRow,
+} from "./catalog-import-hub";
+import IntegrationCard from "./integration-card";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,9 +56,7 @@ export default async function IntegrationsPage() {
 
   const [sources, integrations, catalogCandidates] = await Promise.all([
     prisma.orderSource.findMany({
-      orderBy: {
-        name: "asc",
-      },
+      orderBy: { name: "asc" },
       select: {
         id: true,
         name: true,
@@ -196,189 +192,179 @@ export default async function IntegrationsPage() {
     uniqueSkuCount: catalogHubRows.length,
     matchedSkuCount: catalogHubRows.filter((row) => row.matchedProductId).length,
     missingSkuCount: catalogHubRows.filter((row) => !row.matchedProductId).length,
-    multiWebsiteSkuCount: catalogHubRows.filter((row) => row.websiteCount > 1).length,
+    multiWebsiteSkuCount: catalogHubRows.filter((row) => row.websiteCount > 1)
+      .length,
     conflictSkuCount: catalogHubRows.filter((row) => row.hasConflict).length,
   };
 
-  return (
-    <div className="space-y-6">
-      <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Integrations</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Connect every website to OMS for orders and catalog publishing. Website
-          engine and Collection/Subcategory URL style are managed separately.
-        </p>
-      </section>
+  const activeIntegrations = integrations.filter((item) => item.status).length;
+  const syncEnabled = integrations.filter(
+    (item) => item.productSyncEnabled
+  ).length;
+  const catalogConnected = integrations.filter(
+    (item) => item.baseUrl && item.catalogApiToken
+  ).length;
 
-      <CreateIntegrationForm sources={sources} />
+  return (
+    <div className="space-y-5">
+      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="flex flex-col gap-4 p-5 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+              Website Connections
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-slate-950">
+              Integrations
+            </h1>
+            <p className="mt-1 max-w-3xl text-sm text-slate-500">
+              Manage website connections, catalog imports and publishing from one
+              place without exposing technical settings until you need them.
+            </p>
+          </div>
+
+          <a
+            href="#new-integration"
+            className="inline-flex w-fit items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            <Plus className="h-4 w-4" />
+            Create Integration
+          </a>
+        </div>
+
+        <div className="grid border-t sm:grid-cols-3">
+          <HeaderStat
+            icon={Store}
+            label="Active Websites"
+            value={activeIntegrations}
+            detail={`${integrations.length} total integrations`}
+          />
+          <HeaderStat
+            icon={Radio}
+            label="Product Sync On"
+            value={syncEnabled}
+            detail="automatic catalog publishing"
+          />
+          <HeaderStat
+            icon={Layers3}
+            label="Catalog Connected"
+            value={catalogConnected}
+            detail="base URL + catalog token ready"
+          />
+        </div>
+      </section>
 
       <CatalogImportHub summary={catalogSummary} rows={catalogHubRows} />
 
-      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="border-b px-5 py-4 sm:px-6">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Integration List
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Each integration gets its own endpoint:
-            <span className="font-medium"> /api/integrations/[slug]/orders</span>
-          </p>
+      <section className="overflow-hidden rounded-3xl border bg-slate-50/50 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b bg-white px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="text-lg font-bold text-slate-950">
+              Website Integrations
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Compact overview first. Open Manage only when you need catalog,
+              security or payload settings.
+            </p>
+          </div>
+
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+            {integrations.length} integration{integrations.length === 1 ? "" : "s"}
+          </span>
         </div>
 
-        <div className="space-y-4 p-4">
+        <div className="space-y-3 p-3 sm:p-4">
           {integrations.map((integration) => {
             const endpoint = `/api/integrations/${integration.slug}/orders`;
 
             return (
-              <div
+              <IntegrationCard
                 key={integration.id}
-                className="rounded-2xl border bg-slate-50 p-4 sm:p-5"
-              >
-                <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-lg font-semibold text-slate-900">
-                        {integration.name}
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        Slug: {integration.slug}
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div className="rounded-xl border bg-white p-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Website Engine
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">
-                          {integration.platform}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border bg-white p-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Source
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">
-                          {integration.source.name}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border bg-white p-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Catalog Structure
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">
-                          {integration.catalogMode === "COLLECTION"
-                            ? "COLLECTIONS"
-                            : "SUBCATEGORIES"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border bg-white p-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Status
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">
-                          {integration.status ? "Active" : "Inactive"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border bg-white p-3">
-                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Short API Key View
-                        </p>
-                        <p className="mt-1 break-all text-sm font-semibold text-slate-900">
-                          {maskApiKey(integration.apiKey)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-slate-700">
-                        Endpoint
-                      </p>
-
-                      <div className="break-all rounded-xl border bg-white px-3 py-2 text-sm text-slate-800">
-                        {endpoint}
-                      </div>
-
-                      <CopyTextButton value={endpoint} label="Endpoint" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-slate-700">
-                        API Key
-                      </p>
-                      <SecretField label="API Key" value={integration.apiKey} />
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-slate-700">
-                        Webhook Secret
-                      </p>
-
-                      {integration.webhookSecret ? (
-                        <SecretField
-                          label="Webhook Secret"
-                          value={integration.webhookSecret}
-                        />
-                      ) : (
-                        <div className="rounded-xl border bg-white px-3 py-2 text-sm text-slate-500">
-                          No webhook secret set
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      <ToggleIntegrationButton
-                        integrationId={integration.id}
-                        nextStatus={!integration.status}
-                        label={integration.status ? "Deactivate" : "Activate"}
-                      />
-                      <RegenerateApiKeyButton integrationId={integration.id} />
-                    </div>
-                  </div>
-                </div>
-
-                <CatalogSettings
-                  integration={{
-                    id: integration.id,
-                    platform: integration.platform,
-                    catalogMode: integration.catalogMode,
-                    baseUrl: integration.baseUrl || "",
-                    hasCatalogApiToken: Boolean(integration.catalogApiToken),
-                    productSyncEnabled: integration.productSyncEnabled,
-                    lastTaxonomySyncAt: integration.lastTaxonomySyncAt
-                      ? integration.lastTaxonomySyncAt.toISOString()
-                      : null,
-                    lastCatalogSyncAt: integration.lastCatalogSyncAt
-                      ? integration.lastCatalogSyncAt.toISOString()
-                      : null,
-                  }}
-                />
-
-                <div className="mt-5 rounded-2xl border bg-white p-4">
-                  <p className="mb-2 text-sm font-medium text-slate-700">
-                    Sample JSON Payload
-                  </p>
-                  <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-100">
-                    {samplePayload(integration.apiKey)}
-                  </pre>
-                </div>
-              </div>
+                integration={{
+                  id: integration.id,
+                  name: integration.name,
+                  slug: integration.slug,
+                  platform: integration.platform,
+                  catalogMode: integration.catalogMode,
+                  status: integration.status,
+                  sourceName: integration.source.name,
+                  baseUrl: integration.baseUrl || "",
+                  hasCatalogApiToken: Boolean(integration.catalogApiToken),
+                  productSyncEnabled: integration.productSyncEnabled,
+                  lastTaxonomySyncAt: integration.lastTaxonomySyncAt
+                    ? integration.lastTaxonomySyncAt.toISOString()
+                    : null,
+                  lastCatalogSyncAt: integration.lastCatalogSyncAt
+                    ? integration.lastCatalogSyncAt.toISOString()
+                    : null,
+                  apiKey: integration.apiKey,
+                  webhookSecret: integration.webhookSecret,
+                }}
+                endpoint={endpoint}
+                samplePayload={samplePayload(integration.apiKey)}
+                shortApiKey={maskApiKey(integration.apiKey)}
+              />
             );
           })}
 
-          {!integrations.length && (
-            <div className="rounded-2xl border bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+          {!integrations.length ? (
+            <div className="rounded-2xl border border-dashed bg-white px-6 py-10 text-center text-sm text-slate-500">
               No integrations found.
             </div>
-          )}
+          ) : null}
         </div>
       </section>
+
+      <details
+        id="new-integration"
+        className="group overflow-hidden rounded-3xl border bg-white shadow-sm"
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="text-base font-bold text-slate-950">
+              Create New Integration
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Hidden by default so the main page stays focused on current websites.
+            </p>
+          </div>
+          <span className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+            Open Form
+          </span>
+        </summary>
+
+        <div className="border-t bg-slate-50/50 p-3 sm:p-4">
+          <CreateIntegrationForm sources={sources} embedded />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function HeaderStat({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof Store;
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 sm:px-5">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          {label}
+        </p>
+        <div className="flex items-baseline gap-2">
+          <p className="text-xl font-bold text-slate-950">{value}</p>
+          <p className="text-[11px] text-slate-400">{detail}</p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -639,3 +639,61 @@ export async function importIntegrationCatalog(
     return { success: false, message: safeMessage(error) };
   }
 }
+
+
+export async function scanAllIntegrationCatalogs(): Promise<ActionState> {
+  try {
+    await requireAdmin();
+
+    const integrations = await prisma.integration.findMany({
+      where: {
+        status: true,
+        platform: "LARAVEL",
+        baseUrl: { not: null },
+        catalogApiToken: { not: null },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: { name: "asc" },
+    });
+
+    if (!integrations.length) {
+      return {
+        success: false,
+        message: "No active Laravel catalog integrations are configured.",
+      };
+    }
+
+    let completed = 0;
+    const failures: string[] = [];
+
+    for (const integration of integrations) {
+      const result = await importIntegrationCatalog(integration.id);
+      if (result.success) {
+        completed += 1;
+      } else {
+        failures.push(integration.name + ": " + result.message);
+      }
+    }
+
+    revalidatePath("/dashboard/integrations");
+    revalidatePath("/dashboard/products");
+
+    return {
+      success: failures.length === 0,
+      message:
+        "Catalog scan finished for " +
+        completed +
+        " of " +
+        integrations.length +
+        " website(s)." +
+        (failures.length
+          ? " Failed: " + failures.join(" | ").slice(0, 900)
+          : ""),
+    };
+  } catch (error) {
+    return { success: false, message: safeMessage(error) };
+  }
+}

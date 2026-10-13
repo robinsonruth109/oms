@@ -3,7 +3,7 @@ import { decryptSecret, encryptSecret } from "@/lib/shop-settings-crypto";
 import { convertBanglaDigitsToEnglish, normalizeBangladeshPhone } from "@/lib/phone-normalization";
 import { bangladeshBusinessDateToUtc } from "@/lib/bangladesh-time";
 
-export const STAFF_ROLES = ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT"] as const;
+export const STAFF_ROLES = ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT", "CLEANING_STAFF"] as const;
 
 export function normalizeNid(value: string) {
   return convertBanglaDigitsToEnglish(String(value || "")).replace(/\D/g, "");
@@ -73,11 +73,13 @@ export function businessDate(value: string) {
 export function roleLabel(role: string) {
   if (role === "NOTE_AGENT") return "Note Agent";
   if (role === "PACKAGING_AGENT") return "Packaging Agent";
+  if (role === "CLEANING_STAFF") return "Cleaning Staff";
   return "Agent";
 }
 
 export function defaultDesignation(role: string) {
   if (role === "NOTE_AGENT") return "Note Agent";
   if (role === "PACKAGING_AGENT") return "Packaging Agent";
+  if (role === "CLEANING_STAFF") return "Cleaning Staff";
   return "Calling Agent";
 }

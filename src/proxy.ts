@@ -6,6 +6,7 @@ function roleHome(role: string) {
   if (role === "MANAGER") return "/dashboard/all-orders";
   if (role === "NOTE_AGENT") return "/dashboard/orders";
   if (role === "PACKAGING_AGENT") return "/dashboard/ready-to-ship";
+  if (role === "CLEANING_STAFF") return "/dashboard/attendance";
   return "/dashboard";
 }
 
@@ -15,7 +16,8 @@ function isAllowed(pathname: string, role: string, userId: string) {
   if (
     (role === "MANAGER" ||
       role === "NOTE_AGENT" ||
-      role === "PACKAGING_AGENT") &&
+      role === "PACKAGING_AGENT" ||
+      role === "CLEANING_STAFF") &&
     pathname === "/dashboard/attendance"
   ) {
     return true;
@@ -25,7 +27,9 @@ function isAllowed(pathname: string, role: string, userId: string) {
   // Only permit the employee's own detail page, never another staff member's
   // salary or the Admin Salary Management list.
   if (
-    (role === "NOTE_AGENT" || role === "PACKAGING_AGENT") &&
+    (role === "NOTE_AGENT" ||
+      role === "PACKAGING_AGENT" ||
+      role === "CLEANING_STAFF") &&
     (pathname === "/dashboard/finance/my-salary" ||
       (Boolean(userId) &&
         pathname === `/dashboard/finance/salary/${userId}`))
@@ -37,6 +41,15 @@ function isAllowed(pathname: string, role: string, userId: string) {
     return (
       pathname === "/dashboard/merchant" ||
       pathname.startsWith("/dashboard/merchant/")
+    );
+  }
+
+  if (role === "CLEANING_STAFF") {
+    return (
+      pathname === "/dashboard/attendance" ||
+      pathname === "/dashboard/finance/my-salary" ||
+      (Boolean(userId) &&
+        pathname === `/dashboard/finance/salary/${userId}`)
     );
   }
 
@@ -131,7 +144,8 @@ export async function proxy(request: NextRequest) {
     (role === "MERCHANT" ||
       role === "MANAGER" ||
       role === "NOTE_AGENT" ||
-      role === "PACKAGING_AGENT")
+      role === "PACKAGING_AGENT" ||
+      role === "CLEANING_STAFF")
   ) {
     return NextResponse.redirect(new URL(roleHome(role), request.url));
   }

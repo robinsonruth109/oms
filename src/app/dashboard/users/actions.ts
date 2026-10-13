@@ -22,6 +22,7 @@ const ALLOWED_ROLES: Role[] = [
   "AGENT",
   "NOTE_AGENT",
   "PACKAGING_AGENT",
+  "CLEANING_STAFF",
 ];
 
 function isRole(value: string): value is Role {

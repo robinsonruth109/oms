@@ -10,6 +10,7 @@ const ROLE_OPTIONS = [
   { value: "AGENT", label: "AGENT" },
   { value: "NOTE_AGENT", label: "NOTE AGENT" },
   { value: "PACKAGING_AGENT", label: "PACKAGING AGENT" },
+  { value: "CLEANING_STAFF", label: "CLEANING STAFF" },
 ] as const;
 
 export default function ChangeUserRole({

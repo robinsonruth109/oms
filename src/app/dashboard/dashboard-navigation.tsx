@@ -42,7 +42,7 @@ import {
   Megaphone,
 } from "lucide-react";
 
-type Role = "ADMIN" | "MANAGER" | "AGENT" | "NOTE_AGENT" | "PACKAGING_AGENT" | string;
+type Role = "ADMIN" | "MANAGER" | "AGENT" | "NOTE_AGENT" | "PACKAGING_AGENT" | "CLEANING_STAFF" | string;
 
 type NavItem = {
   href: string;
@@ -56,7 +56,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const ALL_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT"];
+const ALL_ROLES = ["ADMIN", "MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT", "CLEANING_STAFF"];
 
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -135,7 +135,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/finance/daily-costing", label: "Daily Costing", icon: ReceiptText, roles: ["ADMIN"] },
       { href: "/dashboard/finance/office-daily-costing", label: "Office Daily Costing", icon: ReceiptText, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/finance/salary", label: "Salary Management", icon: CircleDollarSign, roles: ["ADMIN"] },
-      { href: "/dashboard/finance/my-salary", label: "My Salary", icon: CircleDollarSign, roles: ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT"] },
+      { href: "/dashboard/finance/my-salary", label: "My Salary", icon: CircleDollarSign, roles: ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT", "CLEANING_STAFF"] },
       { href: "/dashboard/ads-cost/sync", label: "Ads Cost Sync", icon: Megaphone, roles: ["ADMIN"] },
       { href: "/dashboard/ads-cost/report", label: "Ads Cost Report", icon: Megaphone, roles: ["ADMIN"] },
       { href: "/dashboard/ads-cost/upload", label: "Ads Cost Upload", icon: FileSpreadsheet, roles: ["ADMIN"] },

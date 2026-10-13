@@ -37,7 +37,7 @@ export default async function RecruitmentPage() {
     }),
     prisma.user.findMany({
       where: {
-        role: { in: ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT"] },
+        role: { in: ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT", "CLEANING_STAFF"] },
         staffEmploymentProfile: null,
       },
       orderBy: { name: "asc" },

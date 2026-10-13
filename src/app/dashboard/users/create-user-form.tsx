@@ -24,7 +24,7 @@ export default function CreateUserForm() {
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-slate-900">Create User</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Add a new admin, manager, calling agent, note agent or packaging agent account.
+          Add a new admin, manager, calling agent, note agent, packaging agent or cleaning staff account.
         </p>
       </div>
 
@@ -94,6 +94,7 @@ export default function CreateUserForm() {
               <option value="MANAGER">MANAGER</option>
               <option value="NOTE_AGENT">NOTE AGENT</option>
               <option value="PACKAGING_AGENT">PACKAGING AGENT</option>
+              <option value="CLEANING_STAFF">CLEANING STAFF</option>
             </select>
           </div>
         </div>

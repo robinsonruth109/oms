@@ -27,7 +27,8 @@ function isAllowed(pathname: string, role: string, userId: string) {
   // Only permit the employee's own detail page, never another staff member's
   // salary or the Admin Salary Management list.
   if (
-    (role === "NOTE_AGENT" ||
+    (role === "MANAGER" ||
+      role === "NOTE_AGENT" ||
       role === "PACKAGING_AGENT" ||
       role === "CLEANING_STAFF") &&
     (pathname === "/dashboard/finance/my-salary" ||

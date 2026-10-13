@@ -45,7 +45,7 @@ export default async function SalaryManagementPage({ searchParams }: PageProps) 
 
   const [agents, profiles] = await Promise.all([
     prisma.user.findMany({
-      where: { role: { in: ["AGENT", "NOTE_AGENT", "PACKAGING_AGENT"] }, status: true },
+      where: { role: { in: ["MANAGER", "AGENT", "NOTE_AGENT", "PACKAGING_AGENT", "CLEANING_STAFF"] }, status: true },
       orderBy: [{ name: "asc" }],
     }),
     prisma.salaryProfile.findMany({

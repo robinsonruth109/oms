@@ -30,7 +30,7 @@ function CommonEmploymentFields({ today }: { today: string }) {
       <label><span className={labelClass}>Father&apos;s Name</span><input name="fatherName" required className={inputClass} placeholder="Father's full name" /></label>
       <label><span className={labelClass}>Phone Number</span><input name="phone" required inputMode="numeric" className={inputClass} placeholder="01XXXXXXXXX" /></label>
       <label><span className={labelClass}>NID Number</span><input name="nidNumber" required inputMode="numeric" className={inputClass} placeholder="10 / 13 / 17 digits" /></label>
-      <label><span className={labelClass}>Designation</span><input name="designation" required className={inputClass} placeholder="Calling Agent / Packaging Agent" /></label>
+      <label><span className={labelClass}>Designation</span><input name="designation" required className={inputClass} placeholder="Calling Agent / Packaging Agent / Cleaning Staff" /></label>
       <label><span className={labelClass}>Basic Salary (Tk)</span><input name="baseSalary" required type="number" min="1" step="0.01" className={inputClass} /></label>
       <label><span className={labelClass}>15-day Period Compensation / Allowance (Tk)</span><input name="probationCompensation" type="number" min="0" step="0.01" defaultValue="0" className={inputClass} /></label>
       <label><span className={labelClass}>Start Date</span><input name="startDate" required type="date" defaultValue={today} className={inputClass} /></label>
@@ -56,7 +56,7 @@ export function CreateStaffForm({ today }: { today: string }) {
       <form key={key} action={action} className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label><span className={labelClass}>Full Name</span><input name="name" required className={inputClass} /></label>
-          <label><span className={labelClass}>OMS Role</span><select name="role" defaultValue="AGENT" required className={inputClass}><option value="AGENT">AGENT</option><option value="NOTE_AGENT">NOTE AGENT</option><option value="PACKAGING_AGENT">PACKAGING AGENT</option></select></label>
+          <label><span className={labelClass}>OMS Role</span><select name="role" defaultValue="AGENT" required className={inputClass}><option value="AGENT">AGENT</option><option value="NOTE_AGENT">NOTE AGENT</option><option value="PACKAGING_AGENT">PACKAGING AGENT</option><option value="CLEANING_STAFF">CLEANING STAFF</option></select></label>
           <label><span className={labelClass}>Username</span><input name="username" required autoComplete="off" className={inputClass} /></label>
           <label><span className={labelClass}>Password</span><input name="password" required type="password" minLength={6} autoComplete="new-password" className={inputClass} /></label>
           <CommonEmploymentFields today={today} />

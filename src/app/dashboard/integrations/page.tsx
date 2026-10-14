@@ -51,6 +51,16 @@ function samplePayload(apiKey: string) {
   );
 }
 
+function normalizedSkuKey(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleUpperCase("en-US");
+}
+
 export default async function IntegrationsPage() {
   const { prisma } = await import("@/lib/prisma");
 
@@ -136,9 +146,10 @@ export default async function IntegrationsPage() {
 
   for (const candidate of catalogCandidates) {
     const sku = candidate.sku.trim();
-    if (!sku) continue;
+    const skuKey = normalizedSkuKey(sku);
+    if (!skuKey) continue;
 
-    const current = grouped.get(sku) || {
+    const current = grouped.get(skuKey) || {
       sku,
       matchedProductId: candidate.matchedProductId,
       matchedProductName: candidate.matchedProduct?.name || null,
@@ -161,7 +172,7 @@ export default async function IntegrationsPage() {
     );
     current.signatures.add(contentSignature(candidate.payloadJson));
 
-    grouped.set(sku, current);
+    grouped.set(skuKey, current);
   }
 
   const catalogHubRows: CatalogImportHubRow[] = Array.from(grouped.values())

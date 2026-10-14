@@ -129,9 +129,8 @@ export default function CatalogImportHub({ summary, rows }: Props) {
   function createOmsProduct(row: CatalogImportHubRow) {
     const candidateId =
       sourceBySku[row.sku] ||
-      (row.sourceOptions.length === 1
-        ? row.sourceOptions[0].candidateId
-        : "");
+      row.sourceOptions[0]?.candidateId ||
+      "";
 
     if (!candidateId) {
       setMessage("Choose which website should provide the initial OMS master content.");
@@ -199,9 +198,8 @@ export default function CatalogImportHub({ summary, rows }: Props) {
 
     const sourceCandidateId =
       sourceBySku[row.sku] ||
-      (row.sourceOptions.length === 1
-        ? row.sourceOptions[0].candidateId
-        : "");
+      row.sourceOptions[0]?.candidateId ||
+      "";
 
     if (!sourceCandidateId) {
       setMessage(
@@ -421,7 +419,11 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                         <div className="ml-auto flex w-[260px] flex-col gap-2">
                           {row.sourceOptions.length > 1 ? (
                             <select
-                              value={sourceBySku[row.sku] || ""}
+                              value={
+                                sourceBySku[row.sku] ||
+                                row.sourceOptions[0]?.candidateId ||
+                                ""
+                              }
                               onChange={(event) =>
                                 setSourceBySku((current) => ({
                                   ...current,
@@ -432,7 +434,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                               className="w-full rounded-lg border bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
                               aria-label={"Choose master content source for " + row.sku}
                             >
-                              <option value="">Choose master content source</option>
+                              <option value="">No website source available</option>
                               {row.sourceOptions.map((option) => (
                                 <option
                                   key={option.candidateId}
@@ -453,11 +455,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
 
                           <button
                             type="button"
-                            disabled={
-                              pending ||
-                              (row.sourceOptions.length > 1 &&
-                                !sourceBySku[row.sku])
-                            }
+                            disabled={pending || row.sourceOptions.length === 0}
                             onClick={() => createOmsProduct(row)}
                             className="inline-flex justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -515,7 +513,11 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                                     Master content source
                                   </label>
                                   <select
-                                    value={sourceBySku[row.sku] || ""}
+                                    value={
+                                      sourceBySku[row.sku] ||
+                                      row.sourceOptions[0]?.candidateId ||
+                                      ""
+                                    }
                                     onChange={(event) =>
                                       setSourceBySku((current) => ({
                                         ...current,
@@ -525,7 +527,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                                     disabled={pending}
                                     className="w-full rounded-lg border bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
                                   >
-                                    <option value="">Choose website source</option>
+                                    <option value="">No website source available</option>
                                     {row.sourceOptions.map((option) => (
                                       <option
                                         key={option.candidateId}
@@ -540,9 +542,10 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                                     ))}
                                   </select>
                                   <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                                    Content, media and collection will come from this website.
-                                    The selected OMS variation keeps its own stock, purchase price
-                                    and selling price.
+                                    OMS automatically selects the first available website as the
+                                    import source. You can change it here if needed. Content, media
+                                    and collection come from this website; the selected OMS variation
+                                    keeps its own stock, purchase price and selling price.
                                   </p>
                                 </div>
                               ) : (
@@ -602,16 +605,12 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                                   disabled={
                                     pending ||
                                     !selectedOmsProductId ||
-                                    (row.sourceOptions.length > 1 &&
-                                      !sourceBySku[row.sku])
+                                    row.sourceOptions.length === 0
                                   }
                                   onClick={() => connectToOmsProduct(row)}
                                   className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                  {row.sourceOptions.length > 1 &&
-                                  !sourceBySku[row.sku]
-                                    ? "Choose Source First"
-                                    : "Connect Selected OMS SKU"}
+                                  Connect Selected OMS SKU
                                 </button>
                                 <button
                                   type="button"

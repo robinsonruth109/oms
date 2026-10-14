@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import RestoreButton from "./restore-button";
+import TrashStockOutButton from "./trash-stock-out-button";
 
 type GroupedStockOutRow = {
   productSku: string;
@@ -285,6 +286,9 @@ export default function StockOutClient({
                   Page / Source
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Trash
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Expand
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -330,6 +334,13 @@ export default function StockOutClient({
                       </td>
 
                       <td className="px-6 py-4">
+                        <TrashStockOutButton
+                          orderIds={row.orderIds}
+                          invoiceCount={row.totalInvoiceQty}
+                        />
+                      </td>
+
+                      <td className="px-6 py-4">
                         <button
                           type="button"
                           onClick={() => toggleExpand(row.productSku)}
@@ -349,7 +360,7 @@ export default function StockOutClient({
 
                     {isExpanded && (
                       <tr className="border-b bg-slate-50/60">
-                        <td colSpan={7} className="px-6 py-5">
+                        <td colSpan={8} className="px-6 py-5">
                           <div className="rounded-2xl border bg-white">
                             <div className="border-b px-4 py-3">
                               <h3 className="text-sm font-semibold text-slate-900">
@@ -465,7 +476,7 @@ export default function StockOutClient({
               {!filteredRows.length && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >
                     {filtersActive

@@ -35,6 +35,16 @@ function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, "");
 }
 
+function normalizedSkuKey(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleUpperCase("en-US");
+}
+
 function catalogHeaders(token: string) {
   return {
     Accept: "application/json",
@@ -526,18 +536,35 @@ export async function importIntegrationCatalog(
       const items = Array.isArray(body.items) ? body.items : [];
       if (!items.length) break;
 
-      const skus = Array.from(
+      const remoteSkus = Array.from(
         new Set(items.map((item) => String(item.sku || "").trim()).filter(Boolean))
       );
-      const products = skus.length
+
+      // SKU matching is compatibility-normalized so visually decorated Unicode
+      // text such as "𝐏𝐀𝐒𝐓𝐄𝐋" matches the plain-text SKU "PASTEL".
+      // The original SKU is still preserved for display/storage.
+      const products = remoteSkus.length
         ? await prisma.product.findMany({
-            where: { sku: { in: skus } },
             select: { id: true, sku: true },
           })
         : [];
-      const productBySku = new Map(
-        products.map((product) => [product.sku, product.id])
-      );
+
+      const productIdsByNormalizedSku = new Map<string, string[]>();
+      for (const product of products) {
+        const key = normalizedSkuKey(product.sku);
+        const ids = productIdsByNormalizedSku.get(key) || [];
+        ids.push(product.id);
+        productIdsByNormalizedSku.set(key, ids);
+      }
+
+      const productByNormalizedSku = new Map<string, string>();
+      for (const [key, ids] of productIdsByNormalizedSku.entries()) {
+        // Only auto-match when the normalized SKU identifies exactly one OMS
+        // product. Existing duplicate-equivalent OMS SKUs require manual review.
+        if (ids.length === 1) {
+          productByNormalizedSku.set(key, ids[0]);
+        }
+      }
 
       const preparedRows = items
         .map((item) => {
@@ -549,7 +576,8 @@ export async function importIntegrationCatalog(
             item,
             sku,
             remoteProductId,
-            matchedProductId: productBySku.get(sku) || null,
+            matchedProductId:
+              productByNormalizedSku.get(normalizedSkuKey(sku)) || null,
           };
         })
         .filter(
@@ -746,19 +774,33 @@ export async function createOmsProductFromCatalogCandidate(
       return { success: false, message: "Website product has no SKU." };
     }
 
-    const existing = await prisma.product.findUnique({
-      where: { sku },
-      select: { id: true },
+    const normalizedKey = normalizedSkuKey(sku);
+    const possibleExisting = await prisma.product.findMany({
+      select: { id: true, sku: true },
     });
+    const normalizedMatches = possibleExisting.filter(
+      (product) => normalizedSkuKey(product.sku) === normalizedKey
+    );
 
-    if (existing) {
-      await prisma.productCatalogImportCandidate.updateMany({
-        where: { sku },
-        data: {
-          matchedProductId: existing.id,
-          status: "MATCHED",
-        },
+    if (normalizedMatches.length === 1) {
+      const existing = normalizedMatches[0];
+
+      const candidates = await prisma.productCatalogImportCandidate.findMany({
+        select: { id: true, sku: true },
       });
+      const equivalentCandidateIds = candidates
+        .filter((row) => normalizedSkuKey(row.sku) === normalizedKey)
+        .map((row) => row.id);
+
+      if (equivalentCandidateIds.length) {
+        await prisma.productCatalogImportCandidate.updateMany({
+          where: { id: { in: equivalentCandidateIds } },
+          data: {
+            matchedProductId: existing.id,
+            status: "MATCHED",
+          },
+        });
+      }
 
       revalidatePath("/dashboard/integrations");
       revalidatePath("/dashboard/products");
@@ -766,7 +808,19 @@ export async function createOmsProductFromCatalogCandidate(
       return {
         success: true,
         productId: existing.id,
-        message: "SKU already exists in OMS. Website records were matched to it.",
+        message:
+          "A normalized-equivalent SKU already exists in OMS (" +
+          existing.sku +
+          "). Website records were matched to it; no duplicate product was created.",
+      };
+    }
+
+    if (normalizedMatches.length > 1) {
+      return {
+        success: false,
+        message:
+          "Multiple OMS products normalize to the same SKU. Creation is blocked so stock/purchase data cannot be merged accidentally. Reconcile these OMS SKUs first: " +
+          normalizedMatches.map((row) => row.sku).join(" | "),
       };
     }
 
@@ -844,13 +898,22 @@ export async function createOmsProductFromCatalogCandidate(
       // Once one website creates the OMS SKU, every scanned candidate with the
       // same SKU can safely point at that master product. We do not copy their
       // inventory, stock quantity or purchase cost.
-      await tx.productCatalogImportCandidate.updateMany({
-        where: { sku },
-        data: {
-          matchedProductId: product.id,
-          status: "MATCHED",
-        },
+      const scannedCandidates = await tx.productCatalogImportCandidate.findMany({
+        select: { id: true, sku: true },
       });
+      const equivalentCandidateIds = scannedCandidates
+        .filter((row) => normalizedSkuKey(row.sku) === normalizedKey)
+        .map((row) => row.id);
+
+      if (equivalentCandidateIds.length) {
+        await tx.productCatalogImportCandidate.updateMany({
+          where: { id: { in: equivalentCandidateIds } },
+          data: {
+            matchedProductId: product.id,
+            status: "MATCHED",
+          },
+        });
+      }
 
       return product;
     });

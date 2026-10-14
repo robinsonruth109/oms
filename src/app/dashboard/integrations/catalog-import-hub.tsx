@@ -197,17 +197,35 @@ export default function CatalogImportHub({ summary, rows }: Props) {
       return;
     }
 
+    const sourceCandidateId =
+      sourceBySku[row.sku] ||
+      (row.sourceOptions.length === 1
+        ? row.sourceOptions[0].candidateId
+        : "");
+
+    if (!sourceCandidateId) {
+      setMessage(
+        "Choose the master content source website first. Its content, media and taxonomy will be imported into the selected existing OMS variation."
+      );
+      return;
+    }
+
     const selected = manualResults.find(
       (product) => product.id === selectedOmsProductId
+    );
+    const source = row.sourceOptions.find(
+      (option) => option.candidateId === sourceCandidateId
     );
 
     if (
       !window.confirm(
         "Connect website SKU " +
           row.sku +
-          " to OMS SKU " +
+          " to existing OMS SKU " +
           (selected?.sku || "") +
-          "?\n\nThis will only connect website listings. OMS stock quantity and purchase price will NOT be changed."
+          " using " +
+          (source?.websiteName || "the selected website") +
+          " as the content/media source?\n\nThe exact existing OMS variation will be reused. OMS stock, purchase price, selling price and inventory setup will NOT be changed."
       )
     ) {
       return;
@@ -216,7 +234,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
     setMessage("");
     startTransition(async () => {
       const result = await connectCatalogCandidateToOmsProduct(
-        row.representativeCandidateId,
+        sourceCandidateId,
         selectedOmsProductId
       );
       setMessage(result.message);

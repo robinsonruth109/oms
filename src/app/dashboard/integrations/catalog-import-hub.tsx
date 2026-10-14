@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { ChevronDown, ChevronUp, Layers3, RefreshCw, Search, Store } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,36 @@ export default function CatalogImportHub({ summary, rows }: Props) {
   const [filter, setFilter] = useState<Filter>("ALL");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem("catalog-import-hub-open") === "1") {
+        setExpanded(true);
+      }
+    } catch {
+      // Ignore storage access failures.
+    }
+  }, []);
+
+  function setHubExpanded(next: boolean) {
+    setExpanded(next);
+    try {
+      window.sessionStorage.setItem(
+        "catalog-import-hub-open",
+        next ? "1" : "0"
+      );
+    } catch {
+      // Ignore storage access failures.
+    }
+  }
+
+  function keepHubOpenAfterReload() {
+    try {
+      window.sessionStorage.setItem("catalog-import-hub-open", "1");
+    } catch {
+      // Ignore storage access failures.
+    }
+  }
   const [sourceBySku, setSourceBySku] = useState<Record<string, string>>({});
   const [manualLinkSku, setManualLinkSku] = useState<string | null>(null);
   const [manualSearch, setManualSearch] = useState("");
@@ -89,7 +119,10 @@ export default function CatalogImportHub({ summary, rows }: Props) {
     startTransition(async () => {
       const result = await scanAllIntegrationCatalogs();
       setMessage(result.message);
-      if (result.success) window.location.reload();
+      if (result.success) {
+        keepHubOpenAfterReload();
+        window.location.reload();
+      }
     });
   }
 
@@ -125,7 +158,10 @@ export default function CatalogImportHub({ summary, rows }: Props) {
     startTransition(async () => {
       const result = await createOmsProductFromCatalogCandidate(candidateId);
       setMessage(result.message);
-      if (result.success) window.location.reload();
+      if (result.success) {
+        keepHubOpenAfterReload();
+        window.location.reload();
+      }
     });
   }
 
@@ -184,7 +220,10 @@ export default function CatalogImportHub({ summary, rows }: Props) {
         selectedOmsProductId
       );
       setMessage(result.message);
-      if (result.success) window.location.reload();
+      if (result.success) {
+        keepHubOpenAfterReload();
+        window.location.reload();
+      }
     });
   }
 
@@ -234,7 +273,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
           </Button>
           <Button
             type="button"
-            onClick={() => setExpanded((value) => !value)}
+            onClick={() => setHubExpanded(!expanded)}
           >
             {expanded ? (
               <ChevronUp className="mr-2 h-4 w-4" />

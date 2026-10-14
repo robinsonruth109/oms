@@ -17,6 +17,8 @@ type StockOutItemRow = {
   unitPrice: number;
   lineTotal: number;
   deliveryCharge: number;
+  parentSku: string;
+  stockOutAt: string;
 };
 
 type GroupedStockOutRow = {
@@ -25,6 +27,7 @@ type GroupedStockOutRow = {
   totalInvoiceQty: number;
   totalProductQty: number;
   totalProductPrice: number;
+  parentSkus: string[];
   pageSources: string[];
   orderIds: string[];
   invoices: {
@@ -37,6 +40,8 @@ type GroupedStockOutRow = {
     deliveryCharge: number;
     pageName: string;
     sourceName: string;
+    parentSku: string;
+    stockOutAt: string;
   }[];
 };
 
@@ -48,7 +53,19 @@ export default async function StockOutPage() {
       orderStatus: "STOCK_OUT",
     },
     include: {
-      items: true,
+      items: {
+        include: {
+          product: {
+            select: {
+              parent: {
+                select: {
+                  sku: true,
+                },
+              },
+            },
+          },
+        },
+      },
       page: true,
       source: true,
     },
@@ -72,6 +89,8 @@ export default async function StockOutPage() {
       unitPrice: Number(item.unitPrice),
       lineTotal: Number(item.lineTotal),
       deliveryCharge: Number(order.deliveryCharge),
+      parentSku: item.product?.parent?.sku || item.productSku,
+      stockOutAt: (order.calledAt || order.updatedAt).toISOString(),
     }))
   );
 
@@ -87,6 +106,7 @@ export default async function StockOutPage() {
         totalInvoiceQty: 0,
         totalProductQty: 0,
         totalProductPrice: 0,
+        parentSkus: [],
         pageSources: [],
         orderIds: [],
         invoices: [],
@@ -98,6 +118,10 @@ export default async function StockOutPage() {
     group.totalInvoiceQty += 1;
     group.totalProductQty += row.quantity;
     group.totalProductPrice += row.lineTotal;
+
+    if (!group.parentSkus.includes(row.parentSku)) {
+      group.parentSkus.push(row.parentSku);
+    }
 
     const pageSource = `${row.pageName} / ${row.sourceName}`;
     if (!group.pageSources.includes(pageSource)) {
@@ -118,6 +142,8 @@ export default async function StockOutPage() {
       deliveryCharge: row.deliveryCharge,
       pageName: row.pageName,
       sourceName: row.sourceName,
+      parentSku: row.parentSku,
+      stockOutAt: row.stockOutAt,
     });
   }
 

@@ -994,7 +994,11 @@ export async function createOmsProductFromCatalogCandidate(
     const allCandidates = await prisma.productCatalogImportCandidate.findMany({
       include: {
         integration: {
-          select: { id: true, name: true },
+          select: {
+            id: true,
+            name: true,
+            baseUrl: true,
+          },
         },
       },
     });
@@ -1039,6 +1043,15 @@ export async function createOmsProductFromCatalogCandidate(
     const sourceName = productNameFromWebsite(sourcePayload, sku);
     const sourceSellingPrice = nonNegativeMoney(sourcePayload.sellingPrice);
     const sourceOldPrice = nonNegativeMoney(sourcePayload.oldPrice);
+    const sourceBaseUrl = candidate.integration.baseUrl || "";
+    const sourceShortDescription = absolutizeHtmlMediaUrls(
+      sourcePayload.shortDescriptionHtml,
+      sourceBaseUrl
+    );
+    const sourceFullDescription = absolutizeHtmlMediaUrls(
+      sourcePayload.fullDescriptionHtml,
+      sourceBaseUrl
+    );
 
     const possibleExisting = await prisma.product.findMany({
       select: {
@@ -1076,7 +1089,7 @@ export async function createOmsProductFromCatalogCandidate(
         masterOldPrice = Number(existing.catalogContent?.oldPrice || 0);
       } else {
         // Website catalog import NEVER establishes OMS physical inventory.
-        // Only catalog/content values come from the selected website.
+        // Stock qty and purchase cost remain OMS-only and unverified.
         const parent = await tx.productParent.create({
           data: {
             sku,
@@ -1110,12 +1123,8 @@ export async function createOmsProductFromCatalogCandidate(
             banglaName: optionalText(sourcePayload.banglaName),
             englishName: optionalText(sourcePayload.englishName),
             productSlug: optionalText(sourcePayload.productSlug),
-            shortDescriptionHtml: optionalText(
-              sourcePayload.shortDescriptionHtml
-            ),
-            fullDescriptionHtml: optionalText(
-              sourcePayload.fullDescriptionHtml
-            ),
+            shortDescriptionHtml: optionalText(sourceShortDescription),
+            fullDescriptionHtml: optionalText(sourceFullDescription),
             oldPrice: sourceOldPrice > 0 ? sourceOldPrice : null,
             featured: Boolean(sourcePayload.featured),
             sortOrder: Number.isSafeInteger(Number(sourcePayload.sortOrder))
@@ -1139,7 +1148,7 @@ export async function createOmsProductFromCatalogCandidate(
         const websiteSellingPrice = nonNegativeMoney(payload.sellingPrice);
         const websiteOldPrice = nonNegativeMoney(payload.oldPrice);
 
-        await tx.productWebsiteListing.upsert({
+        const listing = await tx.productWebsiteListing.upsert({
           where: {
             productId_integrationId: {
               productId,
@@ -1181,8 +1190,71 @@ export async function createOmsProductFromCatalogCandidate(
                 : null,
             syncStatus: "SYNCED",
             lastSyncedAt: new Date(),
+            lastSyncError: null,
           },
         });
+
+        const taxonomy = remoteTaxonomyRows(payload);
+        const termIds: string[] = [];
+
+        for (const rawTerm of taxonomy) {
+          const externalId = String(rawTerm.externalId || "").trim();
+          const type = String(rawTerm.type || "").toUpperCase();
+
+          if (
+            !externalId ||
+            !["CATEGORY", "SUBCATEGORY", "COLLECTION"].includes(type)
+          ) {
+            continue;
+          }
+
+          const term = await tx.productWebsiteTaxonomyTerm.upsert({
+            where: {
+              integrationId_type_externalId: {
+                integrationId: websiteCandidate.integrationId,
+                type: type as "CATEGORY" | "SUBCATEGORY" | "COLLECTION",
+                externalId,
+              },
+            },
+            create: {
+              integrationId: websiteCandidate.integrationId,
+              externalId,
+              type: type as "CATEGORY" | "SUBCATEGORY" | "COLLECTION",
+              parentExternalId: optionalText(rawTerm.parentExternalId),
+              name:
+                optionalText(rawTerm.name) ||
+                optionalText(rawTerm.slug) ||
+                externalId,
+              slug: optionalText(rawTerm.slug) || externalId,
+              active: true,
+            },
+            update: {
+              parentExternalId: optionalText(rawTerm.parentExternalId),
+              name:
+                optionalText(rawTerm.name) ||
+                optionalText(rawTerm.slug) ||
+                externalId,
+              slug: optionalText(rawTerm.slug) || externalId,
+              active: true,
+            },
+          });
+
+          termIds.push(term.id);
+        }
+
+        await tx.productWebsiteTaxonomy.deleteMany({
+          where: { listingId: listing.id },
+        });
+
+        if (termIds.length) {
+          await tx.productWebsiteTaxonomy.createMany({
+            data: termIds.map((termId) => ({
+              listingId: listing.id,
+              termId,
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
 
       await tx.productCatalogImportCandidate.updateMany({
@@ -1196,6 +1268,11 @@ export async function createOmsProductFromCatalogCandidate(
       });
 
       return productId;
+    });
+
+    const mediaResult = await importRemoteMediaForExistingProduct({
+      productId,
+      payload: sourcePayload,
     });
 
     revalidatePath("/dashboard/integrations");
@@ -1213,13 +1290,16 @@ export async function createOmsProductFromCatalogCandidate(
         candidate.integration.name +
         " as the master-content source. Connected " +
         equivalentCandidates.length +
-        " website listing(s). Website stock quantity and purchase cost were NOT imported.",
+        " website listing(s), restored taxonomy and imported " +
+        mediaResult.importedImages +
+        " image(s) / " +
+        mediaResult.importedVideos +
+        " video(s). Website stock quantity and purchase cost were NOT imported.",
     };
   } catch (error) {
     return { success: false, message: safeMessage(error) };
   }
 }
-
 
 export async function searchOmsProductsForCatalogLink(
   query: string

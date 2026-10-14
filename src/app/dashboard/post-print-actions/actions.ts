@@ -203,6 +203,92 @@ export async function bulkCsvCancelled(
   }
 }
 
+export async function trashStockOutOrders(
+  orderIds: string[]
+): Promise<ActionState> {
+  try {
+    const session = await requirePackagingAccess();
+    const { prisma } = await import("@/lib/prisma");
+
+    const ids = Array.from(
+      new Set(orderIds.map((value) => String(value || "").trim()).filter(Boolean))
+    );
+
+    if (!ids.length) {
+      return { success: false, message: "No stock-out invoices selected." };
+    }
+
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: ids },
+        orderStatus: "STOCK_OUT",
+      },
+      select: {
+        id: true,
+        invoiceId: true,
+      },
+    });
+
+    if (!orders.length) {
+      return {
+        success: false,
+        message: "No STOCK_OUT invoices were found to trash.",
+      };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const order of orders) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            orderStatus: "TRASH",
+            holdByUserId: null,
+            holdAt: null,
+            holdUntil: null,
+          },
+        });
+
+        await tx.orderAuditEvent.create({
+          data: {
+            orderId: order.id,
+            eventType: "TRASHED",
+            title: "Stock-out invoice moved to Trash without restocking",
+            performedByUserId: session.user.id,
+            actorLabel:
+              session.user.name || session.user.username || "OMS User",
+            details: {
+              previousStatus: "STOCK_OUT",
+              newStatus: "TRASH",
+              invoiceId: order.invoiceId,
+              stockRestored: false,
+              source: "STOCK_OUT_ITEMS",
+            },
+          },
+        });
+      }
+    });
+
+    revalidatePath("/dashboard/stock-out");
+    revalidatePath("/dashboard/all-orders");
+    revalidatePath("/dashboard/post-print-actions");
+
+    return {
+      success: true,
+      message:
+        orders.length +
+        " stock-out invoice(s) moved to Trash. Inventory was not restored.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to move stock-out invoices to Trash.",
+    };
+  }
+}
+
 export async function restoreStockOutOrder(orderId: string): Promise<ActionState> {
   try {
     await requirePackagingAccess();

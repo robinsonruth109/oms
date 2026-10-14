@@ -141,6 +141,12 @@ export default async function IntegrationsPage() {
       remoteProductIds: Set<string>;
       signatures: Set<string>;
       representativeCandidateId: string;
+      sourceOptions: Array<{
+        candidateId: string;
+        websiteName: string;
+        productName: string;
+        sellingPrice: number;
+      }>;
     }
   >();
 
@@ -158,6 +164,7 @@ export default async function IntegrationsPage() {
       remoteProductIds: new Set<string>(),
       signatures: new Set<string>(),
       representativeCandidateId: candidate.id,
+      sourceOptions: [],
     };
 
     if (!current.matchedProductId && candidate.matchedProductId) {
@@ -171,6 +178,40 @@ export default async function IntegrationsPage() {
       candidate.integrationId + ":" + candidate.remoteProductId
     );
     current.signatures.add(contentSignature(candidate.payloadJson));
+
+    try {
+      const payload = JSON.parse(candidate.payloadJson) as Record<string, unknown>;
+      const productName =
+        String(
+          payload.englishName ||
+            payload.banglaName ||
+            payload.name ||
+            candidate.sku
+        ).trim() || candidate.sku;
+      const sellingPrice = Number(
+        String(payload.sellingPrice ?? "0").replace(/,/g, "")
+      );
+
+      if (
+        !current.sourceOptions.some(
+          (option) => option.candidateId === candidate.id
+        )
+      ) {
+        current.sourceOptions.push({
+          candidateId: candidate.id,
+          websiteName: candidate.integration.name,
+          productName,
+          sellingPrice: Number.isFinite(sellingPrice) ? sellingPrice : 0,
+        });
+      }
+    } catch {
+      current.sourceOptions.push({
+        candidateId: candidate.id,
+        websiteName: candidate.integration.name,
+        productName: candidate.sku,
+        sellingPrice: 0,
+      });
+    }
 
     grouped.set(skuKey, current);
   }
@@ -187,6 +228,9 @@ export default async function IntegrationsPage() {
       remoteProductCount: row.remoteProductIds.size,
       hasConflict: row.integrationIds.size > 1 && row.signatures.size > 1,
       representativeCandidateId: row.representativeCandidateId,
+      sourceOptions: row.sourceOptions.sort((a, b) =>
+        a.websiteName.localeCompare(b.websiteName)
+      ),
     }))
     .sort((a, b) => {
       if (a.matchedProductId === null && b.matchedProductId !== null) return -1;

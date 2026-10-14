@@ -5,7 +5,10 @@ import { useMemo, useState, useTransition } from "react";
 import { ChevronDown, ChevronUp, Layers3, RefreshCw, Search, Store } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { scanAllIntegrationCatalogs } from "./actions";
+import {
+  createOmsProductFromCatalogCandidate,
+  scanAllIntegrationCatalogs,
+} from "./actions";
 
 export type CatalogImportHubRow = {
   sku: string;
@@ -15,6 +18,7 @@ export type CatalogImportHubRow = {
   websiteNames: string[];
   remoteProductCount: number;
   hasConflict: boolean;
+  representativeCandidateId: string;
 };
 
 type Props = {
@@ -62,6 +66,27 @@ export default function CatalogImportHub({ summary, rows }: Props) {
     setMessage("");
     startTransition(async () => {
       const result = await scanAllIntegrationCatalogs();
+      setMessage(result.message);
+      if (result.success) window.location.reload();
+    });
+  }
+
+  function createOmsProduct(row: CatalogImportHubRow) {
+    if (
+      !window.confirm(
+        "Create OMS Product for " +
+          row.sku +
+          "? Website stock quantity and purchase cost will NOT be imported."
+      )
+    ) {
+      return;
+    }
+
+    setMessage("");
+    startTransition(async () => {
+      const result = await createOmsProductFromCatalogCandidate(
+        row.representativeCandidateId
+      );
       setMessage(result.message);
       if (result.success) window.location.reload();
     });
@@ -239,8 +264,19 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                         >
                           Review Product
                         </Link>
+                      ) : row.websiteCount === 1 && !row.hasConflict ? (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => createOmsProduct(row)}
+                          className="inline-flex rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                        >
+                          Create OMS Product
+                        </button>
                       ) : (
-                        <span className="text-xs text-slate-400">Review creation next</span>
+                        <span className="text-xs text-slate-400">
+                          Choose source before creation
+                        </span>
                       )}
                     </td>
                   </tr>

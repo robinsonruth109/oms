@@ -117,6 +117,21 @@ export default function StockOutClient({
 
   const filtersActive = Boolean(fromDate || toDate || parentSearch.trim());
 
+  const summary = useMemo(
+    () => ({
+      totalProductTypes: filteredRows.length,
+      totalInvoices: filteredRows.reduce(
+        (sum, row) => sum + row.totalInvoiceQty,
+        0
+      ),
+      totalInvoiceValue: filteredRows.reduce(
+        (sum, row) => sum + row.totalProductPrice,
+        0
+      ),
+    }),
+    [filteredRows]
+  );
+
   function clearFilters() {
     setFromDate("");
     setToDate("");
@@ -208,6 +223,44 @@ export default function StockOutClient({
               Parent: {parentSearch.trim()}
             </span>
           ) : null}
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Total Product Types
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {summary.totalProductTypes.toLocaleString("en-BD")}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Unique stock-out product SKUs in the current filter
+          </p>
+        </div>
+
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Total Invoices
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {summary.totalInvoices.toLocaleString("en-BD")}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Stock-out invoice lines in the current filter
+          </p>
+        </div>
+
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Total Invoice Value
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {formatMoney(summary.totalInvoiceValue)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Product value of the filtered stock-out invoices
+          </p>
         </div>
       </section>
 

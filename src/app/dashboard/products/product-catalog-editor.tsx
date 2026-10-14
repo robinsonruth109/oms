@@ -39,7 +39,6 @@ import {
 } from "lucide-react";
 
 import {
-  applyCatalogImportCandidate,
   createProductWebsiteTaxonomyTerm,
   deleteProductMedia,
   moveProductGalleryImage,
@@ -48,6 +47,7 @@ import {
   saveProductWebsiteListing,
   setPrimaryProductImage,
 } from "./catalog-actions";
+import { connectCatalogCandidateToOmsProduct } from "../integrations/actions";
 
 type TaxonomyTerm = {
   id: string;
@@ -850,13 +850,16 @@ export default function ProductCatalogEditor({
                   onClick={() =>
                     startTransition(async () =>
                       showResult(
-                        await applyCatalogImportCandidate(candidate.id)
+                        await connectCatalogCandidateToOmsProduct(
+                          candidate.id,
+                          product.id
+                        )
                       )
                     )
                   }
                   className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold"
                 >
-                  Import Current Website Content
+                  Re-import Website Content, Media & Collection
                 </button>
               </div>
             ))}

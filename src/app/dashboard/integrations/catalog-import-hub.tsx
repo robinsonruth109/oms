@@ -19,6 +19,12 @@ export type CatalogImportHubRow = {
   remoteProductCount: number;
   hasConflict: boolean;
   representativeCandidateId: string;
+  sourceOptions: Array<{
+    candidateId: string;
+    websiteName: string;
+    productName: string;
+    sellingPrice: number;
+  }>;
 };
 
 type Props = {
@@ -42,6 +48,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
   const [filter, setFilter] = useState<Filter>("ALL");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [sourceBySku, setSourceBySku] = useState<Record<string, string>>({});
 
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -72,11 +79,28 @@ export default function CatalogImportHub({ summary, rows }: Props) {
   }
 
   function createOmsProduct(row: CatalogImportHubRow) {
+    const candidateId =
+      sourceBySku[row.sku] ||
+      (row.sourceOptions.length === 1
+        ? row.sourceOptions[0].candidateId
+        : "");
+
+    if (!candidateId) {
+      setMessage("Choose which website should provide the initial OMS master content.");
+      return;
+    }
+
+    const source = row.sourceOptions.find(
+      (option) => option.candidateId === candidateId
+    );
+
     if (
       !window.confirm(
-        "Create OMS Product for " +
+        "Create one OMS Master for " +
           row.sku +
-          "? Website stock quantity and purchase cost will NOT be imported."
+          " using " +
+          (source?.websiteName || "the selected website") +
+          " as the initial content source?\n\nAll websites carrying this SKU will be connected to the same OMS product. Website stock quantity and purchase cost will NOT be imported."
       )
     ) {
       return;
@@ -84,9 +108,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
 
     setMessage("");
     startTransition(async () => {
-      const result = await createOmsProductFromCatalogCandidate(
-        row.representativeCandidateId
-      );
+      const result = await createOmsProductFromCatalogCandidate(candidateId);
       setMessage(result.message);
       if (result.success) window.location.reload();
     });
@@ -97,7 +119,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
     { key: "MATCHED", label: "Matched" },
     { key: "MISSING", label: "Missing OMS" },
     { key: "MULTI", label: "Multiple Websites" },
-    { key: "CONFLICT", label: "Content Conflict" },
+    { key: "CONFLICT", label: "Content Difference" },
   ];
 
   return (
@@ -248,7 +270,7 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                           <Badge label="MULTI-STORE" className="bg-blue-50 text-blue-700" />
                         ) : null}
                         {row.hasConflict ? (
-                          <Badge label="CONFLICT" className="bg-rose-50 text-rose-700" />
+                          <Badge label="CONTENT DIFF" className="bg-rose-50 text-rose-700" />
                         ) : row.matchedProductId ? (
                           <Badge label="READY TO REVIEW" className="bg-emerald-50 text-emerald-700" />
                         ) : (
@@ -264,19 +286,61 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                         >
                           Review Product
                         </Link>
-                      ) : row.websiteCount === 1 && !row.hasConflict ? (
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => createOmsProduct(row)}
-                          className="inline-flex rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                        >
-                          Create OMS Product
-                        </button>
                       ) : (
-                        <span className="text-xs text-slate-400">
-                          Choose source before creation
-                        </span>
+                        <div className="ml-auto flex w-[260px] flex-col gap-2">
+                          {row.sourceOptions.length > 1 ? (
+                            <select
+                              value={sourceBySku[row.sku] || ""}
+                              onChange={(event) =>
+                                setSourceBySku((current) => ({
+                                  ...current,
+                                  [row.sku]: event.target.value,
+                                }))
+                              }
+                              disabled={pending}
+                              className="w-full rounded-lg border bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
+                              aria-label={"Choose master content source for " + row.sku}
+                            >
+                              <option value="">Choose master content source</option>
+                              {row.sourceOptions.map((option) => (
+                                <option
+                                  key={option.candidateId}
+                                  value={option.candidateId}
+                                >
+                                  {option.websiteName}
+                                  {option.sellingPrice > 0
+                                    ? " · Tk " + option.sellingPrice.toLocaleString("en-BD")
+                                    : ""}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="rounded-lg bg-slate-50 px-2.5 py-2 text-left text-xs text-slate-600">
+                              Source: {row.sourceOptions[0]?.websiteName || row.websiteNames[0]}
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={
+                              pending ||
+                              (row.sourceOptions.length > 1 &&
+                                !sourceBySku[row.sku])
+                            }
+                            onClick={() => createOmsProduct(row)}
+                            className="inline-flex justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {row.websiteCount > 1
+                              ? "Review & Create OMS Master"
+                              : "Create OMS Product"}
+                          </button>
+
+                          {row.websiteCount > 1 ? (
+                            <p className="text-left text-[10px] leading-4 text-slate-400">
+                              Creates 1 OMS product and connects all {row.websiteCount} websites.
+                            </p>
+                          ) : null}
+                        </div>
                       )}
                     </td>
                   </tr>

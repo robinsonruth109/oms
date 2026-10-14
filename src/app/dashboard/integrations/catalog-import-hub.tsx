@@ -6,8 +6,10 @@ import { ChevronDown, ChevronUp, Layers3, RefreshCw, Search, Store } from "lucid
 
 import { Button } from "@/components/ui/button";
 import {
+  connectCatalogCandidateToOmsProduct,
   createOmsProductFromCatalogCandidate,
   scanAllIntegrationCatalogs,
+  searchOmsProductsForCatalogLink,
 } from "./actions";
 
 export type CatalogImportHubRow = {
@@ -49,6 +51,19 @@ export default function CatalogImportHub({ summary, rows }: Props) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [sourceBySku, setSourceBySku] = useState<Record<string, string>>({});
+  const [manualLinkSku, setManualLinkSku] = useState<string | null>(null);
+  const [manualSearch, setManualSearch] = useState("");
+  const [manualResults, setManualResults] = useState<
+    Array<{
+      id: string;
+      sku: string;
+      name: string;
+      parentSku: string;
+      sellingPrice: number;
+    }>
+  >([]);
+  const [selectedOmsProductId, setSelectedOmsProductId] = useState("");
+  const [searchingOms, setSearchingOms] = useState(false);
 
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -109,6 +124,65 @@ export default function CatalogImportHub({ summary, rows }: Props) {
     setMessage("");
     startTransition(async () => {
       const result = await createOmsProductFromCatalogCandidate(candidateId);
+      setMessage(result.message);
+      if (result.success) window.location.reload();
+    });
+  }
+
+  async function searchOmsProducts() {
+    const query = manualSearch.trim();
+    if (query.length < 2) {
+      setMessage("Type at least 2 characters to search OMS SKU or product name.");
+      return;
+    }
+
+    setSearchingOms(true);
+    setMessage("");
+    try {
+      const result = await searchOmsProductsForCatalogLink(query);
+      setManualResults(result.products || []);
+      setMessage(result.message);
+    } finally {
+      setSearchingOms(false);
+    }
+  }
+
+  function openManualLink(row: CatalogImportHubRow) {
+    setManualLinkSku(row.sku);
+    setManualSearch("");
+    setManualResults([]);
+    setSelectedOmsProductId("");
+    setMessage("");
+  }
+
+  function connectToOmsProduct(row: CatalogImportHubRow) {
+    if (!selectedOmsProductId) {
+      setMessage("Select an OMS SKU first.");
+      return;
+    }
+
+    const selected = manualResults.find(
+      (product) => product.id === selectedOmsProductId
+    );
+
+    if (
+      !window.confirm(
+        "Connect website SKU " +
+          row.sku +
+          " to OMS SKU " +
+          (selected?.sku || "") +
+          "?\n\nThis will only connect website listings. OMS stock quantity and purchase price will NOT be changed."
+      )
+    ) {
+      return;
+    }
+
+    setMessage("");
+    startTransition(async () => {
+      const result = await connectCatalogCandidateToOmsProduct(
+        row.representativeCandidateId,
+        selectedOmsProductId
+      );
       setMessage(result.message);
       if (result.success) window.location.reload();
     });
@@ -334,6 +408,110 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                               ? "Review & Create OMS Master"
                               : "Create OMS Product"}
                           </button>
+
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => openManualLink(row)}
+                            className="inline-flex justify-center rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            Connect to Existing OMS SKU
+                          </button>
+
+                          {manualLinkSku === row.sku ? (
+                            <div className="rounded-xl border bg-slate-50 p-3 text-left">
+                              <p className="text-xs font-semibold text-slate-800">
+                                Search existing OMS product
+                              </p>
+                              <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                                Search by SKU, product name, parent SKU or parent name.
+                              </p>
+
+                              <div className="mt-2 flex gap-2">
+                                <input
+                                  value={manualSearch}
+                                  onChange={(event) =>
+                                    setManualSearch(event.target.value)
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      void searchOmsProducts();
+                                    }
+                                  }}
+                                  placeholder="Search OMS SKU..."
+                                  className="min-w-0 flex-1 rounded-lg border bg-white px-2.5 py-2 text-xs outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={searchingOms}
+                                  onClick={() => void searchOmsProducts()}
+                                  className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                >
+                                  {searchingOms ? "Searching..." : "Search"}
+                                </button>
+                              </div>
+
+                              {manualResults.length ? (
+                                <div className="mt-2 max-h-52 space-y-1.5 overflow-auto">
+                                  {manualResults.map((product) => (
+                                    <label
+                                      key={product.id}
+                                      className={
+                                        "flex cursor-pointer items-start gap-2 rounded-lg border p-2 transition " +
+                                        (selectedOmsProductId === product.id
+                                          ? "border-slate-900 bg-white"
+                                          : "bg-white hover:border-slate-300")
+                                      }
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={"manual-oms-link-" + row.sku}
+                                        value={product.id}
+                                        checked={selectedOmsProductId === product.id}
+                                        onChange={() =>
+                                          setSelectedOmsProductId(product.id)
+                                        }
+                                        className="mt-0.5"
+                                      />
+                                      <span className="min-w-0">
+                                        <span className="block break-words text-xs font-semibold text-slate-900">
+                                          {product.sku}
+                                        </span>
+                                        <span className="mt-0.5 block break-words text-[10px] text-slate-500">
+                                          {product.name} · Parent {product.parentSku}
+                                          {product.sellingPrice > 0
+                                            ? " · Tk " +
+                                              product.sellingPrice.toLocaleString(
+                                                "en-BD"
+                                              )
+                                            : ""}
+                                        </span>
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={pending || !selectedOmsProductId}
+                                  onClick={() => connectToOmsProduct(row)}
+                                  className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  Connect Selected OMS SKU
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setManualLinkSku(null)}
+                                  className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
 
                           {row.websiteCount > 1 ? (
                             <p className="text-left text-[10px] leading-4 text-slate-400">

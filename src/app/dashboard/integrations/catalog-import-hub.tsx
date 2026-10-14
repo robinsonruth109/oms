@@ -509,6 +509,52 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                                 </button>
                               </div>
 
+                              {row.sourceOptions.length > 1 ? (
+                                <div className="mt-3">
+                                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                    Master content source
+                                  </label>
+                                  <select
+                                    value={sourceBySku[row.sku] || ""}
+                                    onChange={(event) =>
+                                      setSourceBySku((current) => ({
+                                        ...current,
+                                        [row.sku]: event.target.value,
+                                      }))
+                                    }
+                                    disabled={pending}
+                                    className="w-full rounded-lg border bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
+                                  >
+                                    <option value="">Choose website source</option>
+                                    {row.sourceOptions.map((option) => (
+                                      <option
+                                        key={option.candidateId}
+                                        value={option.candidateId}
+                                      >
+                                        {option.websiteName}
+                                        {option.sellingPrice > 0
+                                          ? " · Tk " +
+                                            option.sellingPrice.toLocaleString("en-BD")
+                                          : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                                    Content, media and collection will come from this website.
+                                    The selected OMS variation keeps its own stock, purchase price
+                                    and selling price.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="mt-3 rounded-lg border bg-white px-2.5 py-2 text-[10px] text-slate-600">
+                                  Content source:{" "}
+                                  <strong>
+                                    {row.sourceOptions[0]?.websiteName ||
+                                      row.websiteNames[0]}
+                                  </strong>
+                                </div>
+                              )}
+
                               {manualResults.length ? (
                                 <div className="mt-2 max-h-52 space-y-1.5 overflow-auto">
                                   {manualResults.map((product) => (
@@ -553,11 +599,19 @@ export default function CatalogImportHub({ summary, rows }: Props) {
                               <div className="mt-3 flex gap-2">
                                 <button
                                   type="button"
-                                  disabled={pending || !selectedOmsProductId}
+                                  disabled={
+                                    pending ||
+                                    !selectedOmsProductId ||
+                                    (row.sourceOptions.length > 1 &&
+                                      !sourceBySku[row.sku])
+                                  }
                                   onClick={() => connectToOmsProduct(row)}
                                   className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                  Connect Selected OMS SKU
+                                  {row.sourceOptions.length > 1 &&
+                                  !sourceBySku[row.sku]
+                                    ? "Choose Source First"
+                                    : "Connect Selected OMS SKU"}
                                 </button>
                                 <button
                                   type="button"

@@ -73,6 +73,7 @@ export default async function IntegrationsPage() {
     }),
     prisma.productCatalogImportCandidate.findMany({
       select: {
+        id: true,
         sku: true,
         remoteProductId: true,
         payloadJson: true,
@@ -129,6 +130,7 @@ export default async function IntegrationsPage() {
       websiteNames: Set<string>;
       remoteProductIds: Set<string>;
       signatures: Set<string>;
+      representativeCandidateId: string;
     }
   >();
 
@@ -144,6 +146,7 @@ export default async function IntegrationsPage() {
       websiteNames: new Set<string>(),
       remoteProductIds: new Set<string>(),
       signatures: new Set<string>(),
+      representativeCandidateId: candidate.id,
     };
 
     if (!current.matchedProductId && candidate.matchedProductId) {
@@ -172,6 +175,7 @@ export default async function IntegrationsPage() {
       ),
       remoteProductCount: row.remoteProductIds.size,
       hasConflict: row.integrationIds.size > 1 && row.signatures.size > 1,
+      representativeCandidateId: row.representativeCandidateId,
     }))
     .sort((a, b) => {
       if (a.matchedProductId === null && b.matchedProductId !== null) return -1;

@@ -5,6 +5,11 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  createProductMediaObjectKey,
+  deleteProductMediaObject,
+  uploadProductMediaObject,
+} from "@/lib/product-media-storage";
 
 export type ActionState = {
   success: boolean;
@@ -82,6 +87,216 @@ function productNameFromWebsite(
 
 function productInternalSlug(sku: string) {
   return sku.trim().toLowerCase();
+}
+
+function absolutizeHtmlMediaUrls(value: unknown, baseUrl: string) {
+  const html = String(value ?? "");
+  if (!html.trim()) return "";
+
+  const base = normalizeBaseUrl(baseUrl) + "/";
+  return html.replace(
+    /\b(src|poster)\s*=\s*(["'])(.*?)\2/gi,
+    (full, attr: string, quote: string, rawUrl: string) => {
+      const url = String(rawUrl || "").trim();
+      if (
+        !url ||
+        /^(?:https?:|data:|blob:|mailto:|tel:|#)/i.test(url)
+      ) {
+        return full;
+      }
+
+      try {
+        return attr + "=" + quote + new URL(url, base).toString() + quote;
+      } catch {
+        return full;
+      }
+    }
+  );
+}
+
+function remoteTaxonomyRows(payload: Record<string, unknown>) {
+  return Array.isArray(payload.taxonomy)
+    ? payload.taxonomy.filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object"
+      )
+    : [];
+}
+
+function remoteMediaRows(payload: Record<string, unknown>) {
+  return Array.isArray(payload.media)
+    ? payload.media.filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object"
+      )
+    : [];
+}
+
+async function importRemoteMediaForExistingProduct(input: {
+  productId: string;
+  payload: Record<string, unknown>;
+}) {
+  const rows = remoteMediaRows(input.payload);
+  if (!rows.length) {
+    return { importedImages: 0, importedVideos: 0 };
+  }
+
+  const [imageCount, videoCount] = await Promise.all([
+    prisma.productMedia.count({
+      where: { productId: input.productId, kind: "IMAGE" },
+    }),
+    prisma.productMedia.count({
+      where: { productId: input.productId, kind: "VIDEO" },
+    }),
+  ]);
+
+  const wanted = rows
+    .map((row, index) => ({
+      row,
+      index,
+      kind: String(row.kind || "").toUpperCase(),
+      url: String(row.url || "").trim(),
+      isPrimary: Boolean(row.isPrimary),
+      sortOrder: Number.isSafeInteger(Number(row.sortOrder))
+        ? Number(row.sortOrder)
+        : index,
+    }))
+    .filter(({ kind, url }) => {
+      if (!url || !["IMAGE", "VIDEO"].includes(kind)) return false;
+      if (kind === "IMAGE" && imageCount > 0) return false;
+      if (kind === "VIDEO" && videoCount > 0) return false;
+      return true;
+    });
+
+  if (!wanted.length) {
+    return { importedImages: 0, importedVideos: 0 };
+  }
+
+  const uploaded: Array<{
+    objectKey: string;
+    kind: "IMAGE" | "VIDEO";
+    originalFileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    checksum: string;
+    isPrimary: boolean;
+    sortOrder: number;
+  }> = [];
+
+  try {
+    for (const item of wanted) {
+      const response = await fetch(item.url, {
+        cache: "no-store",
+        redirect: "follow",
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          "Website media download failed with HTTP " +
+            response.status +
+            ": " +
+            item.url
+        );
+      }
+
+      const buffer = await response.arrayBuffer();
+      const sizeBytes = buffer.byteLength;
+      const maxBytes = item.kind === "VIDEO" ? 60 * 1024 * 1024 : 12 * 1024 * 1024;
+
+      if (sizeBytes <= 0 || sizeBytes > maxBytes) {
+        throw new Error(
+          "Website " +
+            item.kind.toLowerCase() +
+            " is outside the OMS upload limit: " +
+            item.url
+        );
+      }
+
+      const urlPath = (() => {
+        try {
+          return new URL(item.url).pathname;
+        } catch {
+          return "";
+        }
+      })();
+
+      const fallbackName =
+        item.kind === "VIDEO"
+          ? "website-video.mp4"
+          : "website-image.jpg";
+      const originalFileName =
+        optionalText(item.row.originalFileName) ||
+        (urlPath ? decodeURIComponent(urlPath.split("/").pop() || "") : "") ||
+        fallbackName;
+      const mimeType =
+        optionalText(item.row.mimeType) ||
+        response.headers.get("content-type")?.split(";")[0]?.trim() ||
+        (item.kind === "VIDEO" ? "video/mp4" : "image/jpeg");
+      const checksum = crypto
+        .createHash("sha256")
+        .update(Buffer.from(buffer))
+        .digest("hex");
+
+      const objectKey = createProductMediaObjectKey({
+        productId: input.productId,
+        kind: item.kind as "IMAGE" | "VIDEO",
+        originalFileName,
+      });
+
+      await uploadProductMediaObject({
+        objectKey,
+        body: buffer,
+        contentType: mimeType,
+        contentLength: sizeBytes,
+      });
+
+      uploaded.push({
+        objectKey,
+        kind: item.kind as "IMAGE" | "VIDEO",
+        originalFileName,
+        mimeType,
+        sizeBytes,
+        checksum,
+        isPrimary: item.kind === "IMAGE" && item.isPrimary,
+        sortOrder: item.sortOrder,
+      });
+    }
+
+    const imageRows = uploaded.filter((row) => row.kind === "IMAGE");
+    const hasExplicitPrimary = imageRows.some((row) => row.isPrimary);
+
+    await prisma.$transaction(async (tx) => {
+      for (let index = 0; index < uploaded.length; index += 1) {
+        const row = uploaded[index];
+        await tx.productMedia.create({
+          data: {
+            productId: input.productId,
+            kind: row.kind,
+            objectKey: row.objectKey,
+            originalFileName: row.originalFileName,
+            mimeType: row.mimeType,
+            sizeBytes: BigInt(row.sizeBytes),
+            checksum: row.checksum,
+            isPrimary:
+              row.kind === "IMAGE" &&
+              (row.isPrimary || (!hasExplicitPrimary && index === 0)),
+            sortOrder: row.sortOrder,
+          },
+        });
+      }
+    });
+
+    return {
+      importedImages: uploaded.filter((row) => row.kind === "IMAGE").length,
+      importedVideos: uploaded.filter((row) => row.kind === "VIDEO").length,
+    };
+  } catch (error) {
+    for (const row of uploaded) {
+      await deleteProductMediaObject(row.objectKey).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 async function getCatalogIntegration(integrationId: string) {
@@ -1082,13 +1297,15 @@ export async function connectCatalogCandidateToOmsProduct(
     const [candidate, product] = await Promise.all([
       prisma.productCatalogImportCandidate.findUnique({
         where: { id: candidateId },
+        include: {
+          integration: true,
+        },
       }),
       prisma.product.findUnique({
         where: { id: productId },
         include: {
-          catalogContent: {
-            select: { oldPrice: true },
-          },
+          parent: true,
+          catalogContent: true,
         },
       }),
     ]);
@@ -1101,11 +1318,14 @@ export async function connectCatalogCandidateToOmsProduct(
     }
 
     const sourceKey = normalizedSkuKey(candidate.sku);
+    const sourcePayload = JSON.parse(
+      candidate.payloadJson
+    ) as Record<string, unknown>;
 
     const allCandidates = await prisma.productCatalogImportCandidate.findMany({
       include: {
         integration: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, baseUrl: true },
         },
       },
     });
@@ -1137,19 +1357,72 @@ export async function connectCatalogCandidateToOmsProduct(
       };
     }
 
-    const masterSellingPrice = Number(product.sellingPrice || 0);
-    const masterOldPrice = Number(product.catalogContent?.oldPrice || 0);
+    // IMPORTANT: manual linking uses the exact selected OMS Product row.
+    // No ProductParent or Product is created, and inventory/buying/selling
+    // fields on the selected OMS variation are never updated here.
+    const baseUrl = candidate.integration.baseUrl || "";
+    const shortDescriptionHtml = absolutizeHtmlMediaUrls(
+      sourcePayload.shortDescriptionHtml,
+      baseUrl
+    );
+    const fullDescriptionHtml = absolutizeHtmlMediaUrls(
+      sourcePayload.fullDescriptionHtml,
+      baseUrl
+    );
 
     await prisma.$transaction(async (tx) => {
+      await tx.productCatalogContent.upsert({
+        where: { productId: product.id },
+        create: {
+          productId: product.id,
+          banglaName: optionalText(sourcePayload.banglaName),
+          englishName: optionalText(sourcePayload.englishName),
+          productSlug: optionalText(sourcePayload.productSlug),
+          shortDescriptionHtml: optionalText(shortDescriptionHtml),
+          fullDescriptionHtml: optionalText(fullDescriptionHtml),
+          oldPrice:
+            product.catalogContent?.oldPrice ??
+            (nonNegativeMoney(sourcePayload.oldPrice) > 0
+              ? nonNegativeMoney(sourcePayload.oldPrice)
+              : null),
+          featured: Boolean(sourcePayload.featured),
+          sortOrder: Number.isSafeInteger(Number(sourcePayload.sortOrder))
+            ? Number(sourcePayload.sortOrder)
+            : 0,
+          metaTitle: optionalText(sourcePayload.metaTitle),
+          metaDescription: optionalText(sourcePayload.metaDescription),
+          externalVideoUrl: optionalText(sourcePayload.externalVideoUrl),
+        },
+        update: {
+          banglaName: optionalText(sourcePayload.banglaName),
+          englishName: optionalText(sourcePayload.englishName),
+          productSlug: optionalText(sourcePayload.productSlug),
+          shortDescriptionHtml: optionalText(shortDescriptionHtml),
+          fullDescriptionHtml: optionalText(fullDescriptionHtml),
+          // Preserve an OMS-maintained old price if it already exists.
+          oldPrice:
+            product.catalogContent?.oldPrice ??
+            (nonNegativeMoney(sourcePayload.oldPrice) > 0
+              ? nonNegativeMoney(sourcePayload.oldPrice)
+              : null),
+          featured: Boolean(sourcePayload.featured),
+          sortOrder: Number.isSafeInteger(Number(sourcePayload.sortOrder))
+            ? Number(sourcePayload.sortOrder)
+            : 0,
+          metaTitle: optionalText(sourcePayload.metaTitle),
+          metaDescription: optionalText(sourcePayload.metaDescription),
+          externalVideoUrl: optionalText(sourcePayload.externalVideoUrl),
+        },
+      });
+
       for (const websiteCandidate of equivalentCandidates) {
         const payload = JSON.parse(
           websiteCandidate.payloadJson
         ) as Record<string, unknown>;
 
-        const websiteSellingPrice = nonNegativeMoney(payload.sellingPrice);
-        const websiteOldPrice = nonNegativeMoney(payload.oldPrice);
-
-        await tx.productWebsiteListing.upsert({
+        // Manual connect intentionally inherits the selected OMS Product's
+        // selling price. Website prices do not override OMS pricing.
+        const listing = await tx.productWebsiteListing.upsert({
           where: {
             productId_integrationId: {
               productId: product.id,
@@ -1161,12 +1434,8 @@ export async function connectCatalogCandidateToOmsProduct(
             integrationId: websiteCandidate.integrationId,
             remoteProductId: websiteCandidate.remoteProductId,
             productSlugOverride: optionalText(payload.productSlug),
-            sellingPriceOverride:
-              websiteSellingPrice !== masterSellingPrice
-                ? websiteSellingPrice
-                : null,
-            oldPriceOverride:
-              websiteOldPrice !== masterOldPrice ? websiteOldPrice : null,
+            sellingPriceOverride: null,
+            oldPriceOverride: null,
             active: payload.active !== false,
             featuredOverride:
               typeof payload.featured === "boolean"
@@ -1178,12 +1447,8 @@ export async function connectCatalogCandidateToOmsProduct(
           update: {
             remoteProductId: websiteCandidate.remoteProductId,
             productSlugOverride: optionalText(payload.productSlug),
-            sellingPriceOverride:
-              websiteSellingPrice !== masterSellingPrice
-                ? websiteSellingPrice
-                : null,
-            oldPriceOverride:
-              websiteOldPrice !== masterOldPrice ? websiteOldPrice : null,
+            sellingPriceOverride: null,
+            oldPriceOverride: null,
             active: payload.active !== false,
             featuredOverride:
               typeof payload.featured === "boolean"
@@ -1191,8 +1456,70 @@ export async function connectCatalogCandidateToOmsProduct(
                 : null,
             syncStatus: "SYNCED",
             lastSyncedAt: new Date(),
+            lastSyncError: null,
           },
         });
+
+        const taxonomy = remoteTaxonomyRows(payload);
+        const termIds: string[] = [];
+
+        for (const rawTerm of taxonomy) {
+          const externalId = String(rawTerm.externalId || "").trim();
+          const type = String(rawTerm.type || "").toUpperCase();
+          if (
+            !externalId ||
+            !["CATEGORY", "SUBCATEGORY", "COLLECTION"].includes(type)
+          ) {
+            continue;
+          }
+
+          const term = await tx.productWebsiteTaxonomyTerm.upsert({
+            where: {
+              integrationId_type_externalId: {
+                integrationId: websiteCandidate.integrationId,
+                type: type as "CATEGORY" | "SUBCATEGORY" | "COLLECTION",
+                externalId,
+              },
+            },
+            create: {
+              integrationId: websiteCandidate.integrationId,
+              externalId,
+              type: type as "CATEGORY" | "SUBCATEGORY" | "COLLECTION",
+              parentExternalId: optionalText(rawTerm.parentExternalId),
+              name:
+                optionalText(rawTerm.name) ||
+                optionalText(rawTerm.slug) ||
+                externalId,
+              slug: optionalText(rawTerm.slug) || externalId,
+              active: true,
+            },
+            update: {
+              parentExternalId: optionalText(rawTerm.parentExternalId),
+              name:
+                optionalText(rawTerm.name) ||
+                optionalText(rawTerm.slug) ||
+                externalId,
+              slug: optionalText(rawTerm.slug) || externalId,
+              active: true,
+            },
+          });
+
+          termIds.push(term.id);
+        }
+
+        await tx.productWebsiteTaxonomy.deleteMany({
+          where: { listingId: listing.id },
+        });
+
+        if (termIds.length) {
+          await tx.productWebsiteTaxonomy.createMany({
+            data: termIds.map((termId) => ({
+              listingId: listing.id,
+              termId,
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
 
       await tx.productCatalogImportCandidate.updateMany({
@@ -1206,6 +1533,11 @@ export async function connectCatalogCandidateToOmsProduct(
       });
     });
 
+    const mediaResult = await importRemoteMediaForExistingProduct({
+      productId: product.id,
+      payload: sourcePayload,
+    });
+
     revalidatePath("/dashboard/integrations");
     revalidatePath("/dashboard/products");
 
@@ -1214,11 +1546,15 @@ export async function connectCatalogCandidateToOmsProduct(
       message:
         "Connected website SKU " +
         candidate.sku +
-        " to OMS SKU " +
+        " to existing OMS variation " +
         product.sku +
-        ". Connected " +
+        ". Preserved OMS stock, purchase price and selling price. Connected " +
         equivalentCandidates.length +
-        " website listing(s). OMS stock quantity and purchase price were not changed.",
+        " website listing(s), restored website taxonomy, imported " +
+        mediaResult.importedImages +
+        " image(s) and " +
+        mediaResult.importedVideos +
+        " video(s) where OMS media was empty.",
     };
   } catch (error) {
     return { success: false, message: safeMessage(error) };

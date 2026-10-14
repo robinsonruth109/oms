@@ -1004,3 +1004,223 @@ export async function createOmsProductFromCatalogCandidate(
     return { success: false, message: safeMessage(error) };
   }
 }
+
+
+export async function searchOmsProductsForCatalogLink(
+  query: string
+): Promise<
+  ActionState & {
+    products?: Array<{
+      id: string;
+      sku: string;
+      name: string;
+      parentSku: string;
+      sellingPrice: number;
+    }>;
+  }
+> {
+  try {
+    await requireAdmin();
+
+    const search = String(query || "").trim();
+    if (search.length < 2) {
+      return {
+        success: true,
+        message: "Type at least 2 characters.",
+        products: [],
+      };
+    }
+
+    const products = await prisma.product.findMany({
+      where: {
+        OR: [
+          { sku: { contains: search } },
+          { name: { contains: search } },
+          { parent: { sku: { contains: search } } },
+          { parent: { name: { contains: search } } },
+        ],
+      },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        sellingPrice: true,
+        parent: {
+          select: { sku: true },
+        },
+      },
+      orderBy: [{ sku: "asc" }],
+      take: 20,
+    });
+
+    return {
+      success: true,
+      message:
+        products.length > 0
+          ? products.length + " OMS product(s) found."
+          : "No OMS product found.",
+      products: products.map((product) => ({
+        id: product.id,
+        sku: product.sku,
+        name: product.name,
+        parentSku: product.parent.sku,
+        sellingPrice: Number(product.sellingPrice || 0),
+      })),
+    };
+  } catch (error) {
+    return { success: false, message: safeMessage(error), products: [] };
+  }
+}
+
+export async function connectCatalogCandidateToOmsProduct(
+  candidateId: string,
+  productId: string
+): Promise<ActionState> {
+  try {
+    await requireAdmin();
+
+    const [candidate, product] = await Promise.all([
+      prisma.productCatalogImportCandidate.findUnique({
+        where: { id: candidateId },
+      }),
+      prisma.product.findUnique({
+        where: { id: productId },
+        include: {
+          catalogContent: {
+            select: { oldPrice: true },
+          },
+        },
+      }),
+    ]);
+
+    if (!candidate) {
+      return { success: false, message: "Website product candidate not found." };
+    }
+    if (!product) {
+      return { success: false, message: "OMS product not found." };
+    }
+
+    const sourceKey = normalizedSkuKey(candidate.sku);
+
+    const allCandidates = await prisma.productCatalogImportCandidate.findMany({
+      include: {
+        integration: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    const equivalentCandidates = allCandidates.filter(
+      (row) => normalizedSkuKey(row.sku) === sourceKey
+    );
+
+    const integrationCounts = new Map<string, number>();
+    for (const row of equivalentCandidates) {
+      integrationCounts.set(
+        row.integrationId,
+        (integrationCounts.get(row.integrationId) || 0) + 1
+      );
+    }
+
+    const ambiguousWebsites = equivalentCandidates
+      .filter((row) => (integrationCounts.get(row.integrationId) || 0) > 1)
+      .map((row) => row.integration.name)
+      .filter((value, index, list) => list.indexOf(value) === index);
+
+    if (ambiguousWebsites.length) {
+      return {
+        success: false,
+        message:
+          "Manual connection is blocked because this website SKU appears more than once on: " +
+          ambiguousWebsites.join(", ") +
+          ". Fix the duplicate remote SKU first.",
+      };
+    }
+
+    const masterSellingPrice = Number(product.sellingPrice || 0);
+    const masterOldPrice = Number(product.catalogContent?.oldPrice || 0);
+
+    await prisma.$transaction(async (tx) => {
+      for (const websiteCandidate of equivalentCandidates) {
+        const payload = JSON.parse(
+          websiteCandidate.payloadJson
+        ) as Record<string, unknown>;
+
+        const websiteSellingPrice = nonNegativeMoney(payload.sellingPrice);
+        const websiteOldPrice = nonNegativeMoney(payload.oldPrice);
+
+        await tx.productWebsiteListing.upsert({
+          where: {
+            productId_integrationId: {
+              productId: product.id,
+              integrationId: websiteCandidate.integrationId,
+            },
+          },
+          create: {
+            productId: product.id,
+            integrationId: websiteCandidate.integrationId,
+            remoteProductId: websiteCandidate.remoteProductId,
+            productSlugOverride: optionalText(payload.productSlug),
+            sellingPriceOverride:
+              websiteSellingPrice !== masterSellingPrice
+                ? websiteSellingPrice
+                : null,
+            oldPriceOverride:
+              websiteOldPrice !== masterOldPrice ? websiteOldPrice : null,
+            active: payload.active !== false,
+            featuredOverride:
+              typeof payload.featured === "boolean"
+                ? Boolean(payload.featured)
+                : null,
+            syncStatus: "SYNCED",
+            lastSyncedAt: new Date(),
+          },
+          update: {
+            remoteProductId: websiteCandidate.remoteProductId,
+            productSlugOverride: optionalText(payload.productSlug),
+            sellingPriceOverride:
+              websiteSellingPrice !== masterSellingPrice
+                ? websiteSellingPrice
+                : null,
+            oldPriceOverride:
+              websiteOldPrice !== masterOldPrice ? websiteOldPrice : null,
+            active: payload.active !== false,
+            featuredOverride:
+              typeof payload.featured === "boolean"
+                ? Boolean(payload.featured)
+                : null,
+            syncStatus: "SYNCED",
+            lastSyncedAt: new Date(),
+          },
+        });
+      }
+
+      await tx.productCatalogImportCandidate.updateMany({
+        where: {
+          id: { in: equivalentCandidates.map((row) => row.id) },
+        },
+        data: {
+          matchedProductId: product.id,
+          status: "MATCHED",
+        },
+      });
+    });
+
+    revalidatePath("/dashboard/integrations");
+    revalidatePath("/dashboard/products");
+
+    return {
+      success: true,
+      message:
+        "Connected website SKU " +
+        candidate.sku +
+        " to OMS SKU " +
+        product.sku +
+        ". Connected " +
+        equivalentCandidates.length +
+        " website listing(s). OMS stock quantity and purchase price were not changed.",
+    };
+  } catch (error) {
+    return { success: false, message: safeMessage(error) };
+  }
+}

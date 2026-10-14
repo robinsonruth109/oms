@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
 import RestoreButton from "./restore-button";
 
 type GroupedStockOutRow = {
@@ -9,6 +10,7 @@ type GroupedStockOutRow = {
   totalInvoiceQty: number;
   totalProductQty: number;
   totalProductPrice: number;
+  parentSkus: string[];
   pageSources: string[];
   orderIds: string[];
   invoices: {
@@ -21,11 +23,37 @@ type GroupedStockOutRow = {
     deliveryCharge: number;
     pageName: string;
     sourceName: string;
+    parentSku: string;
+    stockOutAt: string;
   }[];
 };
 
 function formatMoney(value: number) {
   return `৳ ${value.toFixed(2)}`;
+}
+
+function bangladeshDateKey(value: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+
+  const year = parts.find((part) => part.type === "year")?.value || "";
+  const month = parts.find((part) => part.type === "month")?.value || "";
+  const day = parts.find((part) => part.type === "day")?.value || "";
+
+  return year && month && day ? `${year}-${month}-${day}` : "";
+}
+
+function formatStockOutDate(value: string) {
+  return new Intl.DateTimeFormat("en-BD", {
+    timeZone: "Asia/Dhaka",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 export default function StockOutClient({
@@ -34,6 +62,66 @@ export default function StockOutClient({
   rows: GroupedStockOutRow[];
 }) {
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [parentSearch, setParentSearch] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const query = parentSearch.trim().toLowerCase();
+
+    return rows
+      .map((row) => {
+        const invoices = row.invoices.filter((invoice) => {
+          const dateKey = bangladeshDateKey(invoice.stockOutAt);
+
+          if (fromDate && dateKey < fromDate) return false;
+          if (toDate && dateKey > toDate) return false;
+
+          if (
+            query &&
+            !invoice.parentSku.toLowerCase().includes(query) &&
+            !row.parentSkus.some((sku) => sku.toLowerCase().includes(query))
+          ) {
+            return false;
+          }
+
+          return true;
+        });
+
+        if (!invoices.length) return null;
+
+        return {
+          ...row,
+          invoices,
+          orderIds: Array.from(new Set(invoices.map((invoice) => invoice.orderId))),
+          totalInvoiceQty: invoices.length,
+          totalProductQty: invoices.reduce(
+            (sum, invoice) => sum + invoice.quantity,
+            0
+          ),
+          totalProductPrice: invoices.reduce(
+            (sum, invoice) => sum + invoice.lineTotal,
+            0
+          ),
+          pageSources: Array.from(
+            new Set(
+              invoices.map(
+                (invoice) => `${invoice.pageName} / ${invoice.sourceName}`
+              )
+            )
+          ),
+        };
+      })
+      .filter((row): row is GroupedStockOutRow => Boolean(row));
+  }, [rows, fromDate, toDate, parentSearch]);
+
+  const filtersActive = Boolean(fromDate || toDate || parentSearch.trim());
+
+  function clearFilters() {
+    setFromDate("");
+    setToDate("");
+    setParentSearch("");
+  }
 
   function toggleExpand(productSku: string) {
     setExpandedKeys((prev) =>
@@ -48,8 +136,79 @@ export default function StockOutClient({
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-900">Stock Out Items</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Stock out orders grouped by product SKU. Use product-wise restore or expand to restore invoice-wise one by one.
+          Stock out orders grouped by product SKU. Filter by stock-out date or search by Product Master parent code.
         </p>
+      </section>
+
+      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+        <div className="grid gap-3 lg:grid-cols-[1fr_190px_190px_auto] lg:items-end">
+          <label>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Parent Code Search
+            </span>
+            <div className="flex min-h-11 items-center gap-2 rounded-xl border px-3">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                value={parentSearch}
+                onChange={(event) => setParentSearch(event.target.value)}
+                placeholder="Search parent SKU, e.g. Code-134"
+                className="w-full bg-transparent text-sm outline-none"
+              />
+            </div>
+          </label>
+
+          <label>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              From Date
+            </span>
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(event) => setFromDate(event.target.value)}
+              className="min-h-11 w-full rounded-xl border px-3 text-sm outline-none"
+            />
+          </label>
+
+          <label>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              To Date
+            </span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(event) => setToDate(event.target.value)}
+              className="min-h-11 w-full rounded-xl border px-3 text-sm outline-none"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={clearFilters}
+            disabled={!filtersActive}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <X className="h-4 w-4" />
+            Clear
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span>
+            Showing <strong className="text-slate-800">{filteredRows.length}</strong> product{filteredRows.length === 1 ? "" : "s"}
+          </span>
+          {fromDate || toDate ? (
+            <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700">
+              Date: {fromDate || "Any"} → {toDate || "Any"}
+            </span>
+          ) : null}
+          {parentSearch.trim() ? (
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+              Parent: {parentSearch.trim()}
+            </span>
+          ) : null}
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
@@ -82,7 +241,7 @@ export default function StockOutClient({
             </thead>
 
             <tbody>
-              {rows.map((row) => {
+              {filteredRows.map((row) => {
                 const isExpanded = expandedKeys.includes(row.productSku);
 
                 return (
@@ -156,6 +315,9 @@ export default function StockOutClient({
                                       Invoice
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      Stock-out Date
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                       Customer
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -184,6 +346,10 @@ export default function StockOutClient({
                                     >
                                       <td className="px-4 py-3 text-sm font-semibold text-slate-900">
                                         {invoice.invoiceId || "N/A"}
+                                      </td>
+
+                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                        {formatStockOutDate(invoice.stockOutAt)}
                                       </td>
 
                                       <td className="px-4 py-3 text-sm text-slate-700">
@@ -225,7 +391,7 @@ export default function StockOutClient({
                                   {!row.invoices.length && (
                                     <tr>
                                       <td
-                                        colSpan={7}
+                                        colSpan={8}
                                         className="px-4 py-6 text-center text-sm text-slate-500"
                                       >
                                         No invoice rows found.
@@ -243,13 +409,15 @@ export default function StockOutClient({
                 );
               })}
 
-              {!rows.length && (
+              {!filteredRows.length && (
                 <tr>
                   <td
                     colSpan={7}
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >
-                    No stock out items found.
+                    {filtersActive
+                      ? "No stock out items match the selected filters."
+                      : "No stock out items found."}
                   </td>
                 </tr>
               )}

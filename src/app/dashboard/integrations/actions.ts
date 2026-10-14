@@ -47,6 +47,33 @@ function safeMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unexpected error.";
 }
 
+function optionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function nonNegativeMoney(value: unknown) {
+  const raw = String(value ?? "").replace(/,/g, "").trim();
+  const amount = Number(raw || 0);
+  return Number.isFinite(amount) && amount >= 0 ? amount : 0;
+}
+
+function productNameFromWebsite(
+  payload: Record<string, unknown>,
+  sku: string
+) {
+  return (
+    optionalText(payload.englishName) ||
+    optionalText(payload.banglaName) ||
+    optionalText(payload.name) ||
+    sku
+  );
+}
+
+function productInternalSlug(sku: string) {
+  return sku.trim().toLowerCase();
+}
+
 async function getCatalogIntegration(integrationId: string) {
   const integration = await prisma.integration.findUnique({
     where: { id: integrationId },
@@ -692,6 +719,153 @@ export async function scanAllIntegrationCatalogs(): Promise<ActionState> {
         (failures.length
           ? " Failed: " + failures.join(" | ").slice(0, 900)
           : ""),
+    };
+  } catch (error) {
+    return { success: false, message: safeMessage(error) };
+  }
+}
+
+
+export async function createOmsProductFromCatalogCandidate(
+  candidateId: string
+): Promise<ActionState & { productId?: string }> {
+  try {
+    await requireAdmin();
+
+    const candidate = await prisma.productCatalogImportCandidate.findUnique({
+      where: { id: candidateId },
+      include: { integration: true },
+    });
+
+    if (!candidate) {
+      return { success: false, message: "Website product candidate not found." };
+    }
+
+    const sku = String(candidate.sku || "").trim();
+    if (!sku) {
+      return { success: false, message: "Website product has no SKU." };
+    }
+
+    const existing = await prisma.product.findUnique({
+      where: { sku },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.productCatalogImportCandidate.updateMany({
+        where: { sku },
+        data: {
+          matchedProductId: existing.id,
+          status: "MATCHED",
+        },
+      });
+
+      revalidatePath("/dashboard/integrations");
+      revalidatePath("/dashboard/products");
+
+      return {
+        success: true,
+        productId: existing.id,
+        message: "SKU already exists in OMS. Website records were matched to it.",
+      };
+    }
+
+    const payload = JSON.parse(candidate.payloadJson) as Record<string, unknown>;
+    const name = productNameFromWebsite(payload, sku);
+    const sellingPrice = nonNegativeMoney(payload.sellingPrice);
+    const oldPrice = nonNegativeMoney(payload.oldPrice);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Website catalog import must NEVER establish OMS physical inventory.
+      // We create an unverified placeholder owner only. Admin will later set
+      // parent/variation stock and purchase cost inside OMS.
+      const parent = await tx.productParent.create({
+        data: {
+          sku,
+          name,
+          stockMode: "VARIANT_STOCK",
+          stockQuantity: 0,
+          stockVerifiedAt: null,
+          purchasePrice: null,
+          status: true,
+        },
+      });
+
+      const product = await tx.product.create({
+        data: {
+          parentId: parent.id,
+          sku,
+          slug: productInternalSlug(sku),
+          name,
+          quantity: 0,
+          unitsPerSale: 1,
+          stockVerifiedAt: null,
+          purchasePrice: 0,
+          sellingPrice,
+          status: payload.active !== false,
+        },
+      });
+
+      await tx.productCatalogContent.create({
+        data: {
+          productId: product.id,
+          banglaName: optionalText(payload.banglaName),
+          englishName: optionalText(payload.englishName),
+          productSlug: optionalText(payload.productSlug),
+          shortDescriptionHtml: optionalText(payload.shortDescriptionHtml),
+          fullDescriptionHtml: optionalText(payload.fullDescriptionHtml),
+          oldPrice: oldPrice > 0 ? oldPrice : null,
+          featured: Boolean(payload.featured),
+          sortOrder: Number.isSafeInteger(Number(payload.sortOrder))
+            ? Number(payload.sortOrder)
+            : 0,
+          metaTitle: optionalText(payload.metaTitle),
+          metaDescription: optionalText(payload.metaDescription),
+          externalVideoUrl: optionalText(payload.externalVideoUrl),
+        },
+      });
+
+      await tx.productWebsiteListing.create({
+        data: {
+          productId: product.id,
+          integrationId: candidate.integrationId,
+          remoteProductId: candidate.remoteProductId,
+          productSlugOverride: optionalText(payload.productSlug),
+          active: payload.active !== false,
+          featuredOverride:
+            typeof payload.featured === "boolean"
+              ? Boolean(payload.featured)
+              : null,
+          syncStatus: "SYNCED",
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      // Once one website creates the OMS SKU, every scanned candidate with the
+      // same SKU can safely point at that master product. We do not copy their
+      // inventory, stock quantity or purchase cost.
+      await tx.productCatalogImportCandidate.updateMany({
+        where: { sku },
+        data: {
+          matchedProductId: product.id,
+          status: "MATCHED",
+        },
+      });
+
+      return product;
+    });
+
+    revalidatePath("/dashboard/integrations");
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
+
+    return {
+      success: true,
+      productId: result.id,
+      message:
+        "OMS Product created from website content for SKU " +
+        sku +
+        ". Stock quantity and purchase cost were NOT imported; inventory remains unverified until you set it in OMS.",
     };
   } catch (error) {
     return { success: false, message: safeMessage(error) };

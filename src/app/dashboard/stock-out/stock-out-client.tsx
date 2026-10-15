@@ -58,11 +58,15 @@ function formatStockOutDate(value: string) {
 }
 
 export default function StockOutClient({
-  rows,
+  stockOutRows,
+  trashRows,
 }: {
-  rows: GroupedStockOutRow[];
+  stockOutRows: GroupedStockOutRow[];
+  trashRows: GroupedStockOutRow[];
 }) {
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [view, setView] = useState<"STOCK_OUT" | "TRASH">("STOCK_OUT");
+  const rows = view === "STOCK_OUT" ? stockOutRows : trashRows;
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [parentSearch, setParentSearch] = useState("");
@@ -150,10 +154,51 @@ export default function StockOutClient({
   return (
     <div className="space-y-6">
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-        <h1 className="text-2xl font-bold text-slate-900">Stock Out Items</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Stock out orders grouped by product SKU. Filter by stock-out date or search by Product Master parent code.
-        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              {view === "STOCK_OUT" ? "Stock Out Items" : "Trash Items"}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {view === "STOCK_OUT"
+                ? "Stock out orders grouped by product SKU. Filter by stock-out date or search by Product Master parent code."
+                : "Invoices moved to Trash without restoring stock. Track them separately from active stock-out items."}
+            </p>
+          </div>
+
+          <div className="inline-flex rounded-xl border bg-slate-50 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setView("STOCK_OUT");
+                setExpandedKeys([]);
+              }}
+              className={
+                "rounded-lg px-3 py-2 text-sm font-semibold transition " +
+                (view === "STOCK_OUT"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white")
+              }
+            >
+              Stock Out ({stockOutRows.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setView("TRASH");
+                setExpandedKeys([]);
+              }}
+              className={
+                "rounded-lg px-3 py-2 text-sm font-semibold transition " +
+                (view === "TRASH"
+                  ? "bg-rose-600 text-white shadow-sm"
+                  : "text-rose-700 hover:bg-white")
+              }
+            >
+              Trash ({trashRows.length})
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
@@ -175,7 +220,7 @@ export default function StockOutClient({
 
           <label>
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              From Date
+              {view === "STOCK_OUT" ? "From Stock-out Date" : "From Trash Date"}
             </span>
             <input
               type="date"
@@ -188,7 +233,7 @@ export default function StockOutClient({
 
           <label>
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              To Date
+              {view === "STOCK_OUT" ? "To Stock-out Date" : "To Trash Date"}
             </span>
             <input
               type="date"
@@ -236,7 +281,9 @@ export default function StockOutClient({
             {summary.totalProductTypes.toLocaleString("en-BD")}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Unique stock-out product SKUs in the current filter
+            {view === "STOCK_OUT"
+              ? "Unique stock-out product SKUs in the current filter"
+              : "Unique trashed product SKUs in the current filter"}
           </p>
         </div>
 
@@ -248,7 +295,9 @@ export default function StockOutClient({
             {summary.totalInvoices.toLocaleString("en-BD")}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Stock-out invoice lines in the current filter
+            {view === "STOCK_OUT"
+              ? "Stock-out invoice lines in the current filter"
+              : "Trashed invoice lines in the current filter"}
           </p>
         </div>
 
@@ -260,7 +309,9 @@ export default function StockOutClient({
             {formatMoney(summary.totalInvoiceValue)}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Product value of the filtered stock-out invoices
+            {view === "STOCK_OUT"
+              ? "Product value of the filtered stock-out invoices"
+              : "Product value of the filtered trashed invoices"}
           </p>
         </div>
       </section>
@@ -285,15 +336,19 @@ export default function StockOutClient({
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Page / Source
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Trash
-                </th>
+                {view === "STOCK_OUT" ? (
+                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Trash
+                  </th>
+                ) : null}
                 <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Expand
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Product Restore
-                </th>
+                {view === "STOCK_OUT" ? (
+                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Product Restore
+                  </th>
+                ) : null}
               </tr>
             </thead>
 
@@ -333,12 +388,14 @@ export default function StockOutClient({
                         </div>
                       </td>
 
-                      <td className="px-6 py-4">
-                        <TrashStockOutButton
-                          orderIds={row.orderIds}
-                          invoiceCount={row.totalInvoiceQty}
-                        />
-                      </td>
+                      {view === "STOCK_OUT" ? (
+                        <td className="px-6 py-4">
+                          <TrashStockOutButton
+                            orderIds={row.orderIds}
+                            invoiceCount={row.totalInvoiceQty}
+                          />
+                        </td>
+                      ) : null}
 
                       <td className="px-6 py-4">
                         <button
@@ -350,24 +407,30 @@ export default function StockOutClient({
                         </button>
                       </td>
 
-                      <td className="px-6 py-4">
-                        <RestoreButton
-                          orderIds={row.orderIds}
-                          label="Restore All"
-                        />
-                      </td>
+                      {view === "STOCK_OUT" ? (
+                        <td className="px-6 py-4">
+                          <RestoreButton
+                            orderIds={row.orderIds}
+                            label="Restore All"
+                          />
+                        </td>
+                      ) : null}
                     </tr>
 
                     {isExpanded && (
                       <tr className="border-b bg-slate-50/60">
-                        <td colSpan={8} className="px-6 py-5">
+                        <td colSpan={view === "STOCK_OUT" ? 8 : 6} className="px-6 py-5">
                           <div className="rounded-2xl border bg-white">
                             <div className="border-b px-4 py-3">
                               <h3 className="text-sm font-semibold text-slate-900">
-                                Invoice-wise Restore List
+                                {view === "STOCK_OUT"
+                                  ? "Invoice-wise Restore List"
+                                  : "Trashed Invoice List"}
                               </h3>
                               <p className="mt-1 text-xs text-slate-500">
-                                Restore individual invoices one by one using delivery charge and invoice details.
+                                {view === "STOCK_OUT"
+                                  ? "Restore individual invoices one by one using delivery charge and invoice details."
+                                  : "These invoices were moved to Trash without restoring inventory."}
                               </p>
                             </div>
 
@@ -379,7 +442,7 @@ export default function StockOutClient({
                                       Invoice
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      Stock-out Date
+                                      {view === "STOCK_OUT" ? "Stock-out Date" : "Trash Date"}
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                       Customer
@@ -396,9 +459,11 @@ export default function StockOutClient({
                                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                       Page / Source
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      Action
-                                    </th>
+                                    {view === "STOCK_OUT" ? (
+                                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        Action
+                                      </th>
+                                    ) : null}
                                   </tr>
                                 </thead>
 
@@ -443,19 +508,21 @@ export default function StockOutClient({
                                         {invoice.pageName} / {invoice.sourceName}
                                       </td>
 
-                                      <td className="px-4 py-3">
-                                        <RestoreButton
-                                          orderIds={[invoice.orderId]}
-                                          label="Restore"
-                                        />
-                                      </td>
+                                      {view === "STOCK_OUT" ? (
+                                        <td className="px-4 py-3">
+                                          <RestoreButton
+                                            orderIds={[invoice.orderId]}
+                                            label="Restore"
+                                          />
+                                        </td>
+                                      ) : null}
                                     </tr>
                                   ))}
 
                                   {!row.invoices.length && (
                                     <tr>
                                       <td
-                                        colSpan={8}
+                                        colSpan={view === "STOCK_OUT" ? 8 : 7}
                                         className="px-4 py-6 text-center text-sm text-slate-500"
                                       >
                                         No invoice rows found.
@@ -476,12 +543,16 @@ export default function StockOutClient({
               {!filteredRows.length && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={view === "STOCK_OUT" ? 8 : 6}
                     className="px-6 py-8 text-center text-sm text-slate-500"
                   >
                     {filtersActive
-                      ? "No stock out items match the selected filters."
-                      : "No stock out items found."}
+                      ? view === "STOCK_OUT"
+                        ? "No stock out items match the selected filters."
+                        : "No trash items match the selected filters."
+                      : view === "STOCK_OUT"
+                        ? "No stock out items found."
+                        : "No trash items found."}
                   </td>
                 </tr>
               )}

@@ -739,6 +739,211 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     officeApplied;
   const netMargin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
 
+  // Parent Code Performance is invoice-date based, not webhook-callback-date based.
+  // The invoice population comes from Pathao-submitted orders whose Ready To Ship
+  // business date is inside the selected range. Pathao events are then used only
+  // to classify those exact invoices by their latest verified outcome up to report end.
+  const performanceOrders = await prisma.order.findMany({
+    where: {
+      readyToShipAt: { gte: start, lte: end },
+      pathaoConsignmentId: { not: null },
+      ...(sourceId ? { sourceId } : {}),
+      ...(courierId ? { pathaoCourierId: courierId } : {}),
+    },
+    select: {
+      id: true,
+      invoiceId: true,
+      sourceId: true,
+      pathaoCourierId: true,
+      totalAmount: true,
+      advance: true,
+      deliveryCharge: true,
+      pathaoDeliveryFee: true,
+      pathaoAmountToCollect: true,
+      pathaoAuthorizedCodAmount: true,
+      source: { select: { id: true, name: true, type: true } },
+      items: {
+        select: {
+          id: true,
+          quantity: true,
+          lineTotal: true,
+          productSku: true,
+          productName: true,
+          product: {
+            select: {
+              id: true,
+              inventoryKind: true,
+              purchasePrice: true,
+              unitsPerSale: true,
+              parent: {
+                select: {
+                  id: true,
+                  sku: true,
+                  name: true,
+                  stockMode: true,
+                  purchasePrice: true,
+                },
+              },
+              bundleComponents: {
+                select: {
+                  units: true,
+                  componentProduct: { select: { purchasePrice: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const performanceOrderIds = performanceOrders.map((order) => order.id);
+  const performanceWebhooks = performanceOrderIds.length
+    ? await prisma.pathaoWebhookEvent.findMany({
+        where: {
+          signatureValid: true,
+          processed: true,
+          orderId: { in: performanceOrderIds },
+          receivedAt: { lte: end },
+        },
+        orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          orderId: true,
+          eventName: true,
+          receivedAt: true,
+          rawPayload: true,
+        },
+      })
+    : [];
+
+  const performanceEventMap = new Map<string, typeof performanceWebhooks>();
+  for (const webhook of performanceWebhooks) {
+    if (!webhook.orderId) continue;
+    const list = performanceEventMap.get(webhook.orderId) || [];
+    list.push(webhook);
+    performanceEventMap.set(webhook.orderId, list);
+  }
+
+  type PerformanceOrder = {
+    order: (typeof performanceOrders)[number];
+    latest: string;
+    delivered: boolean;
+    returnedToMerchant: boolean;
+    cancelled: boolean;
+    pending: boolean;
+    deliveryCost: number;
+    returnCost: number;
+    realizedMerchandise: number;
+  };
+
+  const performanceEvaluated: PerformanceOrder[] = performanceOrders.map(
+    (order) => {
+      const events = performanceEventMap.get(order.id) || [];
+
+      let latest = "";
+      let latestAt = -1;
+      let deliveredAt = -1;
+      let returnedAt = -1;
+      let cancelledAt = -1;
+      let deliveredPayload: unknown = null;
+      let returnCost = 0;
+
+      for (const webhook of events) {
+        const name = eventName(webhook.eventName);
+        const time = webhook.receivedAt.getTime();
+
+        if (time >= latestAt) {
+          latestAt = time;
+          latest = name;
+        }
+
+        if (name === "order.delivered" || name === "delivered") {
+          deliveredAt = Math.max(deliveredAt, time);
+          deliveredPayload = webhook.rawPayload;
+        }
+
+        if (
+          name === "order.returned-to-merchant" ||
+          name === "returned-to-merchant" ||
+          name === "order.paid-return" ||
+          name === "paid-return"
+        ) {
+          returnedAt = Math.max(returnedAt, time);
+        }
+
+        if (name.includes("cancel")) {
+          cancelledAt = Math.max(cancelledAt, time);
+        }
+
+        if (name === "order.paid-return" || name === "paid-return") {
+          const fee = rawNumber(webhook.rawPayload, [
+            "collected_amount",
+            "return_charge",
+            "return_fee",
+          ]);
+          if (fee !== null) returnCost = Math.max(returnCost, Math.max(0, fee));
+        }
+      }
+
+      const latestOutcomeAt = Math.max(deliveredAt, returnedAt, cancelledAt);
+      const returnedToMerchant =
+        returnedAt >= 0 && returnedAt === latestOutcomeAt;
+      const cancelled =
+        cancelledAt >= 0 && cancelledAt === latestOutcomeAt;
+      const delivered =
+        deliveredAt >= 0 && deliveredAt === latestOutcomeAt;
+      const pending = !delivered && !returnedToMerchant && !cancelled;
+
+      const collected = delivered
+        ? rawNumber(deliveredPayload, [
+            "collected_amount",
+            "amount_collected",
+            "amount_to_collect",
+            "cod_amount",
+          ])
+        : null;
+      const codDue = numberValue(order.totalAmount);
+      const codRevenue = delivered
+        ? collected !== null
+          ? Math.max(0, collected)
+          : numberValue(order.pathaoAmountToCollect) ||
+            numberValue(order.pathaoAuthorizedCodAmount) ||
+            codDue
+        : 0;
+      const realizedRevenue = delivered
+        ? codRevenue + numberValue(order.advance)
+        : 0;
+      const realizedMerchandise = delivered
+        ? Math.max(0, realizedRevenue - numberValue(order.deliveryCharge))
+        : 0;
+
+      const webhookDeliveryFee = delivered
+        ? rawNumber(deliveredPayload, ["delivery_fee"])
+        : null;
+      const deliveryCost = delivered
+        ? Math.max(
+            0,
+            webhookDeliveryFee !== null
+              ? webhookDeliveryFee
+              : numberValue(order.pathaoDeliveryFee)
+          )
+        : 0;
+
+      return {
+        order,
+        latest,
+        delivered,
+        returnedToMerchant,
+        cancelled,
+        pending,
+        deliveryCost,
+        returnCost,
+        realizedMerchandise,
+      };
+    }
+  );
+
   type ProductAccumulator = {
     parentId: string;
     parentSku: string;
@@ -795,25 +1000,17 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const parentProductMap = new Map<string, ProductAccumulator>();
   const childProductMap = new Map<string, ProductAccumulator>();
 
-  for (const row of selected) {
+  for (const row of performanceEvaluated) {
     const lineTotal = row.order.items.reduce(
       (sum, item) => sum + numberValue(item.lineTotal),
       0
     );
     const invoiceTotal =
       numberValue(row.order.totalAmount) + numberValue(row.order.advance);
-    const realizedMerchandise = row.delivered
-      ? Math.max(0, row.revenue - numberValue(row.order.deliveryCharge))
-      : 0;
-    const latest = row.latest;
-    const returnedToMerchantStatus =
-      latest === "order.returned-to-merchant" ||
-      latest === "returned-to-merchant" ||
-      latest === "order.paid-return" ||
-      latest === "paid-return";
-    const cancelledStatus = latest.includes("cancel");
-    const deliveredStatus =
-      row.delivered && !returnedToMerchantStatus && !cancelledStatus;
+    const realizedMerchandise = row.realizedMerchandise;
+    const returnedToMerchantStatus = row.returnedToMerchant;
+    const cancelledStatus = row.cancelled;
+    const deliveredStatus = row.delivered;
 
     for (const item of row.order.items) {
       const qty = Math.max(0, Number(item.quantity || 0));

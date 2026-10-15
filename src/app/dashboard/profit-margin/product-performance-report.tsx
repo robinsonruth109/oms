@@ -533,9 +533,11 @@ export default function ProductPerformanceReport({
 
       <div className="grid gap-3 border-t bg-slate-50/70 px-5 py-4 text-xs leading-5 text-slate-600 md:grid-cols-2 xl:grid-cols-3 sm:px-6">
         <p>
-          <strong>Qty</strong> is OrderItem product quantity. The four Pathao
-          outcome columns are distinct invoice counts, so one invoice is placed
-          in only one final bucket.
+          <strong>Qty</strong> is OrderItem product quantity from Pathao-submitted
+          invoices whose Ready-to-Ship business date is inside the selected range.
+          <strong> Total Invoice</strong> counts those distinct invoices. The four
+          Pathao outcome columns use the latest verified status for those invoices,
+          so one invoice is placed in only one final bucket.
         </p>
         <p>
           <strong>Pathao Pending</strong> means every latest verified Pathao

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import VerifiedStockWatch from "./verified-stock-watch";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -166,6 +167,20 @@ export default async function StockValuationPage() {
           not certify an old balance.
         </div>
       ) : null}
+
+      <VerifiedStockWatch
+        rows={rows
+          .filter((row) => row.verified)
+          .map((row) => ({
+            key: row.key,
+            parentSku: row.parentSku,
+            sku: row.sku,
+            name: row.name,
+            mode: row.mode,
+            quantity: row.quantity,
+            unitsPerSale: row.unitsPerSale,
+          }))}
+      />
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         <div className="overflow-x-auto">

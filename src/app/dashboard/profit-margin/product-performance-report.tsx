@@ -6,6 +6,8 @@ import {
   ChevronsDown,
   ChevronsUp,
   PackageCheck,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -87,7 +89,7 @@ function NumberCell({
   );
 }
 
-function MetricCells({
+function DetailedMetricCells({
   row,
   child = false,
 }: {
@@ -145,6 +147,41 @@ function MetricCells({
   );
 }
 
+function SimpleMetricCells({
+  row,
+  child = false,
+}: {
+  row: ProductPerformanceChildRow;
+  child?: boolean;
+}) {
+  const returnCancelled =
+    row.returnedToMerchantInvoices + row.cancelledInvoices;
+  const courierCost = row.returnCharge + row.deliveryCost;
+  const profitTone = row.grossProfit >= 0 ? "green" : "red";
+
+  return (
+    <>
+      <NumberCell value={row.qty.toLocaleString("en-BD")} strong={!child} />
+      <NumberCell value={row.totalInvoices.toLocaleString("en-BD")} />
+      <NumberCell
+        value={row.deliveredInvoices.toLocaleString("en-BD")}
+        tone="green"
+        strong={!child}
+      />
+      <NumberCell value={returnCancelled.toLocaleString("en-BD")} tone="red" />
+      <NumberCell
+        value={row.pendingInvoices.toLocaleString("en-BD")}
+        tone="amber"
+      />
+      <NumberCell value={money(courierCost)} tone="red" />
+      <NumberCell value={money(row.adsCost)} tone="violet" strong={!child} />
+      <NumberCell value={money(row.merchandiseSales)} />
+      <NumberCell value={money(row.grossProfit)} tone={profitTone} strong />
+      <NumberCell value={pct(row.deliveryPercentage)} tone="green" />
+    </>
+  );
+}
+
 function CampaignList({ names }: { names: string[] }) {
   if (!names.length) {
     return <p className="mt-1 text-[11px] text-slate-400">No mapped Meta campaign</p>;
@@ -177,6 +214,7 @@ export default function ProductPerformanceReport({
   rows: ParentProductPerformanceRow[];
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [showDetailed, setShowDetailed] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -274,26 +312,43 @@ export default function ProductPerformanceReport({
             <PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-slate-700" />
             <div>
               <h2 className="text-lg font-bold text-slate-950">
-                Parent Code Performance Report
+                Parent Code পারফরম্যান্স রিপোর্ট
               </h2>
               <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
-                One strong summary row per Parent Code. Expand a parent to see
-                Child SKU + Source detail and the mapped Meta campaign/group
-                context behind the attributed ad cost.
+                প্রতিটি Parent Code-এর বিক্রি, ডেলিভারি, খরচ ও লাভ এক জায়গায়।
+                ডিফল্টভাবে সহজ রিপোর্ট দেখানো হয়; প্রয়োজন হলে বিস্তারিত রিপোর্ট খুলুন।
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-              {totals.parents} parent code(s)
+              Parent Code {totals.parents}
             </span>
             <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-              Qty {totals.qty.toLocaleString("en-BD")}
+              মোট পণ্য {totals.qty.toLocaleString("en-BD")}
             </span>
             <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-              Delivered product qty {totals.deliveredProductQty.toLocaleString("en-BD")}
+              ডেলিভার্ড পণ্য {totals.deliveredProductQty.toLocaleString("en-BD")}
             </span>
+            <button
+              type="button"
+              onClick={() => setShowDetailed((value) => !value)}
+              className={
+                "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm " +
+                (showDetailed
+                  ? "border-slate-300 bg-slate-900 text-white"
+                  : "bg-white text-slate-700 hover:bg-slate-50")
+              }
+            >
+              {showDetailed ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+              {showDetailed ? "সহজ রিপোর্ট দেখুন" : "বিস্তারিত রিপোর্ট দেখুন"}
+            </button>
+
             {rows.length ? (
               <button
                 type="button"
@@ -305,7 +360,7 @@ export default function ProductPerformanceReport({
                 ) : (
                   <ChevronsDown className="h-3.5 w-3.5" />
                 )}
-                {allExpanded ? "Collapse all" : "Expand all"}
+                {allExpanded ? "সব মিনিমাইজ" : "সব খুলুন"}
               </button>
             ) : null}
           </div>
@@ -314,10 +369,12 @@ export default function ProductPerformanceReport({
 
       <div className="flex items-center justify-between gap-3 border-b bg-slate-50/60 px-5 py-2.5 text-xs text-slate-500 sm:px-6">
         <span>
-          The report list scrolls inside this panel while the column heading stays visible.
+          {showDetailed
+            ? "বিস্তারিত রিপোর্টে সব হিসাব আলাদা কলামে দেখানো হচ্ছে।"
+            : "সহজ রিপোর্টে প্রয়োজনীয় হিসাবগুলো সংক্ষেপে দেখানো হচ্ছে।"}
         </span>
         <span className="hidden shrink-0 rounded-lg border bg-white px-2.5 py-1 font-semibold text-slate-600 shadow-sm lg:inline-flex">
-          Desktop: hold Space + click-drag left/right
+          ডেস্কটপ: Space ধরে বামে/ডানে drag করুন
         </span>
       </div>
 
@@ -387,29 +444,51 @@ export default function ProductPerformanceReport({
           event.stopPropagation();
         }}
       >
-        <table className="min-w-[2820px] w-full text-sm">
+        <table
+          className={
+            (showDetailed ? "min-w-[2820px]" : "min-w-[1650px]") +
+            " w-full text-sm"
+          }
+        >
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.35)]">
             <tr>
               <th className="sticky left-0 top-0 z-40 min-w-[300px] bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(148,163,184,0.25)]">
                 Parent Code / Child SKU
               </th>
-              <th className="min-w-[310px] px-4 py-3">Source / Campaign</th>
-              <th className="px-4 py-3 text-right">Qty</th>
-              <th className="px-4 py-3 text-right">Total Invoice</th>
-              <th className="px-4 py-3 text-right">Pathao Delivered</th>
-              <th className="px-4 py-3 text-right">Pathao Return to Merchant</th>
-              <th className="px-4 py-3 text-right">Pathao Cancelled</th>
-              <th className="px-4 py-3 text-right">Pathao Pending</th>
-              <th className="px-4 py-3 text-right">Pathao Return Charge</th>
-              <th className="px-4 py-3 text-right">Pathao Delivery Cost</th>
-              <th className="px-4 py-3 text-right">Pathao Invoiced Total</th>
-              <th className="px-4 py-3 text-right">Ads Costing BDT</th>
-              <th className="px-4 py-3 text-right">Merchandise Sales</th>
-              <th className="px-4 py-3 text-right">COGS</th>
-              <th className="px-4 py-3 text-right">Gross Profit</th>
-              <th className="px-4 py-3 text-right">Margin %</th>
-              <th className="px-4 py-3 text-right">Delivery %</th>
-              <th className="px-4 py-3 text-right">Cost / Delivered Product</th>
+              <th className="min-w-[310px] px-4 py-3">সোর্স / ক্যাম্পেইন</th>
+              {showDetailed ? (
+                <>
+                  <th className="px-4 py-3 text-right">পণ্য Qty</th>
+                  <th className="px-4 py-3 text-right">মোট ইনভয়েস</th>
+                  <th className="px-4 py-3 text-right">ডেলিভার্ড</th>
+                  <th className="px-4 py-3 text-right">রিটার্ন</th>
+                  <th className="px-4 py-3 text-right">বাতিল</th>
+                  <th className="px-4 py-3 text-right">পেন্ডিং</th>
+                  <th className="px-4 py-3 text-right">রিটার্ন চার্জ</th>
+                  <th className="px-4 py-3 text-right">ডেলিভারি খরচ</th>
+                  <th className="px-4 py-3 text-right">Pathao ইনভয়েস মূল্য</th>
+                  <th className="px-4 py-3 text-right">Ads খরচ</th>
+                  <th className="px-4 py-3 text-right">পণ্য বিক্রি</th>
+                  <th className="px-4 py-3 text-right">পণ্য ক্রয়মূল্য</th>
+                  <th className="px-4 py-3 text-right">মোট লাভ</th>
+                  <th className="px-4 py-3 text-right">লাভ %</th>
+                  <th className="px-4 py-3 text-right">ডেলিভারি %</th>
+                  <th className="px-4 py-3 text-right">প্রতি ডেলিভারি Ads খরচ</th>
+                </>
+              ) : (
+                <>
+                  <th className="px-4 py-3 text-right">পণ্য Qty</th>
+                  <th className="px-4 py-3 text-right">মোট ইনভয়েস</th>
+                  <th className="px-4 py-3 text-right">ডেলিভার্ড</th>
+                  <th className="px-4 py-3 text-right">ফেরত / বাতিল</th>
+                  <th className="px-4 py-3 text-right">পেন্ডিং</th>
+                  <th className="px-4 py-3 text-right">কুরিয়ার খরচ</th>
+                  <th className="px-4 py-3 text-right">Ads খরচ</th>
+                  <th className="px-4 py-3 text-right">পণ্য বিক্রি</th>
+                  <th className="px-4 py-3 text-right">মোট লাভ</th>
+                  <th className="px-4 py-3 text-right">ডেলিভারি %</th>
+                </>
+              )}
             </tr>
           </thead>
 
@@ -448,8 +527,8 @@ export default function ProductPerformanceReport({
                           </span>
                           {row.children.length ? (
                             <span className="mt-1 block text-[11px] font-semibold text-blue-600">
-                              {row.children.length} child/source row(s) ·{" "}
-                              {isOpen ? "click to minimize" : "click to expand"}
+                              {row.children.length}টি Child/Source ·{" "}
+                              {isOpen ? "মিনিমাইজ করুন" : "বিস্তারিত দেখুন"}
                             </span>
                           ) : null}
                         </span>
@@ -459,21 +538,23 @@ export default function ProductPerformanceReport({
                     <td className="px-4 py-3">
                       <p className="font-semibold text-slate-700">
                         {sourceCount
-                          ? sourceCount + " source" + (sourceCount === 1 ? "" : "s")
-                          : "No source detail"}
+                          ? sourceCount + " সোর্স"
+                          : "সোর্স নেই"}
                         {" · "}
-                        {row.campaignNames.length +
-                          " campaign group" +
-                          (row.campaignNames.length === 1 ? "" : "s")}
+                        {row.campaignNames.length + " ক্যাম্পেইন গ্রুপ"}
                       </p>
                       <CampaignList names={row.campaignNames} />
                       <p className="mt-1 text-[11px] text-slate-400">
-                        Delivered product qty:{" "}
+                        ডেলিভার্ড পণ্য:{" "}
                         {row.deliveredProductQty.toLocaleString("en-BD")}
                       </p>
                     </td>
 
-                    <MetricCells row={row} />
+                    {showDetailed ? (
+                      <DetailedMetricCells row={row} />
+                    ) : (
+                      <SimpleMetricCells row={row} />
+                    )}
                   </tr>
 
                   {isOpen
@@ -504,12 +585,16 @@ export default function ProductPerformanceReport({
                             ) : null}
                             <CampaignList names={child.campaignNames} />
                             <p className="mt-1 text-[11px] text-slate-400">
-                              Delivered product qty:{" "}
+                              ডেলিভার্ড পণ্য:{" "}
                               {child.deliveredProductQty.toLocaleString("en-BD")}
                             </p>
                           </td>
 
-                          <MetricCells row={child} child />
+                          {showDetailed ? (
+                            <DetailedMetricCells row={child} child />
+                          ) : (
+                            <SimpleMetricCells row={child} child />
+                          )}
                         </tr>
                       ))
                     : null}
@@ -520,10 +605,10 @@ export default function ProductPerformanceReport({
             {!rows.length ? (
               <tr>
                 <td
-                  colSpan={18}
+                  colSpan={showDetailed ? 18 : 12}
                   className="px-4 py-12 text-center text-slate-500"
                 >
-                  No Pathao product activity found in the selected filters.
+                  নির্বাচিত ফিল্টারে কোনো Pathao পণ্যের তথ্য পাওয়া যায়নি।
                 </td>
               </tr>
             ) : null}
@@ -531,38 +616,23 @@ export default function ProductPerformanceReport({
         </table>
       </div>
 
-      <div className="grid gap-3 border-t bg-slate-50/70 px-5 py-4 text-xs leading-5 text-slate-600 md:grid-cols-2 xl:grid-cols-3 sm:px-6">
-        <p>
-          <strong>Qty</strong> is OrderItem product quantity from Pathao-submitted
-          invoices whose Ready-to-Ship business date is inside the selected range.
-          <strong> Total Invoice</strong> counts those distinct invoices. The four
-          Pathao outcome columns use the latest verified status for those invoices,
-          so one invoice is placed in only one final bucket.
-        </p>
-        <p>
-          <strong>Pathao Pending</strong> means every latest verified Pathao
-          status that is not Delivered, final Returned to Merchant/Paid Return,
-          or Cancelled.
-        </p>
-        <p>
-          <strong>Delivery %</strong> = Pathao Delivered invoice count ÷ Total
-          Invoice × 100.
-        </p>
-        <p>
-          <strong>Cost / Delivered Product</strong> = attributed Ads Costing BDT
-          ÷ delivered product quantity, not delivered invoices.
-        </p>
-        <p>
-          <strong>Ads Costing BDT</strong> is attributed once at Parent Code
-          level. Connected campaign groups are displayed together; child/source
-          rows only allocate that parent amount and sum back to the parent.
-        </p>
-        <p>
-          <strong>Gross Profit</strong> = Merchandise Sales − COGS − Pathao
-          Delivery Cost. Delivery cost uses the same verified Pathao fee logic
-          as the main Profit Margin report and is allocated by order-line value
-          so multi-product invoices are not duplicated across Parent Codes.
-        </p>
+      <div className="border-t bg-slate-50/70 px-5 py-4 text-xs leading-5 text-slate-600 sm:px-6">
+        {showDetailed ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <p><strong>পণ্য Qty:</strong> নির্বাচিত সময়ের Ready-to-Ship ইনভয়েসে মোট পণ্যের সংখ্যা।</p>
+            <p><strong>মোট ইনভয়েস:</strong> ঐ Parent Code-এর আলাদা ইনভয়েস সংখ্যা।</p>
+            <p><strong>পেন্ডিং:</strong> Delivered / Return / Cancelled হয়নি—এমন সর্বশেষ verified Pathao status.</p>
+            <p><strong>ডেলিভারি %:</strong> Delivered invoice ÷ Total Invoice × 100.</p>
+            <p><strong>প্রতি ডেলিভারি Ads খরচ:</strong> Ads Cost ÷ delivered product quantity.</p>
+            <p><strong>মোট লাভ:</strong> পণ্য বিক্রি − পণ্য ক্রয়মূল্য − Pathao delivery cost.</p>
+          </div>
+        ) : (
+          <p>
+            সহজ রিপোর্টে <strong>ফেরত + বাতিল</strong> একসাথে এবং
+            <strong> রিটার্ন চার্জ + ডেলিভারি খরচ</strong> একসাথে “কুরিয়ার খরচ”
+            হিসেবে দেখানো হচ্ছে। পূর্ণ হিসাব দেখতে “বিস্তারিত রিপোর্ট দেখুন” চাপুন।
+          </p>
+        )}
       </div>
     </section>
   );

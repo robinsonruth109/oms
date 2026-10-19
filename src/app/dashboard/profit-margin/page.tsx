@@ -1366,6 +1366,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     }))
     .sort((a, b) => b.appliedAmount - a.appliedAmount);
 
+  const selectedSource = sources.find((row) => row.id === sourceId)?.name || "All Sources";
+  const selectedCourier = couriers.find((row) => row.id === courierId)?.name || "All Pathao Couriers";
+  const selectedMerchant = !merchantId
+    ? "All Merchants"
+    : omsMerchantSelected
+      ? "OMS"
+      : merchants.find((row) => row.id === merchantId)?.name || "Selected Merchant";
+
   const warnings: string[] = [];
   const unattributedProductAds = Math.max(
     0,
@@ -1456,14 +1464,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
-
-  const selectedSource = sources.find((row) => row.id === sourceId)?.name || "All Sources";
-  const selectedCourier = couriers.find((row) => row.id === courierId)?.name || "All Pathao Couriers";
-  const selectedMerchant = !merchantId
-    ? "All Merchants"
-    : omsMerchantSelected
-      ? "OMS"
-      : merchants.find((row) => row.id === merchantId)?.name || "Selected Merchant";
 
   return (
     <div className="space-y-6">

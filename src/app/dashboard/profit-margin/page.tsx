@@ -191,7 +191,13 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           signatureValid: true,
           processed: true,
           orderId: { not: null },
-          receivedAt: { gte: start, lte: end },
+          receivedAt: { lte: end },
+          order: {
+            is: {
+              readyToShipAt: { gte: start, lte: end },
+              pathaoConsignmentId: { not: null },
+            },
+          },
         },
         orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
         select: {
@@ -1471,8 +1477,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         <div>
           <h1 className="text-2xl font-bold text-slate-950">Profit Margin</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Realized business profit/loss using verified Pathao webhook outcomes,
-            Product Master buying cost, Meta ads, salary and daily operating costs.
+            Daily cohort profit/loss based on invoices submitted to Pathao in the selected period,
+            using their latest verified Pathao outcome, Product Master buying cost, Meta ads,
+            salary and daily operating costs.
           </p>
         </div>
       </section>
@@ -1517,7 +1524,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         </form>
         <p className="mt-3 text-xs text-slate-500">
           Profit period: {from} to {to} · {selectedMerchant} · {selectedSource} · {selectedCourier}.
-          Sales/returns are recognized by Pathao webhook received date.
+          Order cohort is based on Ready-to-Ship / Pathao-submitted date. Latest verified Pathao outcome up to the report end date is used.
         </p>
       </section>
 
@@ -1661,7 +1668,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       <section className="rounded-3xl border bg-white p-5 shadow-sm">
         <h2 className="text-lg font-bold">Pathao Webhook Activity</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Latest verified event received for each parcel touched in this date range.
+          Latest verified event for each parcel submitted to Pathao in the selected date range.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {topStatuses.map((row) => (
@@ -1670,13 +1677,15 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
               <p className="mt-2 text-2xl font-bold">{row.count}</p>
             </div>
           ))}
-          {!topStatuses.length ? <p className="text-sm text-slate-500">No verified Pathao webhook activity in this date range.</p> : null}
+          {!topStatuses.length ? <p className="text-sm text-slate-500">No verified Pathao outcome yet for invoices submitted in this date range.</p> : null}
         </div>
       </section>
 
       <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-        <strong>Accounting basis:</strong> revenue is recognized only from full Delivered webhooks.
-        Realized revenue equals Pathao COD/collected amount plus any customer advance already received.
+        <strong>Accounting basis:</strong> the selected date range first chooses invoices by their
+        Ready-to-Ship / Pathao-submitted business date. Revenue is recognized only when those exact
+        invoices have a full Delivered outcome by the report end date. Realized revenue equals Pathao
+        COD/collected amount plus any customer advance already received.
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.

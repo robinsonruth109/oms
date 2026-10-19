@@ -49,6 +49,23 @@ function money(value: number) {
   });
 }
 
+function costMoney(value: number) {
+  const amount = Math.abs(Number(value || 0));
+  return "- Tk " + amount.toLocaleString("en-BD", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function resultMoney(value: number) {
+  const amount = Number(value || 0);
+  const sign = amount > 0 ? "+ " : amount < 0 ? "- " : "";
+  return sign + "Tk " + Math.abs(amount).toLocaleString("en-BD", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function pct(value: number) {
   return Number(value || 0).toFixed(2) + "%";
 }
@@ -96,7 +113,16 @@ function DetailedMetricCells({
   row: ProductPerformanceChildRow;
   child?: boolean;
 }) {
-  const profitTone = row.grossProfit >= 0 ? "green" : "red";
+  const courierCost = row.returnCharge + row.deliveryCost;
+  const preAdsProfit =
+    row.merchandiseSales - row.cogs - courierCost;
+  const finalProfit = preAdsProfit - row.adsCost;
+  const preAdsTone = preAdsProfit >= 0 ? "green" : "red";
+  const finalTone = finalProfit >= 0 ? "green" : "red";
+  const finalMargin =
+    row.merchandiseSales > 0
+      ? (finalProfit / row.merchandiseSales) * 100
+      : 0;
 
   return (
     <>
@@ -119,14 +145,20 @@ function DetailedMetricCells({
         value={row.pendingInvoices.toLocaleString("en-BD")}
         tone="amber"
       />
-      <NumberCell value={money(row.returnCharge)} tone="red" />
-      <NumberCell value={money(row.deliveryCost)} tone="red" />
+      <NumberCell value={costMoney(row.returnCharge)} tone="red" />
+      <NumberCell value={costMoney(row.deliveryCost)} tone="red" />
       <NumberCell value={money(row.invoicedTotal)} />
-      <NumberCell value={money(row.adsCost)} tone="violet" strong={!child} />
+      <NumberCell value={costMoney(row.adsCost)} tone="violet" strong={!child} />
       <NumberCell value={money(row.merchandiseSales)} />
-      <NumberCell value={money(row.cogs)} />
-      <NumberCell value={money(row.grossProfit)} tone={profitTone} strong />
-      <NumberCell value={pct(row.margin)} />
+      <NumberCell value={costMoney(row.cogs)} tone="red" />
+      <NumberCell value={resultMoney(preAdsProfit)} tone={preAdsTone} strong />
+      <NumberCell
+        value={resultMoney(finalProfit)}
+        tone={finalTone}
+        strong
+        title="পণ্য বিক্রি − ক্রয়মূল্য − রিটার্ন চার্জ − ডেলিভারি খরচ − Ads খরচ"
+      />
+      <NumberCell value={pct(finalMargin)} tone={finalTone} />
       <NumberCell value={pct(row.deliveryPercentage)} tone="green" />
       <NumberCell
         value={
@@ -157,7 +189,9 @@ function SimpleMetricCells({
   const returnCancelled =
     row.returnedToMerchantInvoices + row.cancelledInvoices;
   const courierCost = row.returnCharge + row.deliveryCost;
-  const profitTone = row.grossProfit >= 0 ? "green" : "red";
+  const finalProfit =
+    row.merchandiseSales - row.cogs - courierCost - row.adsCost;
+  const finalTone = finalProfit >= 0 ? "green" : "red";
 
   return (
     <>
@@ -173,10 +207,16 @@ function SimpleMetricCells({
         value={row.pendingInvoices.toLocaleString("en-BD")}
         tone="amber"
       />
-      <NumberCell value={money(courierCost)} tone="red" />
-      <NumberCell value={money(row.adsCost)} tone="violet" strong={!child} />
-      <NumberCell value={money(row.merchandiseSales)} />
-      <NumberCell value={money(row.grossProfit)} tone={profitTone} strong />
+      <NumberCell value={money(row.merchandiseSales)} strong={!child} />
+      <NumberCell value={costMoney(row.cogs)} tone="red" />
+      <NumberCell value={costMoney(courierCost)} tone="red" />
+      <NumberCell value={costMoney(row.adsCost)} tone="violet" />
+      <NumberCell
+        value={resultMoney(finalProfit)}
+        tone={finalTone}
+        strong
+        title="Final লাভ/লস = পণ্য বিক্রি − ক্রয়মূল্য − কুরিয়ার খরচ − Ads খরচ"
+      />
       <NumberCell value={pct(row.deliveryPercentage)} tone="green" />
     </>
   );
@@ -446,7 +486,7 @@ export default function ProductPerformanceReport({
       >
         <table
           className={
-            (showDetailed ? "min-w-[2820px]" : "min-w-[1650px]") +
+            (showDetailed ? "min-w-[3020px]" : "min-w-[1840px]") +
             " w-full text-sm"
           }
         >
@@ -464,14 +504,15 @@ export default function ProductPerformanceReport({
                   <th className="px-4 py-3 text-right">রিটার্ন</th>
                   <th className="px-4 py-3 text-right">বাতিল</th>
                   <th className="px-4 py-3 text-right">পেন্ডিং</th>
-                  <th className="px-4 py-3 text-right">রিটার্ন চার্জ</th>
-                  <th className="px-4 py-3 text-right">ডেলিভারি খরচ</th>
+                  <th className="px-4 py-3 text-right">− রিটার্ন চার্জ</th>
+                  <th className="px-4 py-3 text-right">− ডেলিভারি খরচ</th>
                   <th className="px-4 py-3 text-right">Pathao ইনভয়েস মূল্য</th>
-                  <th className="px-4 py-3 text-right">Ads খরচ</th>
+                  <th className="px-4 py-3 text-right">− Ads খরচ</th>
                   <th className="px-4 py-3 text-right">পণ্য বিক্রি</th>
-                  <th className="px-4 py-3 text-right">পণ্য ক্রয়মূল্য</th>
-                  <th className="px-4 py-3 text-right">মোট লাভ</th>
-                  <th className="px-4 py-3 text-right">লাভ %</th>
+                  <th className="px-4 py-3 text-right">− পণ্য ক্রয়মূল্য</th>
+                  <th className="px-4 py-3 text-right">Ads-এর আগে লাভ</th>
+                  <th className="px-4 py-3 text-right">Final লাভ / লস</th>
+                  <th className="px-4 py-3 text-right">Final লাভ %</th>
                   <th className="px-4 py-3 text-right">ডেলিভারি %</th>
                   <th className="px-4 py-3 text-right">প্রতি ডেলিভারি Ads খরচ</th>
                 </>
@@ -482,10 +523,11 @@ export default function ProductPerformanceReport({
                   <th className="px-4 py-3 text-right">ডেলিভার্ড</th>
                   <th className="px-4 py-3 text-right">ফেরত / বাতিল</th>
                   <th className="px-4 py-3 text-right">পেন্ডিং</th>
-                  <th className="px-4 py-3 text-right">কুরিয়ার খরচ</th>
-                  <th className="px-4 py-3 text-right">Ads খরচ</th>
                   <th className="px-4 py-3 text-right">পণ্য বিক্রি</th>
-                  <th className="px-4 py-3 text-right">মোট লাভ</th>
+                  <th className="px-4 py-3 text-right">− ক্রয়মূল্য</th>
+                  <th className="px-4 py-3 text-right">− কুরিয়ার</th>
+                  <th className="px-4 py-3 text-right">− Ads</th>
+                  <th className="px-4 py-3 text-right">= Final লাভ / লস</th>
                   <th className="px-4 py-3 text-right">ডেলিভারি %</th>
                 </>
               )}
@@ -605,7 +647,7 @@ export default function ProductPerformanceReport({
             {!rows.length ? (
               <tr>
                 <td
-                  colSpan={showDetailed ? 18 : 12}
+                  colSpan={showDetailed ? 19 : 13}
                   className="px-4 py-12 text-center text-slate-500"
                 >
                   নির্বাচিত ফিল্টারে কোনো Pathao পণ্যের তথ্য পাওয়া যায়নি।
@@ -624,14 +666,21 @@ export default function ProductPerformanceReport({
             <p><strong>পেন্ডিং:</strong> Delivered / Return / Cancelled হয়নি—এমন সর্বশেষ verified Pathao status.</p>
             <p><strong>ডেলিভারি %:</strong> Delivered invoice ÷ Total Invoice × 100.</p>
             <p><strong>প্রতি ডেলিভারি Ads খরচ:</strong> Ads Cost ÷ delivered product quantity.</p>
-            <p><strong>মোট লাভ:</strong> পণ্য বিক্রি − পণ্য ক্রয়মূল্য − Pathao delivery cost.</p>
+            <p><strong>Ads-এর আগে লাভ:</strong> পণ্য বিক্রি − ক্রয়মূল্য − রিটার্ন চার্জ − ডেলিভারি খরচ।</p>
+            <p><strong>Final লাভ / লস:</strong> Ads-এর আগে লাভ − Ads খরচ। এটিই product-level final result.</p>
           </div>
         ) : (
-          <p>
-            সহজ রিপোর্টে <strong>ফেরত + বাতিল</strong> একসাথে এবং
-            <strong> রিটার্ন চার্জ + ডেলিভারি খরচ</strong> একসাথে “কুরিয়ার খরচ”
-            হিসেবে দেখানো হচ্ছে। পূর্ণ হিসাব দেখতে “বিস্তারিত রিপোর্ট দেখুন” চাপুন।
-          </p>
+          <div className="space-y-1">
+            <p>
+              <strong>সহজ হিসাব:</strong> পণ্য বিক্রি − ক্রয়মূল্য − কুরিয়ার খরচ − Ads খরচ
+              = <strong>Final লাভ / লস</strong>।
+            </p>
+            <p>
+              কুরিয়ার খরচের মধ্যে <strong>ডেলিভারি খরচ + রিটার্ন চার্জ</strong> দুটোই আছে।
+              Final result সবুজ <strong>+</strong> হলে লাভ, লাল <strong>−</strong> হলে লস।
+              Salary / Office overhead এখানে ভাগ করা হয়নি; সেগুলো উপরের Company Net Profit-এ হিসাব হয়।
+            </p>
+          </div>
         )}
       </div>
     </section>

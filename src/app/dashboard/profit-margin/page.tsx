@@ -167,6 +167,17 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const omsMerchantSelected = merchantId === "__OMS__";
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
+
+  const fromMonth = from.slice(0, 7);
+  const toMonth = to.slice(0, 7);
+  const financeMonthStart = bangladeshDateStartUtc(fromMonth + "-01");
+  const toParts = toMonth.split("-").map(Number);
+  const toMonthDays = new Date(
+    Date.UTC(toParts[0], toParts[1], 0)
+  ).getUTCDate();
+  const financeMonthEnd = bangladeshDateEndUtc(
+    toMonth + "-" + String(toMonthDays).padStart(2, "0")
+  );
   const { prisma } = await import("@/lib/prisma");
 
   const [sources, couriers, merchants, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles] =
@@ -208,7 +219,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         },
       }),
       prisma.financeDailyCost.findMany({
-        where: { costDate: { gte: start, lte: end } },
+        where: { costDate: { gte: financeMonthStart, lte: financeMonthEnd } },
         orderBy: [{ costDate: "asc" }, { createdAt: "asc" }],
         select: {
           id: true,
@@ -216,6 +227,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           entryType: true,
           category: true,
           amount: true,
+          costDate: true,
         },
       }),
       prisma.dailyDollarRate.findMany({
@@ -610,32 +622,58 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     const rows = financeRows.filter(
       (row) => row.bookType === bookType && row.entryType === "KHOROCH"
     );
-    const map = new Map<string, CostCategory>();
+
+    const monthlyRows = new Map<
+      string,
+      Array<(typeof rows)[number]>
+    >();
+
+    for (const row of rows) {
+      const month = getBangladeshDateInputValue(row.costDate).slice(0, 7);
+      const list = monthlyRows.get(month) || [];
+      list.push(row);
+      monthlyRows.set(month, list);
+    }
+
+    const categoryMap = new Map<string, CostCategory>();
     let raw = 0;
     let included = 0;
     let excluded = 0;
 
-    for (const row of rows) {
-      const amount = numberValue(row.amount);
-      raw += amount;
-      if (costIncluded(row.category)) included += amount;
-      else excluded += amount;
+    for (const month of monthKeys(from, to)) {
+      const share = monthShare(month, from, to);
+      const monthRows = monthlyRows.get(month) || [];
 
-      const current = map.get(row.category) || {
-        category: row.category,
-        amount: 0,
-        entries: 0,
-      };
-      current.amount += amount;
-      current.entries += 1;
-      map.set(row.category, current);
+      for (const row of monthRows) {
+        const fullAmount = numberValue(row.amount);
+        const appliedAmount = fullAmount * share.share;
+
+        raw += appliedAmount;
+
+        if (costIncluded(row.category)) {
+          included += appliedAmount;
+        } else {
+          excluded += appliedAmount;
+        }
+
+        const current = categoryMap.get(row.category) || {
+          category: row.category,
+          amount: 0,
+          entries: 0,
+        };
+        current.amount += appliedAmount;
+        current.entries += 1;
+        categoryMap.set(row.category, current);
+      }
     }
 
     return {
       raw,
       included,
       excluded,
-      categories: Array.from(map.values()).sort((a, b) => b.amount - a.amount),
+      categories: Array.from(categoryMap.values()).sort(
+        (a, b) => b.amount - a.amount
+      ),
     };
   }
 
@@ -1529,7 +1567,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Realized Revenue" value={taka(grossRevenue)} note={String(delivered.length) + " delivered order(s)"} tone="emerald" />
         <SummaryCard title="Product COGS" value={taka(productCogs)} note="Buying cost of delivered items" tone="rose" />
-        <SummaryCard title="Total Operating Cost" value={taka(courierCost + adsApplied + salaryApplied + dailyApplied + officeApplied)} note="Courier + Ads + Salary + Costing" tone="amber" />
+        <SummaryCard title="Total Operating Cost" value={taka(courierCost + adsApplied + salaryApplied + dailyApplied + officeApplied)} note="Courier + Ads + prorated Salary + monthly-prorated Costing" tone="amber" />
         <SummaryCard title="Net Profit / Loss" value={taka(netProfit)} note={"Net margin " + netMargin.toFixed(2) + "%"} tone={netProfit >= 0 ? "emerald" : "rose"} />
       </section>
 
@@ -1688,6 +1726,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
+        General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
+        each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>
     </div>
   );

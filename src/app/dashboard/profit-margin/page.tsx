@@ -32,6 +32,7 @@ type Props = {
     to?: string;
     sourceId?: string;
     courierId?: string;
+    merchantId?: string;
   }>;
 };
 
@@ -161,11 +162,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
   const sourceId = String(params.sourceId || "").trim();
   const courierId = String(params.courierId || "").trim();
+  const merchantId = String(params.merchantId || "").trim();
+  const merchantFilterActive = Boolean(merchantId);
+  const omsMerchantSelected = merchantId === "__OMS__";
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
   const { prisma } = await import("@/lib/prisma");
 
-  const [sources, couriers, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles] =
+  const [sources, couriers, merchants, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles] =
     await Promise.all([
       prisma.orderSource.findMany({
         where: { status: true },
@@ -174,6 +178,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }),
       prisma.courier.findMany({
         where: { status: true, pathaoEnabled: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      prisma.merchant.findMany({
+        where: { status: true },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
@@ -226,6 +235,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
                 select: {
                   productParentId: true,
                   reportGroupId: true,
+                  merchantId: true,
                   sources: { select: { sourceId: true } },
                 },
               },
@@ -280,6 +290,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
                       sku: true,
                       name: true,
                       stockMode: true,
+                      merchantId: true,
                       purchasePrice: true,
                     },
                   },
@@ -347,6 +358,58 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
     const price = numberValue(product.purchasePrice);
     return { amount: price * qty, missing: price <= 0 };
+  }
+
+  function itemMatchesMerchant(
+    item: (typeof orders)[number]["items"][number]
+  ) {
+    if (!merchantFilterActive) return true;
+    const ownerId = item.product?.parent.merchantId || null;
+    return omsMerchantSelected ? ownerId === null : ownerId === merchantId;
+  }
+
+  function merchantSlice(row: Evaluated): Evaluated | null {
+    if (!merchantFilterActive) return row;
+
+    const ownedItems = row.order.items.filter(itemMatchesMerchant);
+    if (!ownedItems.length) return null;
+
+    const fullLineValue = row.order.items.reduce(
+      (sum, item) => sum + numberValue(item.lineTotal),
+      0
+    );
+    const ownedLineValue = ownedItems.reduce(
+      (sum, item) => sum + numberValue(item.lineTotal),
+      0
+    );
+    const share =
+      fullLineValue > 0
+        ? ownedLineValue / fullLineValue
+        : ownedItems.length / Math.max(1, row.order.items.length);
+
+    let ownedCogs = 0;
+    let ownedMissingCost = 0;
+    if (row.delivered) {
+      for (const item of ownedItems) {
+        const result = cogsForItem(item);
+        ownedCogs += result.amount;
+        if (result.missing) ownedMissingCost += 1;
+      }
+    }
+
+    return {
+      ...row,
+      revenue: row.revenue * share,
+      codRevenue: row.codRevenue * share,
+      advanceRevenue: row.advanceRevenue * share,
+      billed: row.billed * share,
+      deliveryIncome: row.deliveryIncome * share,
+      cogs: ownedCogs,
+      deliveryCost: row.deliveryCost * share,
+      returnCost: row.returnCost * share,
+      missingCost: ownedMissingCost,
+      missingReturnFee: row.missingReturnFee && share > 0,
+    };
   }
 
   const evaluated: Evaluated[] = [];
@@ -468,11 +531,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     });
   }
 
-  const selected = evaluated.filter(
-    (row) =>
-      (!sourceId || row.order.sourceId === sourceId) &&
-      (!courierId || row.order.pathaoCourierId === courierId)
-  );
+  const selected = evaluated
+    .filter(
+      (row) =>
+        (!sourceId || row.order.sourceId === sourceId) &&
+        (!courierId || row.order.pathaoCourierId === courierId)
+    )
+    .map(merchantSlice)
+    .filter((row): row is Evaluated => Boolean(row));
   const delivered = selected.filter((row) => row.delivered);
   const returned = selected.filter((row) => row.returned);
   const partialCount = selected.filter((row) => row.partial).length;
@@ -495,7 +561,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const missingCostLines = delivered.reduce((sum, row) => sum + row.missingCost, 0);
   const missingReturnFees = returned.filter((row) => row.missingReturnFee).length;
 
-  const filteredView = Boolean(sourceId || courierId);
+  const filteredView = Boolean(sourceId || courierId || merchantFilterActive);
   const allocationShare = filteredView && allRevenue > 0
     ? Math.max(0, Math.min(1, grossRevenue / allRevenue))
     : filteredView
@@ -638,7 +704,17 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     let sourceAmount = bdt;
     const mapping = row.campaign.mapping;
 
-    if (sourceId) {
+    if (merchantFilterActive) {
+      const mappingMerchantId = mapping?.merchantId || null;
+      const merchantMatches = omsMerchantSelected
+        ? mappingMerchantId === null
+        : mappingMerchantId === merchantId;
+      if (!merchantMatches) {
+        sourceAmount = 0;
+      }
+    }
+
+    if (sourceId && sourceAmount > 0) {
       if (!mapping) {
         sourceAmount = 0;
         unmappedAdsForSource += bdt;
@@ -717,6 +793,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           row.delivered &&
           (!sourceId || row.order.sourceId === sourceId)
       )
+      .map(merchantSlice)
+      .filter((row): row is Evaluated => Boolean(row))
       .reduce((sum, row) => sum + row.revenue, 0);
     courierAdsShare =
       denominator > 0
@@ -749,6 +827,19 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       pathaoConsignmentId: { not: null },
       ...(sourceId ? { sourceId } : {}),
       ...(courierId ? { pathaoCourierId: courierId } : {}),
+      ...(merchantFilterActive
+        ? {
+            items: {
+              some: {
+                product: {
+                  parent: omsMerchantSelected
+                    ? { merchantId: null }
+                    : { merchantId },
+                },
+              },
+            },
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -781,6 +872,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
                   sku: true,
                   name: true,
                   stockMode: true,
+                  merchantId: true,
                   purchasePrice: true,
                 },
               },
@@ -1001,7 +1093,15 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const childProductMap = new Map<string, ProductAccumulator>();
 
   for (const row of performanceEvaluated) {
-    const lineTotal = row.order.items.reduce(
+    const performanceItems = merchantFilterActive
+      ? row.order.items.filter((item) => {
+          const ownerId = item.product?.parent.merchantId || null;
+          return omsMerchantSelected
+            ? ownerId === null
+            : ownerId === merchantId;
+        })
+      : row.order.items;
+    const lineTotal = performanceItems.reduce(
       (sum, item) => sum + numberValue(item.lineTotal),
       0
     );
@@ -1013,6 +1113,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     const deliveredStatus = row.delivered;
 
     for (const item of row.order.items) {
+      if (merchantFilterActive) {
+        const ownerId = item.product?.parent.merchantId || null;
+        const matches = omsMerchantSelected
+          ? ownerId === null
+          : ownerId === merchantId;
+        if (!matches) continue;
+      }
+
       const qty = Math.max(0, Number(item.quantity || 0));
       if (qty <= 0) continue;
 
@@ -1025,7 +1133,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       const share =
         lineTotal > 0
           ? numberValue(item.lineTotal) / lineTotal
-          : 1 / Math.max(1, row.order.items.length);
+          : 1 / Math.max(1, performanceItems.length);
 
       const parent =
         parentProductMap.get(parentId) ||
@@ -1308,6 +1416,12 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         "% of those costs using the selected slice's share of company delivered revenue."
     );
   }
+  if (merchantFilterActive) {
+    warnings.push(
+      selectedMerchant +
+        " filter uses Product Parent ownership. Mixed-merchant invoices are allocated by product line value so another merchant's revenue, COGS and courier cost are not counted in this view."
+    );
+  }
   if (sourceId) {
     warnings.push(
       "Meta ads follow the saved campaign-to-Source mapping. Multi-Source campaigns are split by delivered order count for the mapped parent product in this date range."
@@ -1345,6 +1459,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
   const selectedSource = sources.find((row) => row.id === sourceId)?.name || "All Sources";
   const selectedCourier = couriers.find((row) => row.id === courierId)?.name || "All Pathao Couriers";
+  const selectedMerchant = !merchantId
+    ? "All Merchants"
+    : omsMerchantSelected
+      ? "OMS"
+      : merchants.find((row) => row.id === merchantId)?.name || "Selected Merchant";
 
   return (
     <div className="space-y-6">
@@ -1359,7 +1478,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       </section>
 
       <section className="rounded-3xl border bg-white p-5 shadow-sm">
-        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <label className="space-y-2 text-sm">
             <span className="font-medium">From</span>
             <input name="from" type="date" defaultValue={from} className="w-full rounded-xl border px-3 py-2.5" />
@@ -1382,12 +1501,22 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
               {couriers.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
             </select>
           </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Merchant</span>
+            <select name="merchantId" defaultValue={merchantId} className="w-full rounded-xl border px-3 py-2.5">
+              <option value="">All Merchants</option>
+              <option value="__OMS__">OMS</option>
+              {merchants.map((row) => (
+                <option key={row.id} value={row.id}>{row.name}</option>
+              ))}
+            </select>
+          </label>
           <button className="self-end rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white">
             Apply Filters
           </button>
         </form>
         <p className="mt-3 text-xs text-slate-500">
-          Profit period: {from} to {to} · {selectedSource} · {selectedCourier}.
+          Profit period: {from} to {to} · {selectedMerchant} · {selectedSource} · {selectedCourier}.
           Sales/returns are recognized by Pathao webhook received date.
         </p>
       </section>

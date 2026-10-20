@@ -345,7 +345,7 @@ export default function ProductPerformanceReport({
   }
 
   return (
-    <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+    <section className="rounded-3xl border bg-white shadow-sm">
       <div className="border-b px-5 py-4 sm:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex items-start gap-2">
@@ -428,9 +428,13 @@ export default function ProductPerformanceReport({
               : "cursor-grab"
             : "")
         }
-        style={{ scrollbarGutter: "stable" }}
+        style={{
+          scrollbarGutter: "stable",
+          WebkitOverflowScrolling: "touch",
+          touchAction: "pan-x pan-y",
+        }}
         onPointerDown={(event) => {
-          if (!spaceHeld || event.button !== 0) return;
+          if (event.pointerType !== "mouse" || !spaceHeld || event.button !== 0) return;
 
           const scroller = scrollRef.current;
           if (!scroller) return;
@@ -492,7 +496,7 @@ export default function ProductPerformanceReport({
         >
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.35)]">
             <tr>
-              <th className="sticky left-0 top-0 z-40 min-w-[300px] bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(148,163,184,0.25)]">
+              <th className="top-0 z-40 min-w-[220px] bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(148,163,184,0.25)] sm:min-w-[260px] md:sticky md:left-0 md:min-w-[300px]">
                 Parent Code / Child SKU
               </th>
               <th className="min-w-[310px] px-4 py-3">সোর্স / ক্যাম্পেইন</th>
@@ -544,7 +548,7 @@ export default function ProductPerformanceReport({
               return (
                 <Fragment key={row.key}>
                   <tr className="border-t bg-white align-top transition hover:bg-slate-50">
-                    <td className="sticky left-0 z-20 bg-white px-4 py-3 shadow-[1px_0_0_rgba(226,232,240,0.9)]">
+                    <td className="z-20 min-w-[220px] bg-white px-4 py-3 shadow-[1px_0_0_rgba(226,232,240,0.9)] sm:min-w-[260px] md:sticky md:left-0 md:min-w-[300px]">
                       <button
                         type="button"
                         onClick={() => toggle(row.key)}
@@ -605,7 +609,7 @@ export default function ProductPerformanceReport({
                           key={row.key + "::" + child.key}
                           className="border-t bg-slate-50/80 align-top"
                         >
-                          <td className="sticky left-0 z-20 bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(226,232,240,0.9)]">
+                          <td className="z-20 min-w-[220px] bg-slate-50 px-4 py-3 shadow-[1px_0_0_rgba(226,232,240,0.9)] sm:min-w-[260px] md:sticky md:left-0 md:min-w-[300px]">
                             <div className="pl-6">
                               <p className="font-bold text-slate-800">
                                 ↳ {child.sku}

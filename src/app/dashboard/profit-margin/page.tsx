@@ -346,6 +346,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     billed: number;
     deliveryIncome: number;
     cogs: number;
+    deliveryBaseCost: number;
+    codFeeCost: number;
     deliveryCost: number;
     returnCost: number;
     missingCost: number;
@@ -422,6 +424,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       billed: row.billed * share,
       deliveryIncome: row.deliveryIncome * share,
       cogs: ownedCogs,
+      deliveryBaseCost: row.deliveryBaseCost * share,
+      codFeeCost: row.codFeeCost * share,
       deliveryCost: row.deliveryCost * share,
       returnCost: row.returnCost * share,
       missingCost: ownedMissingCost,
@@ -520,12 +524,47 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     const webhookDeliveryFee = delivered
       ? rawNumber(deliveredPayload, ["delivery_fee"])
       : null;
-    const deliveryCost = delivered
+    const webhookCodFee = delivered
+      ? rawNumber(deliveredPayload, [
+          "cod_fee",
+          "cod_charge",
+          "cod_fee_amount",
+          "cash_on_delivery_fee",
+        ])
+      : null;
+    const webhookTotalFee = delivered
+      ? rawNumber(deliveredPayload, [
+          "total_fee",
+          "total_charge",
+          "courier_fee",
+          "total_courier_fee",
+        ])
+      : null;
+
+    const deliveryBaseCost = delivered
       ? Math.max(
           0,
           webhookDeliveryFee !== null
             ? webhookDeliveryFee
             : numberValue(order.pathaoDeliveryFee)
+        )
+      : 0;
+    const codFeeCost = delivered
+      ? Math.max(
+          0,
+          webhookCodFee !== null
+            ? webhookCodFee
+            : webhookTotalFee !== null
+              ? webhookTotalFee - deliveryBaseCost
+              : 0
+        )
+      : 0;
+    const deliveryCost = delivered
+      ? Math.max(
+          0,
+          webhookTotalFee !== null
+            ? webhookTotalFee
+            : deliveryBaseCost + codFeeCost
         )
       : 0;
 
@@ -541,6 +580,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       billed,
       deliveryIncome: delivered ? numberValue(order.deliveryCharge) : 0,
       cogs,
+      deliveryBaseCost,
+      codFeeCost,
       deliveryCost,
       returnCost,
       missingCost,
@@ -573,6 +614,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   );
   const merchandiseRevenue = Math.max(0, grossRevenue - customerDeliveryIncome);
   const productCogs = delivered.reduce((sum, row) => sum + row.cogs, 0);
+  const deliveryBaseCost = delivered.reduce(
+    (sum, row) => sum + row.deliveryBaseCost,
+    0
+  );
+  const codFeeCost = delivered.reduce((sum, row) => sum + row.codFeeCost, 0);
   const deliveryCost = delivered.reduce((sum, row) => sum + row.deliveryCost, 0);
   const returnCost = returned.reduce((sum, row) => sum + row.returnCost, 0);
   const missingCostLines = delivered.reduce((sum, row) => sum + row.missingCost, 0);
@@ -1587,7 +1633,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           <CalcLine label="Merchandise revenue inside collected amount" value={merchandiseRevenue} muted />
           <CalcLine label="Customer delivery charge inside revenue" value={customerDeliveryIncome} muted />
           <CalcLine label="Product buying cost / COGS" value={-productCogs} />
-          <CalcLine label="Pathao delivery fee" value={-deliveryCost} />
+          <CalcLine label="Pathao base delivery fee" value={-deliveryBaseCost} />
+          <CalcLine label="Pathao COD fee" value={-codFeeCost} />
           <CalcLine label="Pathao Paid Return charge" value={-returnCost} />
           <CalcLine label="Meta Ads cost applied" value={-adsApplied} />
           <CalcLine label="Salary cost applied" value={-salaryApplied} />
@@ -1684,12 +1731,17 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <MiniStat label="Delivered Orders" value={String(delivered.length)} />
             <MiniStat label="Returned Orders" value={String(returned.length)} />
-            <MiniStat label="Delivery Fees" value={taka(deliveryCost)} />
+            <MiniStat label="Base Delivery Fees" value={taka(deliveryBaseCost)} />
+            <MiniStat label="COD Fees" value={taka(codFeeCost)} />
             <MiniStat label="Paid Return Fees" value={taka(returnCost)} />
+            <MiniStat
+              label="Pathao Total Fees"
+              value={taka(deliveryCost + returnCost)}
+            />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Delivery fee uses the delivered webhook fee when present, otherwise the saved Pathao fee.
-            Return fee uses Paid Return webhook collected_amount.
+            Delivered courier cost uses Pathao total_fee when available; otherwise it combines
+            delivery_fee + cod_fee. Paid Return uses the Paid Return webhook collected_amount.
           </p>
         </div>
       </section>
@@ -1726,6 +1778,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
+        Pathao delivered courier cost includes both base delivery fee and COD fee when supplied by Pathao.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

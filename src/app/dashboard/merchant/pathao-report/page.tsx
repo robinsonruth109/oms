@@ -205,12 +205,46 @@ export default async function MerchantPathaoReportPage({
     const deliveryFeeRaw = delivered
       ? rawNumber(deliveredPayload, ["delivery_fee"])
       : null;
-    const deliveryCost = delivered
+    const codFeeRaw = delivered
+      ? rawNumber(deliveredPayload, [
+          "cod_fee",
+          "cod_charge",
+          "cod_fee_amount",
+          "cash_on_delivery_fee",
+        ])
+      : null;
+    const totalFeeRaw = delivered
+      ? rawNumber(deliveredPayload, [
+          "total_fee",
+          "total_charge",
+          "courier_fee",
+          "total_courier_fee",
+        ])
+      : null;
+    const baseDeliveryCost = delivered
       ? Math.max(
           0,
           deliveryFeeRaw !== null
             ? deliveryFeeRaw
             : numberValue(order.pathaoDeliveryFee)
+        )
+      : 0;
+    const codFeeCost = delivered
+      ? Math.max(
+          0,
+          codFeeRaw !== null
+            ? codFeeRaw
+            : totalFeeRaw !== null
+              ? totalFeeRaw - baseDeliveryCost
+              : 0
+        )
+      : 0;
+    const deliveryCost = delivered
+      ? Math.max(
+          0,
+          totalFeeRaw !== null
+            ? totalFeeRaw
+            : baseDeliveryCost + codFeeCost
         ) * share
       : 0;
 
@@ -329,7 +363,7 @@ export default async function MerchantPathaoReportPage({
                 <th className="px-5 py-4">Bucket</th>
                 <th className="px-5 py-4 text-right">Product Qty</th>
                 <th className="px-5 py-4 text-right">COD Share</th>
-                <th className="px-5 py-4 text-right">Delivery Cost</th>
+                <th className="px-5 py-4 text-right">Delivered Courier Cost</th>
                 <th className="px-5 py-4 text-right">Return Cost</th>
               </tr>
             </thead>

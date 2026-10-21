@@ -325,11 +325,37 @@ export async function calculateMerchantProfitLoss(
       }
 
       const webhookDeliveryFee = rawNumber(deliveredPayload, ["delivery_fee"]);
-      const fullDeliveryCost = Math.max(
+      const webhookCodFee = rawNumber(deliveredPayload, [
+        "cod_fee",
+        "cod_charge",
+        "cod_fee_amount",
+        "cash_on_delivery_fee",
+      ]);
+      const webhookTotalFee = rawNumber(deliveredPayload, [
+        "total_fee",
+        "total_charge",
+        "courier_fee",
+        "total_courier_fee",
+      ]);
+      const baseDeliveryCost = Math.max(
         0,
         webhookDeliveryFee !== null
           ? webhookDeliveryFee
           : numberValue(order.pathaoDeliveryFee)
+      );
+      const codFeeCost = Math.max(
+        0,
+        webhookCodFee !== null
+          ? webhookCodFee
+          : webhookTotalFee !== null
+            ? webhookTotalFee - baseDeliveryCost
+            : 0
+      );
+      const fullDeliveryCost = Math.max(
+        0,
+        webhookTotalFee !== null
+          ? webhookTotalFee
+          : baseDeliveryCost + codFeeCost
       );
       deliveryCost += fullDeliveryCost * merchantShare;
     } else if (returned) {

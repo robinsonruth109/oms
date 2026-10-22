@@ -45,21 +45,43 @@ export function numberValue(value: unknown) {
 }
 
 export function rawNumber(payload: unknown, keys: string[]) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
+  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+
+  function find(value: unknown, depth = 0): unknown {
+    if (depth > 8 || value === null || value === undefined) return undefined;
+
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        const found = find(child, depth + 1);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+
+    if (typeof value !== "object") return undefined;
+
+    const record = value as Record<string, unknown>;
+
+    for (const [key, child] of Object.entries(record)) {
+      if (wanted.has(key.toLowerCase())) return child;
+    }
+
+    for (const child of Object.values(record)) {
+      const found = find(child, depth + 1);
+      if (found !== undefined) return found;
+    }
+
+    return undefined;
   }
 
-  const record = payload as Record<string, unknown>;
-  for (const key of keys) {
-    const value = record[key];
-    if (value === undefined || value === null) continue;
-    const parsed = Number(
-      typeof value === "string" ? value.replace(/[^\d.-]/g, "") : value
-    );
-    if (Number.isFinite(parsed)) return parsed;
-  }
+  const value = find(payload);
+  if (value === undefined || value === null) return null;
 
-  return null;
+  const parsed = Number(
+    typeof value === "string" ? value.replace(/[^\d.-]/g, "") : value
+  );
+
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function normalizePathaoEvent(value: string) {

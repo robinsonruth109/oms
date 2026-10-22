@@ -603,7 +603,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         )
       : 0;
 
-    const deliveryCost = finalized
+    const finalizedCourierCost = finalized
       ? Math.max(
           0,
           webhookTotalFee !== null
@@ -612,9 +612,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         )
       : 0;
 
-    // Kept for report compatibility: returned parcel cost is now its actual
-    // Pathao courier fee, not the paid-return collected COD amount.
-    const returnCost = returned ? deliveryCost : 0;
+    // Keep delivered and returned courier expenses separate so summary,
+    // parent-code and source/courier reports never double count a return.
+    const deliveryCost = delivered ? finalizedCourierCost : 0;
+    const returnCost = returned ? finalizedCourierCost : 0;
 
     evaluated.push({
       order,
@@ -668,7 +669,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     0
   );
   const codFeeCost = selected.reduce((sum, row) => sum + row.codFeeCost, 0);
-  const deliveryCost = selected.reduce(
+  const deliveryCost = delivered.reduce(
     (sum, row) => sum + row.deliveryCost,
     0
   );
@@ -1534,7 +1535,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   if (missingReturnFees) {
     warnings.push(
       String(missingReturnFees) +
-        " returned order(s) have no Paid Return collected_amount in this period; return charge is understated."
+        " returned order(s) have no usable Pathao delivery fee; returned courier cost may be understated."
     );
   }
   if (missingRateDays.size) {
@@ -1687,7 +1688,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           <CalcLine label="Product buying cost / COGS" value={-productCogs} />
           <CalcLine label="Pathao base delivery fee (all finalized parcels)" value={-deliveryBaseCost} />
           <CalcLine label="Pathao COD fee" value={-codFeeCost} />
-          <CalcLine label="Pathao total courier fee" value={-deliveryCost} />
+          <CalcLine label="Pathao delivered courier fee" value={-deliveryCost} />
+          <CalcLine label="Pathao returned courier fee" value={-returnCost} />
           <CalcLine label="Meta Ads cost applied" value={-adsApplied} />
           <CalcLine label="Salary cost applied" value={-salaryApplied} />
           <CalcLine label="Daily Costing applied" value={-dailyApplied} />
@@ -1788,7 +1790,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             <MiniStat label="Returned Parcel Courier Fees" value={taka(returnCost)} />
             <MiniStat
               label="Pathao Total Fees"
-              value={taka(deliveryCost)}
+              value={taka(deliveryCost + returnCost)}
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
@@ -1832,7 +1834,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
-        Pathao delivered courier cost includes both base delivery fee and COD fee when supplied by Pathao.
+        Pathao courier cost includes both delivered and returned finalized parcels. COD fee uses Pathao's explicit fee when available, otherwise 0.5% of collected amount.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

@@ -468,6 +468,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     let returnedAt = -1;
     let partialAt = -1;
     let deliveredPayload: unknown = null;
+    let returnPayload: unknown = null;
     let paidReturnPayload: unknown = null;
     let returnCollectedAmount = 0;
     let paidReturn = false;
@@ -498,7 +499,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         name === "returned" ||
         name === "return"
       ) {
-        returnedAt = Math.max(returnedAt, time);
+        if (time >= returnedAt) {
+          returnedAt = time;
+          returnPayload = webhook.rawPayload;
+        }
       }
       if (name === "order.paid-return" || name === "paid-return") {
         paidReturn = true;
@@ -552,22 +556,19 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }
     }
 
-    const finalized = delivered || returned;
-    const feePayload = delivered ? deliveredPayload : paidReturnPayload;
-
-    const webhookDeliveryFee = finalized
-      ? rawNumber(feePayload, ["delivery_fee"])
+    const deliveredWebhookDeliveryFee = delivered
+      ? rawNumber(deliveredPayload, ["delivery_fee"])
       : null;
-    const webhookCodFee = finalized
-      ? rawNumber(feePayload, [
+    const deliveredWebhookCodFee = delivered
+      ? rawNumber(deliveredPayload, [
           "cod_fee",
           "cod_charge",
           "cod_fee_amount",
           "cash_on_delivery_fee",
         ])
       : null;
-    const webhookTotalFee = finalized
-      ? rawNumber(feePayload, [
+    const deliveredWebhookTotalFee = delivered
+      ? rawNumber(deliveredPayload, [
           "total_fee",
           "total_charge",
           "courier_fee",
@@ -575,47 +576,102 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         ])
       : null;
 
-    const courierCollectedAmount = delivered
-      ? codRevenue
-      : returned
-        ? returnCollectedAmount
-        : 0;
-
-    const deliveryBaseCost = finalized
+    // Delivered parcels can safely fall back to the saved Pathao delivery fee.
+    // COD fee falls back to 0.5% of the actually collected COD when Pathao did
+    // not provide an explicit cod_fee / total_fee.
+    const deliveredBaseCost = delivered
       ? Math.max(
           0,
-          webhookDeliveryFee !== null
-            ? webhookDeliveryFee
+          deliveredWebhookDeliveryFee !== null
+            ? deliveredWebhookDeliveryFee
             : numberValue(order.pathaoDeliveryFee)
         )
       : 0;
 
-    // Pathao settlement sheets charge 0.5% COD fee on the actually collected
-    // amount when the webhook does not expose cod_fee / total_fee explicitly.
-    const codFeeCost = finalized
+    const deliveredCodFee = delivered
       ? Math.max(
           0,
-          webhookCodFee !== null
-            ? webhookCodFee
-            : webhookTotalFee !== null
-              ? webhookTotalFee - deliveryBaseCost
-              : courierCollectedAmount * 0.005
+          deliveredWebhookCodFee !== null
+            ? deliveredWebhookCodFee
+            : deliveredWebhookTotalFee !== null
+              ? deliveredWebhookTotalFee - deliveredBaseCost
+              : codRevenue * 0.005
         )
       : 0;
 
-    const finalizedCourierCost = finalized
+    const deliveryCost = delivered
       ? Math.max(
           0,
-          webhookTotalFee !== null
-            ? webhookTotalFee
-            : deliveryBaseCost + codFeeCost
+          deliveredWebhookTotalFee !== null
+            ? deliveredWebhookTotalFee
+            : deliveredBaseCost + deliveredCodFee
         )
       : 0;
 
-    // Keep delivered and returned courier expenses separate so summary,
-    // parent-code and source/courier reports never double count a return.
-    const deliveryCost = delivered ? finalizedCourierCost : 0;
-    const returnCost = returned ? finalizedCourierCost : 0;
+    // IMPORTANT: do NOT fall back to Order.pathaoDeliveryFee for returned
+    // parcels. Pathao settlement rows may legitimately have Tk 0 fee for
+    // Returned To Merchant. Only an actual return webhook fee is chargeable.
+    const effectiveReturnPayload = paidReturnPayload ?? returnPayload;
+    const returnExplicitTotalFee = returned
+      ? rawNumber(effectiveReturnPayload, [
+          "total_fee",
+          "total_charge",
+          "courier_fee",
+          "total_courier_fee",
+        ])
+      : null;
+    const returnExplicitDeliveryFee = returned
+      ? rawNumber(effectiveReturnPayload, ["delivery_fee"])
+      : null;
+    const returnExplicitFee = returned
+      ? rawNumber(effectiveReturnPayload, [
+          "return_charge",
+          "return_fee",
+          "collected_amount",
+        ])
+      : null;
+    const returnExplicitCodFee = returned
+      ? rawNumber(effectiveReturnPayload, [
+          "cod_fee",
+          "cod_charge",
+          "cod_fee_amount",
+          "cash_on_delivery_fee",
+        ])
+      : null;
+
+    const returnBaseCost = returned
+      ? Math.max(
+          0,
+          returnExplicitDeliveryFee !== null
+            ? returnExplicitDeliveryFee
+            : returnExplicitFee !== null
+              ? returnExplicitFee
+              : 0
+        )
+      : 0;
+
+    const returnCodFee = returned
+      ? Math.max(
+          0,
+          returnExplicitCodFee !== null
+            ? returnExplicitCodFee
+            : returnExplicitTotalFee !== null
+              ? returnExplicitTotalFee - returnBaseCost
+              : 0
+        )
+      : 0;
+
+    const returnCost = returned
+      ? Math.max(
+          0,
+          returnExplicitTotalFee !== null
+            ? returnExplicitTotalFee
+            : returnBaseCost + returnCodFee
+        )
+      : 0;
+
+    const deliveryBaseCost = deliveredBaseCost + returnBaseCost;
+    const codFeeCost = deliveredCodFee + returnCodFee;
 
     evaluated.push({
       order,
@@ -635,7 +691,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       returnCost,
       returnCollectedAmount,
       missingCost,
-      missingReturnFee: returned && deliveryBaseCost <= 0,
+      missingReturnFee: false,
     });
   }
 
@@ -1794,10 +1850,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Every finalized parcel uses Pathao total_fee when available; otherwise OMS combines
-            delivery_fee with COD fee. If COD fee is absent, OMS applies Pathao's settlement-sheet
-            fallback of 0.5% of the actually collected amount. Paid Return collected_amount is treated
-            as collected COD, not as a return charge.
+            Delivered parcels use Pathao total_fee when available; otherwise OMS combines the saved/webhook
+            delivery fee with a 0.5% COD fallback. Returned parcels never inherit the saved delivery fee:
+            only an actual return webhook fee is charged, so Returned To Merchant rows with Tk 0 stay Tk 0.
           </p>
         </div>
       </section>
@@ -1834,7 +1889,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
-        Pathao courier cost includes both delivered and returned finalized parcels. COD fee uses Pathao's explicit fee when available, otherwise 0.5% of collected amount.
+        Pathao courier cost uses delivered delivery/COD fees plus only explicit returned-parcel fees from Pathao. Returned parcels do not inherit the saved delivery fee because settlement rows may legitimately be Tk 0.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

@@ -374,6 +374,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     codFeeCost: number;
     deliveryCost: number;
     returnCost: number;
+    returnCollectedAmount: number;
     missingCost: number;
     missingReturnFee: boolean;
   };
@@ -452,6 +453,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       codFeeCost: row.codFeeCost * share,
       deliveryCost: row.deliveryCost * share,
       returnCost: row.returnCost * share,
+      returnCollectedAmount: row.returnCollectedAmount * share,
       missingCost: ownedMissingCost,
       missingReturnFee: row.missingReturnFee && share > 0,
     };
@@ -466,7 +468,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     let returnedAt = -1;
     let partialAt = -1;
     let deliveredPayload: unknown = null;
-    let returnCost = 0;
+    let paidReturnPayload: unknown = null;
+    let returnCollectedAmount = 0;
     let paidReturn = false;
     let latest = "unknown";
     let latestAt = -1;
@@ -499,12 +502,16 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }
       if (name === "order.paid-return" || name === "paid-return") {
         paidReturn = true;
-        const fee = rawNumber(webhook.rawPayload, [
+        paidReturnPayload = webhook.rawPayload;
+        const collectedReturn = rawNumber(webhook.rawPayload, [
           "collected_amount",
-          "return_charge",
-          "return_fee",
+          "amount_collected",
+          "amount_to_collect",
+          "cod_amount",
         ]);
-        if (fee !== null) returnCost = Math.max(0, fee);
+        if (collectedReturn !== null) {
+          returnCollectedAmount = Math.max(0, collectedReturn);
+        }
       }
     }
 
@@ -545,19 +552,22 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }
     }
 
-    const webhookDeliveryFee = delivered
-      ? rawNumber(deliveredPayload, ["delivery_fee"])
+    const finalized = delivered || returned;
+    const feePayload = delivered ? deliveredPayload : paidReturnPayload;
+
+    const webhookDeliveryFee = finalized
+      ? rawNumber(feePayload, ["delivery_fee"])
       : null;
-    const webhookCodFee = delivered
-      ? rawNumber(deliveredPayload, [
+    const webhookCodFee = finalized
+      ? rawNumber(feePayload, [
           "cod_fee",
           "cod_charge",
           "cod_fee_amount",
           "cash_on_delivery_fee",
         ])
       : null;
-    const webhookTotalFee = delivered
-      ? rawNumber(deliveredPayload, [
+    const webhookTotalFee = finalized
+      ? rawNumber(feePayload, [
           "total_fee",
           "total_charge",
           "courier_fee",
@@ -565,7 +575,13 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         ])
       : null;
 
-    const deliveryBaseCost = delivered
+    const courierCollectedAmount = delivered
+      ? codRevenue
+      : returned
+        ? returnCollectedAmount
+        : 0;
+
+    const deliveryBaseCost = finalized
       ? Math.max(
           0,
           webhookDeliveryFee !== null
@@ -573,17 +589,21 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             : numberValue(order.pathaoDeliveryFee)
         )
       : 0;
-    const codFeeCost = delivered
+
+    // Pathao settlement sheets charge 0.5% COD fee on the actually collected
+    // amount when the webhook does not expose cod_fee / total_fee explicitly.
+    const codFeeCost = finalized
       ? Math.max(
           0,
           webhookCodFee !== null
             ? webhookCodFee
             : webhookTotalFee !== null
               ? webhookTotalFee - deliveryBaseCost
-              : 0
+              : courierCollectedAmount * 0.005
         )
       : 0;
-    const deliveryCost = delivered
+
+    const deliveryCost = finalized
       ? Math.max(
           0,
           webhookTotalFee !== null
@@ -591,6 +611,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             : deliveryBaseCost + codFeeCost
         )
       : 0;
+
+    // Kept for report compatibility: returned parcel cost is now its actual
+    // Pathao courier fee, not the paid-return collected COD amount.
+    const returnCost = returned ? deliveryCost : 0;
 
     evaluated.push({
       order,
@@ -608,8 +632,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       codFeeCost,
       deliveryCost,
       returnCost,
+      returnCollectedAmount,
       missingCost,
-      missingReturnFee: returned && (!paidReturn || returnCost <= 0),
+      missingReturnFee: returned && deliveryBaseCost <= 0,
     });
   }
 
@@ -638,12 +663,15 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   );
   const merchandiseRevenue = Math.max(0, grossRevenue - customerDeliveryIncome);
   const productCogs = delivered.reduce((sum, row) => sum + row.cogs, 0);
-  const deliveryBaseCost = delivered.reduce(
+  const deliveryBaseCost = selected.reduce(
     (sum, row) => sum + row.deliveryBaseCost,
     0
   );
-  const codFeeCost = delivered.reduce((sum, row) => sum + row.codFeeCost, 0);
-  const deliveryCost = delivered.reduce((sum, row) => sum + row.deliveryCost, 0);
+  const codFeeCost = selected.reduce((sum, row) => sum + row.codFeeCost, 0);
+  const deliveryCost = selected.reduce(
+    (sum, row) => sum + row.deliveryCost,
+    0
+  );
   const returnCost = returned.reduce((sum, row) => sum + row.returnCost, 0);
   const missingCostLines = delivered.reduce((sum, row) => sum + row.missingCost, 0);
   const missingReturnFees = returned.filter((row) => row.missingReturnFee).length;
@@ -1657,9 +1685,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           <CalcLine label="Merchandise revenue inside collected amount" value={merchandiseRevenue} muted />
           <CalcLine label="Customer delivery charge inside revenue" value={customerDeliveryIncome} muted />
           <CalcLine label="Product buying cost / COGS" value={-productCogs} />
-          <CalcLine label="Pathao base delivery fee" value={-deliveryBaseCost} />
+          <CalcLine label="Pathao base delivery fee (all finalized parcels)" value={-deliveryBaseCost} />
           <CalcLine label="Pathao COD fee" value={-codFeeCost} />
-          <CalcLine label="Pathao Paid Return charge" value={-returnCost} />
+          <CalcLine label="Pathao total courier fee" value={-deliveryCost} />
           <CalcLine label="Meta Ads cost applied" value={-adsApplied} />
           <CalcLine label="Salary cost applied" value={-salaryApplied} />
           <CalcLine label="Daily Costing applied" value={-dailyApplied} />
@@ -1755,17 +1783,19 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <MiniStat label="Delivered Orders" value={String(delivered.length)} />
             <MiniStat label="Returned Orders" value={String(returned.length)} />
-            <MiniStat label="Base Delivery Fees" value={taka(deliveryBaseCost)} />
+            <MiniStat label="Base Delivery Fees · All Finalized" value={taka(deliveryBaseCost)} />
             <MiniStat label="COD Fees" value={taka(codFeeCost)} />
-            <MiniStat label="Paid Return Fees" value={taka(returnCost)} />
+            <MiniStat label="Returned Parcel Courier Fees" value={taka(returnCost)} />
             <MiniStat
               label="Pathao Total Fees"
-              value={taka(deliveryCost + returnCost)}
+              value={taka(deliveryCost)}
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Delivered courier cost uses Pathao total_fee when available; otherwise it combines
-            delivery_fee + cod_fee. Paid Return uses the Paid Return webhook collected_amount.
+            Every finalized parcel uses Pathao total_fee when available; otherwise OMS combines
+            delivery_fee with COD fee. If COD fee is absent, OMS applies Pathao's settlement-sheet
+            fallback of 0.5% of the actually collected amount. Paid Return collected_amount is treated
+            as collected COD, not as a return charge.
           </p>
         </div>
       </section>

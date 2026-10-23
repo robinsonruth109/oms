@@ -25,6 +25,7 @@ import ProductPerformanceReport, {
   type ParentProductPerformanceRow,
   type ProductPerformanceChildRow,
 } from "./product-performance-report";
+import PathaoSettlementUpload from "../pathao-daily-report/pathao-settlement-upload";
 
 type Props = {
   searchParams?: Promise<{
@@ -203,6 +204,18 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     toMonth + "-" + String(toMonthDays).padStart(2, "0")
   );
   const { prisma } = await import("@/lib/prisma");
+
+  const latestSettlementUpload = await prisma.pathaoSettlementUpload.findFirst({
+    orderBy: { createdAt: "desc" },
+    select: {
+      fileName: true,
+      rowCount: true,
+      matchedCount: true,
+      unmatchedCount: true,
+      duplicateCount: true,
+      createdAt: true,
+    },
+  });
 
   const [sources, couriers, merchants, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles] =
     await Promise.all([
@@ -1760,6 +1773,17 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           Order cohort is based on Ready-to-Ship / Pathao-submitted date. The latest verified Pathao outcome currently available is used, even if that status arrived after the selected date.
         </p>
       </section>
+
+      <PathaoSettlementUpload
+        latest={
+          latestSettlementUpload
+            ? {
+                ...latestSettlementUpload,
+                createdAt: latestSettlementUpload.createdAt.toISOString(),
+              }
+            : null
+        }
+      />
 
       {webhookEstimatedCount > 0 ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">

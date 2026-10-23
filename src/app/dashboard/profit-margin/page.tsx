@@ -365,13 +365,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const settlementRows = orders.length
     ? await prisma.pathaoSettlement.findMany({
         where: {
-          consignmentId: {
-            in: orders
-              .map((order) => order.pathaoConsignmentId)
-              .filter((id): id is string => Boolean(id)),
-          },
+          orderId: { in: orders.map((order) => order.id) },
         },
         select: {
+          id: true,
+          orderId: true,
           consignmentId: true,
           collectedAmount: true,
           deliveryFee: true,
@@ -381,12 +379,34 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           paymentStatus: true,
           updatedAt: true,
         },
+        orderBy: { updatedAt: "desc" },
       })
     : [];
 
-  const settlementMap = new Map(
-    settlementRows.map((row) => [row.consignmentId, row])
-  );
+  function settlementPriority(status: string | null | undefined) {
+    const value = String(status || "").trim().toLowerCase();
+    if (["return", "returned", "paid return", "returned to merchant"].includes(value)) return 3;
+    if (value === "delivered") return 2;
+    return 1;
+  }
+
+  const settlementMap = new Map<
+    string,
+    (typeof settlementRows)[number]
+  >();
+
+  for (const row of settlementRows) {
+    if (!row.orderId) continue;
+    const current = settlementMap.get(row.orderId);
+    if (
+      !current ||
+      settlementPriority(row.orderStatus) > settlementPriority(current.orderStatus) ||
+      (settlementPriority(row.orderStatus) === settlementPriority(current.orderStatus) &&
+        row.updatedAt.getTime() > current.updatedAt.getTime())
+    ) {
+      settlementMap.set(row.orderId, row);
+    }
+  }
 
   const orderMap = new Map(orders.map((row) => [row.id, row]));
   const eventMap = new Map<string, typeof webhooks>();
@@ -503,9 +523,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const evaluated: Evaluated[] = [];
   for (const order of orders) {
     const events = eventMap.get(order.id) || [];
-    const settlement = order.pathaoConsignmentId
-      ? settlementMap.get(order.pathaoConsignmentId) || null
-      : null;
+    const settlement = settlementMap.get(order.id) || null;
 
     let deliveredAt = -1;
     let returnedAt = -1;
@@ -1775,6 +1793,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       </section>
 
       <PathaoSettlementUpload
+        couriers={couriers.map((courier) => ({
+          id: courier.id,
+          name: courier.name,
+        }))}
         latest={
           latestSettlementUpload
             ? {

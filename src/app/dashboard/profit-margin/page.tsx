@@ -409,6 +409,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   }
 
   const orderMap = new Map(orders.map((row) => [row.id, row]));
+  const settlementCourierIds = new Set(
+    settlementRows
+      .map((row) => (row.orderId ? orderMap.get(row.orderId)?.pathaoCourierId : null))
+      .filter((id): id is string => Boolean(id))
+  );
   const eventMap = new Map<string, typeof webhooks>();
   for (const webhook of webhooks) {
     if (!webhook.orderId) continue;
@@ -437,7 +442,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     missingCost: number;
     missingReturnFee: boolean;
     settlementVerified: boolean;
-    feeSource: "SETTLEMENT" | "WEBHOOK_ESTIMATE";
+    feeSource: "SETTLEMENT" | "WEBHOOK_ESTIMATE" | "UNRESOLVED";
   };
 
   function cogsForItem(item: (typeof orders)[number]["items"][number]) {
@@ -524,6 +529,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   for (const order of orders) {
     const events = eventMap.get(order.id) || [];
     const settlement = settlementMap.get(order.id) || null;
+    const settlementMode = Boolean(
+      order.pathaoCourierId && settlementCourierIds.has(order.pathaoCourierId)
+    );
 
     let deliveredAt = -1;
     let returnedAt = -1;
@@ -591,25 +599,33 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       "returned to merchant",
     ].includes(settlementStatus);
 
-    const returned = settlement
-      ? settlementReturned
-      : returnedAt >= 0 && returnedAt >= deliveredAt;
-    const delivered = settlement
-      ? settlementDelivered
-      : deliveredAt >= 0 && deliveredAt > returnedAt;
-    const partial = settlement
+    const returned = settlementMode
+      ? Boolean(settlement && settlementReturned)
+      : settlement
+        ? settlementReturned
+        : returnedAt >= 0 && returnedAt >= deliveredAt;
+    const delivered = settlementMode
+      ? Boolean(settlement && settlementDelivered)
+      : settlement
+        ? settlementDelivered
+        : deliveredAt >= 0 && deliveredAt > returnedAt;
+    const partial = settlementMode
       ? false
-      : !delivered && !returned && partialAt >= 0;
+      : settlement
+        ? false
+        : !delivered && !returned && partialAt >= 0;
 
     const collected = delivered
       ? settlement
         ? numberValue(settlement.collectedAmount)
-        : rawNumber(deliveredPayload, [
-            "collected_amount",
-            "amount_collected",
-            "amount_to_collect",
-            "cod_amount",
-          ])
+        : settlementMode
+          ? null
+          : rawNumber(deliveredPayload, [
+              "collected_amount",
+              "amount_collected",
+              "amount_to_collect",
+              "cod_amount",
+            ])
       : null;
 
     const codDue = numberValue(order.totalAmount);
@@ -731,13 +747,19 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     const settlementVerified = Boolean(settlement);
     const deliveryBaseCost = settlement
       ? numberValue(settlement.deliveryFee)
-      : estimatedDeliveryBaseCost;
+      : settlementMode
+        ? 0
+        : estimatedDeliveryBaseCost;
     const codFeeCost = settlement
       ? numberValue(settlement.codFee)
-      : estimatedCodFeeCost;
+      : settlementMode
+        ? 0
+        : estimatedCodFeeCost;
     const parcelCourierCost = settlement
       ? numberValue(settlement.totalFee)
-      : deliveryBaseCost + codFeeCost;
+      : settlementMode
+        ? 0
+        : deliveryBaseCost + codFeeCost;
 
     const deliveryCost = delivered ? parcelCourierCost : 0;
     const returnCost = returned ? parcelCourierCost : 0;
@@ -762,7 +784,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       missingCost,
       missingReturnFee: false,
       settlementVerified,
-      feeSource: settlementVerified ? "SETTLEMENT" : "WEBHOOK_ESTIMATE",
+      feeSource: settlementVerified
+        ? "SETTLEMENT"
+        : settlementMode
+          ? "UNRESOLVED"
+          : "WEBHOOK_ESTIMATE",
     });
   }
 
@@ -777,7 +803,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const delivered = selected.filter((row) => row.delivered);
   const returned = selected.filter((row) => row.returned);
   const settlementVerifiedCount = selected.filter((row) => row.settlementVerified).length;
-  const webhookEstimatedCount = selected.length - settlementVerifiedCount;
+  const unresolvedSettlementCount = selected.filter((row) => row.feeSource === "UNRESOLVED").length;
+  const webhookEstimatedCount = selected.filter((row) => row.feeSource === "WEBHOOK_ESTIMATE").length;
   const partialCount = selected.filter((row) => row.partial).length;
   const allRevenue = evaluated
     .filter((row) => row.delivered)
@@ -1807,22 +1834,34 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         }
       />
 
-      {webhookEstimatedCount > 0 ? (
+      {unresolvedSettlementCount > 0 ? (
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">PAYMENT CSV MODE · settlement only</p>
+              <p className="mt-1">
+                {settlementVerifiedCount} parcel(s) are VERIFIED from the payment sheet and {unresolvedSettlementCount}
+                parcel(s) are UNRESOLVED. Unresolved parcels are excluded from collected amount, delivery fee,
+                COD fee, total Pathao fee, revenue and profit calculations. Webhook money is NOT used for this courier.
+              </p>
+              <p className="mt-1 font-medium text-rose-800">
+                Fix the remaining CSV-to-OMS matches, then re-upload the same payment sheet.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : webhookEstimatedCount > 0 ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <p className="font-semibold">ESTIMATED Pathao accounting</p>
               <p className="mt-1">
-                {webhookEstimatedCount} of {selected.length} parcel(s) in this view do not yet have a matched
-                Pathao payment settlement. Their courier figures use webhook/order estimates. Select the correct
-                Pathao courier/account above and upload the payment CSV to verify them.
+                No payment-settlement CSV is active for these parcel(s), so {webhookEstimatedCount} parcel(s)
+                still use webhook/order estimates. Upload the correct courier payment CSV to switch that courier
+                to settlement-only accounting.
               </p>
-              {settlementVerifiedCount > 0 ? (
-                <p className="mt-1 font-medium text-emerald-700">
-                  {settlementVerifiedCount} parcel(s) are VERIFIED from payment-sheet data.
-                </p>
-              ) : null}
             </div>
           </div>
         </section>

@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Globe2,
   Settings2,
-  ShieldKeyhole,
 } from "lucide-react";
 
 import CatalogSettings from "./catalog-settings";
@@ -59,7 +58,7 @@ export default function IntegrationCard({
   }> = [
     { key: "overview", label: "Overview", icon: Globe2 },
     { key: "catalog", label: "Catalog", icon: Settings2 },
-    { key: "security", label: "Security", icon: ShieldKeyhole },
+    { key: "security", label: "Security", icon: Settings2 },
     { key: "payload", label: "Payload", icon: Code2 },
   ];
 

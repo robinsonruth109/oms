@@ -903,6 +903,61 @@ model ExchangeCaseItem {
   @@index([productId])
 }
 
+model PathaoSettlementUpload {
+  id String @id @default(uuid())
+
+  fileName String
+  rowCount Int
+  matchedCount Int
+  unmatchedCount Int
+  duplicateCount Int @default(0)
+
+  uploadedByUserId String?
+  createdAt DateTime @default(now())
+
+  settlements PathaoSettlement[]
+
+  @@index([createdAt])
+  @@index([uploadedByUserId])
+}
+
+model PathaoSettlement {
+  id String @id @default(uuid())
+
+  consignmentId String @unique
+  orderId String?
+  merchantOrderId String?
+
+  paymentStatus String?
+  orderStatus String?
+  storeName String?
+  orderType String?
+  itemType String?
+
+  collectibleAmount Decimal @default(0) @db.Decimal(12, 2)
+  collectedAmount Decimal @default(0) @db.Decimal(12, 2)
+  deliveryFee Decimal @default(0) @db.Decimal(12, 2)
+  codFee Decimal @default(0) @db.Decimal(12, 2)
+  totalFee Decimal @default(0) @db.Decimal(12, 2)
+
+  orderCreatedAt DateTime?
+  rawRow Json?
+
+  uploadId String
+  upload PathaoSettlementUpload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([merchantOrderId])
+  @@index([orderStatus])
+  @@index([paymentStatus])
+  @@index([uploadId])
+  @@index([orderCreatedAt])
+}
+
+
 model AdsCostUpload {
   id          String   @id @default(uuid())
   uploadDate  DateTime

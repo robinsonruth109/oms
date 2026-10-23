@@ -218,7 +218,13 @@ export async function POST(
 
     if (fields.orderStatus) nextData.pathaoOrderStatus = fields.orderStatus;
     if (fields.orderStatusSlug) nextData.pathaoOrderStatusSlug = fields.orderStatusSlug;
-    if (fields.deliveryFee !== null) nextData.pathaoDeliveryFee = fields.deliveryFee;
+
+    // pathaoDeliveryFee is the ORIGINAL outbound parcel fee.
+    // Never let return-leg lifecycle webhooks overwrite it.
+    if (!isReturnLifecycleEvent && fields.deliveryFee !== null) {
+      nextData.pathaoDeliveryFee = fields.deliveryFee;
+    }
+
     if (fields.amountToCollect !== null) {
       nextData.pathaoAmountToCollect = fields.amountToCollect;
     }

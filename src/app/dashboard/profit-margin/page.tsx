@@ -71,6 +71,58 @@ function numberValue(value: unknown) {
   return Number.isFinite(result) ? result : 0;
 }
 
+function isDhakaMetroAddress(address: string) {
+  const value = String(address || "").toLowerCase();
+  const compact = value.replace(/\s+/g, " ");
+
+  const dhakaHints = [
+    "dhaka",
+    "ঢাকা",
+    "mirpur",
+    "মিরপুর",
+    "uttara",
+    "উত্তরা",
+    "dhanmondi",
+    "ধানমন্ডি",
+    "mohammadpur",
+    "মোহাম্মদপুর",
+    "badda",
+    "বাড্ডা",
+    "gulshan",
+    "গুলশান",
+    "banani",
+    "বনানী",
+    "jatrabari",
+    "যাত্রাবাড়ী",
+    "rampura",
+    "রামপুরা",
+    "khilgaon",
+    "খিলগাঁও",
+    "bashundhara",
+    "বসুন্ধরা",
+    "motijheel",
+    "মতিঝিল",
+    "paltan",
+    "পল্টন",
+    "wari",
+    "ওয়ারী",
+    "shyamoli",
+    "শ্যামলী",
+    "farmgate",
+    "ফার্মগেট",
+    "tejgaon",
+    "তেজগাঁও",
+    "lalbagh",
+    "লালবাগ",
+    "azimpur",
+    "আজিমপুর",
+    "malibagh",
+    "মালিবাগ",
+  ];
+
+  return dhakaHints.some((hint) => compact.includes(hint));
+}
+
 function rawNumber(payload: unknown, keys: string[]) {
   const wanted = new Set(keys.map((key) => key.toLowerCase()));
 
@@ -588,6 +640,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         )
       : 0;
 
+    const dhakaMetro = isDhakaMetroAddress(order.address);
+    const fallbackCodRate = dhakaMetro ? 0.005 : 0.01;
+
     const deliveredCodFee = delivered
       ? Math.max(
           0,
@@ -595,7 +650,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             ? deliveredWebhookCodFee
             : deliveredWebhookTotalFee !== null
               ? deliveredWebhookTotalFee - deliveredBaseCost
-              : codRevenue * 0.005
+              : codRevenue * fallbackCodRate
         )
       : 0;
 
@@ -627,7 +682,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       ? rawNumber(effectiveReturnPayload, [
           "return_charge",
           "return_fee",
-          "collected_amount",
         ])
       : null;
     const returnExplicitCodFee = returned
@@ -639,14 +693,33 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         ])
       : null;
 
+    // For returned parcels, Pathao may not expose a separate fee in webhook data.
+    // Official fallback:
+    // - Dhaka metro return: no extra return surcharge.
+    // - Outside Dhaka return: delivery fee + 50% return surcharge.
+    const savedReturnDeliveryFee = returned
+      ? Math.max(0, numberValue(order.pathaoDeliveryFee))
+      : 0;
+
     const returnBaseCost = returned
       ? Math.max(
           0,
           returnExplicitDeliveryFee !== null
             ? returnExplicitDeliveryFee
-            : returnExplicitFee !== null
-              ? returnExplicitFee
-              : 0
+            : savedReturnDeliveryFee
+        )
+      : 0;
+
+    const fallbackReturnSurcharge = returned && !dhakaMetro
+      ? returnBaseCost * 0.5
+      : 0;
+
+    const returnSurcharge = returned
+      ? Math.max(
+          0,
+          returnExplicitFee !== null
+            ? returnExplicitFee
+            : fallbackReturnSurcharge
         )
       : 0;
 
@@ -656,7 +729,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           returnExplicitCodFee !== null
             ? returnExplicitCodFee
             : returnExplicitTotalFee !== null
-              ? returnExplicitTotalFee - returnBaseCost
+              ? Math.max(
+                  0,
+                  returnExplicitTotalFee - returnBaseCost - returnSurcharge
+                )
               : 0
         )
       : 0;
@@ -666,7 +742,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           0,
           returnExplicitTotalFee !== null
             ? returnExplicitTotalFee
-            : returnBaseCost + returnCodFee
+            : returnBaseCost + returnSurcharge + returnCodFee
         )
       : 0;
 
@@ -1850,9 +1926,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Delivered parcels use Pathao total_fee when available; otherwise OMS combines the saved/webhook
-            delivery fee with a 0.5% COD fallback. Returned parcels never inherit the saved delivery fee:
-            only an actual return webhook fee is charged, so Returned To Merchant rows with Tk 0 stay Tk 0.
+            Delivered parcels use Pathao total_fee/cod_fee when available. Otherwise OMS applies destination-aware
+            Pathao COD fallback: 0.5% for Dhaka Metropolitan and 1% outside Dhaka. Returned parcels use
+            explicit Pathao return fees when available; otherwise outside-Dhaka returns add 50% of the
+            delivery fee as return surcharge, while Dhaka-metro returns add no surcharge.
           </p>
         </div>
       </section>
@@ -1889,7 +1966,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
-        Pathao courier cost uses delivered delivery/COD fees plus only explicit returned-parcel fees from Pathao. Returned parcels do not inherit the saved delivery fee because settlement rows may legitimately be Tk 0.
+        Pathao courier cost follows Pathao fallback rules when explicit settlement fee fields are absent: Dhaka Metropolitan COD 0.5%, outside-Dhaka COD 1%, and outside-Dhaka returns add a 50% return surcharge on delivery fee.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

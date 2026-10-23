@@ -1815,8 +1815,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
               <p className="font-semibold">ESTIMATED Pathao accounting</p>
               <p className="mt-1">
                 {webhookEstimatedCount} of {selected.length} parcel(s) in this view do not yet have a matched
-                Pathao payment settlement. Their courier figures use webhook/order estimates. Upload the Pathao
-                payment CSV from Pathao Daily Report to verify them.
+                Pathao payment settlement. Their courier figures use webhook/order estimates. Select the correct
+                Pathao courier/account above and upload the payment CSV to verify them.
               </p>
               {settlementVerifiedCount > 0 ? (
                 <p className="mt-1 font-medium text-emerald-700">

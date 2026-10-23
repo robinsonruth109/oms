@@ -71,58 +71,6 @@ function numberValue(value: unknown) {
   return Number.isFinite(result) ? result : 0;
 }
 
-function isDhakaMetroAddress(address: string) {
-  const value = String(address || "").toLowerCase();
-  const compact = value.replace(/\s+/g, " ");
-
-  const dhakaHints = [
-    "dhaka",
-    "ঢাকা",
-    "mirpur",
-    "মিরপুর",
-    "uttara",
-    "উত্তরা",
-    "dhanmondi",
-    "ধানমন্ডি",
-    "mohammadpur",
-    "মোহাম্মদপুর",
-    "badda",
-    "বাড্ডা",
-    "gulshan",
-    "গুলশান",
-    "banani",
-    "বনানী",
-    "jatrabari",
-    "যাত্রাবাড়ী",
-    "rampura",
-    "রামপুরা",
-    "khilgaon",
-    "খিলগাঁও",
-    "bashundhara",
-    "বসুন্ধরা",
-    "motijheel",
-    "মতিঝিল",
-    "paltan",
-    "পল্টন",
-    "wari",
-    "ওয়ারী",
-    "shyamoli",
-    "শ্যামলী",
-    "farmgate",
-    "ফার্মগেট",
-    "tejgaon",
-    "তেজগাঁও",
-    "lalbagh",
-    "লালবাগ",
-    "azimpur",
-    "আজিমপুর",
-    "malibagh",
-    "মালিবাগ",
-  ];
-
-  return dhakaHints.some((hint) => compact.includes(hint));
-}
-
 function rawNumber(payload: unknown, keys: string[]) {
   const wanted = new Set(keys.map((key) => key.toLowerCase()));
 
@@ -640,8 +588,11 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         )
       : 0;
 
-    const dhakaMetro = isDhakaMetroAddress(order.address);
-    const fallbackCodRate = dhakaMetro ? 0.005 : 0.01;
+    // Business rule requested by OMS:
+    // delivery charge 120 = Outside Dhaka => COD 1%
+    // delivery charge below 120 = Inside Dhaka => COD 0.5%
+    const customerDeliveryCharge = Math.max(0, numberValue(order.deliveryCharge));
+    const fallbackCodRate = customerDeliveryCharge >= 120 ? 0.01 : 0.005;
 
     const deliveredCodFee = delivered
       ? Math.max(
@@ -682,6 +633,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       ? rawNumber(effectiveReturnPayload, [
           "return_charge",
           "return_fee",
+          "collected_amount",
         ])
       : null;
     const returnExplicitCodFee = returned
@@ -693,33 +645,16 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         ])
       : null;
 
-    // For returned parcels, Pathao may not expose a separate fee in webhook data.
-    // Official fallback:
-    // - Dhaka metro return: no extra return surcharge.
-    // - Outside Dhaka return: delivery fee + 50% return surcharge.
-    const savedReturnDeliveryFee = returned
-      ? Math.max(0, numberValue(order.pathaoDeliveryFee))
-      : 0;
-
+    // Keep the older/simple return model: only charge an actual return fee
+    // reported by Pathao. Do not invent extra return surcharge from destination.
     const returnBaseCost = returned
       ? Math.max(
           0,
           returnExplicitDeliveryFee !== null
             ? returnExplicitDeliveryFee
-            : savedReturnDeliveryFee
-        )
-      : 0;
-
-    const fallbackReturnSurcharge = returned && !dhakaMetro
-      ? returnBaseCost * 0.5
-      : 0;
-
-    const returnSurcharge = returned
-      ? Math.max(
-          0,
-          returnExplicitFee !== null
-            ? returnExplicitFee
-            : fallbackReturnSurcharge
+            : returnExplicitFee !== null
+              ? returnExplicitFee
+              : 0
         )
       : 0;
 
@@ -729,10 +664,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           returnExplicitCodFee !== null
             ? returnExplicitCodFee
             : returnExplicitTotalFee !== null
-              ? Math.max(
-                  0,
-                  returnExplicitTotalFee - returnBaseCost - returnSurcharge
-                )
+              ? returnExplicitTotalFee - returnBaseCost
               : 0
         )
       : 0;
@@ -742,7 +674,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           0,
           returnExplicitTotalFee !== null
             ? returnExplicitTotalFee
-            : returnBaseCost + returnSurcharge + returnCodFee
+            : returnBaseCost + returnCodFee
         )
       : 0;
 
@@ -1926,10 +1858,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Delivered parcels use Pathao total_fee/cod_fee when available. Otherwise OMS applies destination-aware
-            Pathao COD fallback: 0.5% for Dhaka Metropolitan and 1% outside Dhaka. Returned parcels use
-            explicit Pathao return fees when available; otherwise outside-Dhaka returns add 50% of the
-            delivery fee as return surcharge, while Dhaka-metro returns add no surcharge.
+            Delivered parcels keep the existing collected amount and delivery fee logic. COD fallback follows the OMS business rule:
+            customer delivery charge 120 or more = Outside Dhaka = 1% COD; below 120 = Inside Dhaka = 0.5% COD.
+            Returned parcels use only actual Pathao return fee data and no extra destination-based surcharge.
           </p>
         </div>
       </section>
@@ -1966,7 +1897,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
-        Pathao courier cost follows Pathao fallback rules when explicit settlement fee fields are absent: Dhaka Metropolitan COD 0.5%, outside-Dhaka COD 1%, and outside-Dhaka returns add a 50% return surcharge on delivery fee.
+        Pathao courier cost keeps the earlier collected amount and delivery fee model. COD fallback is based only on customer delivery charge: 120 or more = 1%, below 120 = 0.5%. No extra destination-based return surcharge is added.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

@@ -556,9 +556,35 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }
     }
 
-    const deliveredWebhookDeliveryFee = delivered
-      ? rawNumber(deliveredPayload, ["delivery_fee"])
-      : null;
+    const RETURN_LIFECYCLE_NAMES = new Set([
+      "order.return-id-created",
+      "order.return-in-transit",
+      "order.returned-to-merchant",
+    ]);
+
+    // Reconstruct the ORIGINAL outbound parcel delivery fee from webhook
+    // history. The event list is already sorted oldest -> newest.
+    // This repairs historical orders whose saved pathaoDeliveryFee was later
+    // overwritten by a return-leg webhook.
+    let originalWebhookDeliveryFee: number | null = null;
+    for (const webhook of events) {
+      const name = eventName(webhook.eventName);
+      if (RETURN_LIFECYCLE_NAMES.has(name)) continue;
+      const fee = rawNumber(webhook.rawPayload, ["delivery_fee"]);
+      if (fee !== null && fee >= 0) {
+        originalWebhookDeliveryFee = fee;
+        break;
+      }
+    }
+
+    const deliveryBaseCost = Math.max(
+      0,
+      originalWebhookDeliveryFee !== null
+        ? originalWebhookDeliveryFee
+        : numberValue(order.pathaoDeliveryFee)
+    );
+
+    // Prefer exact fee fields from Pathao whenever present.
     const deliveredWebhookCodFee = delivered
       ? rawNumber(deliveredPayload, [
           "cod_fee",
@@ -576,110 +602,60 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         ])
       : null;
 
-    // Delivered parcels can safely fall back to the saved Pathao delivery fee.
-    // COD fee falls back to 0.5% of the actually collected COD when Pathao did
-    // not provide an explicit cod_fee / total_fee.
-    const deliveredBaseCost = delivered
-      ? Math.max(
-          0,
-          deliveredWebhookDeliveryFee !== null
-            ? deliveredWebhookDeliveryFee
-            : numberValue(order.pathaoDeliveryFee)
-        )
-      : 0;
-
-    // Business rule requested by OMS:
-    // delivery charge 120 = Outside Dhaka => COD 1%
-    // delivery charge below 120 = Inside Dhaka => COD 0.5%
-    const customerDeliveryCharge = Math.max(0, numberValue(order.deliveryCharge));
-    const fallbackCodRate = customerDeliveryCharge >= 120 ? 0.01 : 0.005;
-
-    const deliveredCodFee = delivered
-      ? Math.max(
-          0,
-          deliveredWebhookCodFee !== null
-            ? deliveredWebhookCodFee
-            : deliveredWebhookTotalFee !== null
-              ? deliveredWebhookTotalFee - deliveredBaseCost
-              : codRevenue * fallbackCodRate
-        )
-      : 0;
-
-    const deliveryCost = delivered
-      ? Math.max(
-          0,
-          deliveredWebhookTotalFee !== null
-            ? deliveredWebhookTotalFee
-            : deliveredBaseCost + deliveredCodFee
-        )
-      : 0;
-
-    // IMPORTANT: do NOT fall back to Order.pathaoDeliveryFee for returned
-    // parcels. Pathao settlement rows may legitimately have Tk 0 fee for
-    // Returned To Merchant. Only an actual return webhook fee is chargeable.
-    const effectiveReturnPayload = paidReturnPayload ?? returnPayload;
-    const returnExplicitTotalFee = returned
-      ? rawNumber(effectiveReturnPayload, [
-          "total_fee",
-          "total_charge",
-          "courier_fee",
-          "total_courier_fee",
-        ])
-      : null;
-    const returnExplicitDeliveryFee = returned
-      ? rawNumber(effectiveReturnPayload, ["delivery_fee"])
-      : null;
-    const returnExplicitFee = returned
-      ? rawNumber(effectiveReturnPayload, [
-          "return_charge",
-          "return_fee",
-          "collected_amount",
-        ])
-      : null;
-    const returnExplicitCodFee = returned
-      ? rawNumber(effectiveReturnPayload, [
+    const returnFeePayload = paidReturnPayload ?? returnPayload;
+    const returnWebhookCodFee = returned
+      ? rawNumber(returnFeePayload, [
           "cod_fee",
           "cod_charge",
           "cod_fee_amount",
           "cash_on_delivery_fee",
         ])
       : null;
+    const returnWebhookTotalFee = returned
+      ? rawNumber(returnFeePayload, [
+          "total_fee",
+          "total_charge",
+          "courier_fee",
+          "total_courier_fee",
+        ])
+      : null;
 
-    // Keep the older/simple return model: only charge an actual return fee
-    // reported by Pathao. Do not invent extra return surcharge from destination.
-    const returnBaseCost = returned
-      ? Math.max(
-          0,
-          returnExplicitDeliveryFee !== null
-            ? returnExplicitDeliveryFee
-            : returnExplicitFee !== null
-              ? returnExplicitFee
+    // This merchant account's settlement pattern (verified against Pathao CSV):
+    // customer delivery charge >= 120 identifies the outside route.
+    // Outside COD is 0.5% on actually collected COD.
+    // Inside routes in this account have no COD fee.
+    const outsideRoute = Math.max(0, numberValue(order.deliveryCharge)) >= 120;
+
+    let codFeeCost = 0;
+    if (delivered) {
+      codFeeCost = Math.max(
+        0,
+        deliveredWebhookCodFee !== null
+          ? deliveredWebhookCodFee
+          : deliveredWebhookTotalFee !== null
+            ? deliveredWebhookTotalFee - deliveryBaseCost
+            : outsideRoute
+              ? codRevenue * 0.005
               : 0
-        )
-      : 0;
-
-    const returnCodFee = returned
-      ? Math.max(
-          0,
-          returnExplicitCodFee !== null
-            ? returnExplicitCodFee
-            : returnExplicitTotalFee !== null
-              ? returnExplicitTotalFee - returnBaseCost
+      );
+    } else if (returned) {
+      codFeeCost = Math.max(
+        0,
+        returnWebhookCodFee !== null
+          ? returnWebhookCodFee
+          : returnWebhookTotalFee !== null
+            ? returnWebhookTotalFee - deliveryBaseCost
+            : paidReturn && outsideRoute
+              ? returnCollectedAmount * 0.005
               : 0
-        )
-      : 0;
+      );
+    }
 
-    const returnCost = returned
-      ? Math.max(
-          0,
-          returnExplicitTotalFee !== null
-            ? returnExplicitTotalFee
-            : returnBaseCost + returnCodFee
-        )
-      : 0;
-
-    const deliveryBaseCost = deliveredBaseCost + returnBaseCost;
-    const codFeeCost = deliveredCodFee + returnCodFee;
+    // Pathao settlement total per original parcel is base delivery fee + COD.
+    // Return/Paid Return are outcome buckets, not a second surcharge layer.
+    const parcelCourierCost = deliveryBaseCost + codFeeCost;
+    const deliveryCost = delivered ? parcelCourierCost : 0;
+    const returnCost = returned ? parcelCourierCost : 0;
 
     evaluated.push({
       order,
@@ -1858,9 +1834,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Delivered parcels keep the existing collected amount and delivery fee logic. COD fallback follows the OMS business rule:
-            customer delivery charge 120 or more = Outside Dhaka = 1% COD; below 120 = Inside Dhaka = 0.5% COD.
-            Returned parcels use only actual Pathao return fee data and no extra destination-based surcharge.
+            Base delivery fee is reconstructed from each parcel's original outbound Pathao webhook so later return webhooks cannot overwrite it.
+            COD uses explicit Pathao fee fields when available. For this merchant account's historical fallback, customer delivery charge
+            120 or more identifies the outside route and applies 0.5% to actually collected COD; inside routes apply no COD fallback.
+            Return/Paid Return remain outcome buckets and do not create a second delivery surcharge.
           </p>
         </div>
       </section>
@@ -1897,7 +1874,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
-        Pathao courier cost keeps the earlier collected amount and delivery fee model. COD fallback is based only on customer delivery charge: 120 or more = 1%, below 120 = 0.5%. No extra destination-based return surcharge is added.
+        Pathao courier cost is calculated per original parcel as original outbound delivery fee + COD fee. The original fee is reconstructed from webhook history to prevent return-leg overwrites.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

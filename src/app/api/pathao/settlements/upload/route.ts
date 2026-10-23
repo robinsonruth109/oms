@@ -3,9 +3,8 @@ import { getServerSession } from "next-auth";
 import Papa from "papaparse";
 
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type CsvRow = Record<string, string>;
 
@@ -69,6 +68,7 @@ function parsePathaoDate(value: string) {
 }
 
 export async function POST(request: Request) {
+  const { prisma } = await import("@/lib/prisma");
   const session = await getServerSession(authOptions);
   if (!session || !["ADMIN", "MANAGER"].includes(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -280,6 +280,9 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
       </section>
 
       <PathaoSettlementUpload
+        couriers={couriers
+          .filter((courier) => courier.pathaoEnabled)
+          .map((courier) => ({ id: courier.id, name: courier.name }))}
         latest={
           latestSettlementUpload
             ? {

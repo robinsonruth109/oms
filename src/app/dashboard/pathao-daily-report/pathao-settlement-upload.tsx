@@ -11,6 +11,11 @@ type UploadResult = {
   matchedCount: number;
   unmatchedCount: number;
   duplicateCount: number;
+  apiErrorCount: number;
+  courier: {
+    id: string;
+    name: string;
+  };
   totals: {
     collectedAmount: number;
     deliveryFee: number;
@@ -155,13 +160,14 @@ export default function PathaoSettlementUpload({
         <div className="mt-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
             <CheckCircle2 className="h-5 w-5" />
-            Settlement imported and Profit Margin can now verify matched consignments.
+            Settlement imported through {result.courier.name}. Profit Margin can now use exact Pathao settlement values for matched OMS orders.
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Rows" value={String(result.rowCount)} />
             <Stat label="Matched OMS" value={String(result.matchedCount)} />
             <Stat label="Unmatched" value={String(result.unmatchedCount)} />
             <Stat label="Updated Existing" value={String(result.duplicateCount)} />
+            <Stat label="API / Resolve Errors" value={String(result.apiErrorCount)} />
             <Stat label="Collected" value={"Tk " + money(result.totals.collectedAmount)} />
             <Stat label="Delivery Fee" value={"Tk " + money(result.totals.deliveryFee)} />
             <Stat label="COD Fee" value={"Tk " + money(result.totals.codFee)} />

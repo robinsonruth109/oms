@@ -76,6 +76,30 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const file = formData.get("file");
+  const courierId = String(formData.get("courierId") || "").trim();
+
+  if (!courierId) {
+    return NextResponse.json(
+      { error: "Select the Pathao courier/account for this payment sheet." },
+      { status: 400 }
+    );
+  }
+
+  const courier = await prisma.courier.findFirst({
+    where: {
+      id: courierId,
+      status: true,
+      pathaoEnabled: true,
+    },
+    select: { id: true, name: true },
+  });
+
+  if (!courier) {
+    return NextResponse.json(
+      { error: "Selected Pathao courier/account is unavailable or API is disabled." },
+      { status: 400 }
+    );
+  }
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Choose a Pathao payment CSV file." }, { status: 400 });
@@ -149,47 +173,87 @@ export async function POST(request: Request) {
   }
 
   const consignmentIds = Array.from(new Set(rows.map((row) => row.consignmentId)));
-  const merchantOrderIds = Array.from(
-    new Set(rows.map((row) => row.merchantOrderId).filter(Boolean))
-  );
-
-  const [orders, existing] = await Promise.all([
-    prisma.order.findMany({
-      where: {
-        OR: [
-          { pathaoConsignmentId: { in: consignmentIds } },
-          ...(merchantOrderIds.length
-            ? [{ pathaoMerchantOrderId: { in: merchantOrderIds } }]
-            : []),
-        ],
-      },
-      select: {
-        id: true,
-        pathaoConsignmentId: true,
-        pathaoMerchantOrderId: true,
-      },
-    }),
-    prisma.pathaoSettlement.findMany({
-      where: { consignmentId: { in: consignmentIds } },
-      select: { consignmentId: true },
-    }),
-  ]);
-
-  const orderByConsignment = new Map(
-    orders
-      .filter((order) => order.pathaoConsignmentId)
-      .map((order) => [String(order.pathaoConsignmentId), order])
-  );
-  const orderByMerchant = new Map(
-    orders
-      .filter((order) => order.pathaoMerchantOrderId)
-      .map((order) => [String(order.pathaoMerchantOrderId), order])
-  );
+  const existing = await prisma.pathaoSettlement.findMany({
+    where: { consignmentId: { in: consignmentIds } },
+    select: { consignmentId: true },
+  });
   const existingIds = new Set(existing.map((row) => row.consignmentId));
+
+  const { getPathaoOrderInfo } = await import("@/lib/pathao/client");
+
+  type ResolvedRow = (typeof rows)[number] & {
+    apiMerchantOrderId: string;
+    orderId: string | null;
+    apiError: string | null;
+    pathaoInfo: unknown;
+  };
+
+  const resolvedRows: ResolvedRow[] = [];
+  const batchSize = 8;
+
+  for (let index = 0; index < rows.length; index += batchSize) {
+    const batch = rows.slice(index, index + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (item): Promise<ResolvedRow> => {
+        try {
+          const info = await getPathaoOrderInfo(courier.id, item.consignmentId);
+          const apiMerchantOrderId = String(
+            info.merchant_order_id || info.invoice_id || ""
+          )
+            .trim()
+            .replace(/^["']|["']$/g, "");
+
+          if (!apiMerchantOrderId) {
+            return {
+              ...item,
+              apiMerchantOrderId: "",
+              orderId: null,
+              apiError: "Pathao returned no merchant_order_id/invoice_id.",
+              pathaoInfo: info,
+            };
+          }
+
+          const order = await prisma.order.findFirst({
+            where: {
+              OR: [
+                { invoiceId: apiMerchantOrderId },
+                { pathaoMerchantOrderId: apiMerchantOrderId },
+              ],
+            },
+            select: { id: true },
+          });
+
+          return {
+            ...item,
+            apiMerchantOrderId,
+            orderId: order?.id || null,
+            apiError: order
+              ? null
+              : `OMS order not found for Pathao merchant order ID ${apiMerchantOrderId}.`,
+            pathaoInfo: info,
+          };
+        } catch (error) {
+          return {
+            ...item,
+            apiMerchantOrderId: "",
+            orderId: null,
+            apiError:
+              error instanceof Error
+                ? error.message
+                : "Pathao order lookup failed.",
+            pathaoInfo: null,
+          };
+        }
+      })
+    );
+
+    resolvedRows.push(...batchResults);
+  }
 
   let matchedCount = 0;
   let unmatchedCount = 0;
   let duplicateCount = 0;
+  let apiErrorCount = 0;
 
   const upload = await prisma.pathaoSettlementUpload.create({
     data: {
@@ -204,20 +268,15 @@ export async function POST(request: Request) {
 
   try {
     await prisma.$transaction(async (tx) => {
-      for (const item of rows) {
-        const order =
-          orderByConsignment.get(item.consignmentId) ||
-          (item.merchantOrderId
-            ? orderByMerchant.get(item.merchantOrderId)
-            : undefined);
-
-        if (order) matchedCount += 1;
+      for (const item of resolvedRows) {
+        if (item.orderId) matchedCount += 1;
         else unmatchedCount += 1;
+        if (item.apiError) apiErrorCount += 1;
         if (existingIds.has(item.consignmentId)) duplicateCount += 1;
 
         const data = {
-          orderId: order?.id || null,
-          merchantOrderId: item.merchantOrderId || null,
+          orderId: item.orderId,
+          merchantOrderId: item.apiMerchantOrderId || item.merchantOrderId || null,
           paymentStatus: item.paymentStatus || null,
           orderStatus: item.orderStatus || null,
           storeName: item.storeName || null,
@@ -229,7 +288,13 @@ export async function POST(request: Request) {
           codFee: item.codFee,
           totalFee: item.totalFee,
           orderCreatedAt: item.orderCreatedAt,
-          rawRow: item.row,
+          rawRow: {
+            paymentSheet: item.row,
+            pathaoOrderInfo: item.pathaoInfo,
+            selectedCourierId: courier.id,
+            selectedCourierName: courier.name,
+            resolutionError: item.apiError,
+          },
           uploadId: upload.id,
         };
 
@@ -265,6 +330,11 @@ export async function POST(request: Request) {
     matchedCount,
     unmatchedCount,
     duplicateCount,
+    apiErrorCount,
+    courier: {
+      id: courier.id,
+      name: courier.name,
+    },
     totals: {
       collectedAmount: rows.reduce((sum, row) => sum + row.collectedAmount, 0),
       deliveryFee: rows.reduce((sum, row) => sum + row.deliveryFee, 0),

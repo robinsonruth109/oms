@@ -28,7 +28,9 @@ function money(value: number) {
 
 export default function PathaoSettlementUpload({
   latest,
+  couriers,
 }: {
+  couriers: Array<{ id: string; name: string }>;
   latest?: {
     fileName: string;
     rowCount: number;
@@ -41,10 +43,17 @@ export default function PathaoSettlementUpload({
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [courierId, setCourierId] = useState("");
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState("");
 
   async function upload(file: File) {
+    if (!courierId) {
+      setError("Select the Pathao courier/account for this payment sheet first.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+
     setBusy(true);
     setError("");
     setResult(null);
@@ -52,6 +61,7 @@ export default function PathaoSettlementUpload({
     try {
       const body = new FormData();
       body.set("file", file);
+      body.set("courierId", courierId);
 
       const response = await fetch("/api/pathao/settlements/upload", {
         method: "POST",
@@ -84,11 +94,27 @@ export default function PathaoSettlementUpload({
             </h2>
           </div>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Upload the Pathao payment CSV. Matching consignments become VERIFIED and
-            Profit Margin will use the exact Collected Amount, Delivery Fee, COD Fee
-            and Total Fee from this sheet instead of webhook estimates.
+            Select the Pathao courier/account, then upload its payment CSV. OMS will
+            query Pathao using every sheet consignment ID, resolve the Pathao merchant
+            order ID back to the OMS invoice, and save the exact Collected Amount,
+            Delivery Fee, COD Fee and Total Fee against that OMS order.
           </p>
         </div>
+
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[320px]">
+          <select
+            value={courierId}
+            onChange={(event) => setCourierId(event.target.value)}
+            disabled={busy}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500"
+          >
+            <option value="">Select Pathao courier/account</option>
+            {couriers.map((courier) => (
+              <option key={courier.id} value={courier.id}>
+                {courier.name}
+              </option>
+            ))}
+          </select>
 
         <label className={[
           "inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white",
@@ -108,12 +134,14 @@ export default function PathaoSettlementUpload({
             }}
           />
         </label>
+        </div>
       </div>
 
       <div className="mt-4 rounded-2xl border bg-slate-50 p-4 text-xs text-slate-600">
         Required Pathao columns: <strong>Order consignment id</strong>, Collected amount,
-        Delivery fee, Cod fee and Total fee. Re-uploading the same consignments safely
-        updates them instead of duplicating them.
+        Delivery fee, Cod fee and Total fee. The sheet CID may be an outbound ID or a
+        different return ID; OMS resolves both through the selected Pathao API account
+        before linking the row to the OMS order. Re-uploading safely updates existing rows.
       </div>
 
       {error ? (

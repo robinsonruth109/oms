@@ -66,7 +66,53 @@ async function resolveProduct(db: any, item: any) {
     );
   }
 
-  const product = match.product;
+  let product = match.product;
+
+  // Historical Shopify orders may contain a generated placeholder SKU such as
+  // SHOPIFY-9804907741467 instead of the Product Master SKU. If that website
+  // product has since been connected in Catalog Import Hub / Website Listing,
+  // recover the exact OMS variation from the saved integration mapping.
+  if (!product) {
+    const rawSku = String(item.productSku || "").trim();
+    const legacyRemoteIdMatch = rawSku.match(/^SHOPIFY-(.+)$/i);
+    const integrationId = item.order?.integrationId || null;
+    const remoteProductId = legacyRemoteIdMatch?.[1]?.trim() || "";
+
+    if (integrationId && remoteProductId) {
+      const listing = await db.productWebsiteListing.findFirst({
+        where: {
+          integrationId,
+          remoteProductId,
+        },
+        include: {
+          product: {
+            include: { parent: true },
+          },
+        },
+      });
+
+      if (listing?.product) {
+        product = listing.product;
+      } else {
+        const candidate = await db.productCatalogImportCandidate.findFirst({
+          where: {
+            integrationId,
+            remoteProductId,
+            matchedProductId: { not: null },
+          },
+          include: {
+            matchedProduct: {
+              include: { parent: true },
+            },
+          },
+        });
+
+        if (candidate?.matchedProduct) {
+          product = candidate.matchedProduct;
+        }
+      }
+    }
+  }
 
   if (!product) {
     throw new InventoryError(
@@ -74,9 +120,9 @@ async function resolveProduct(db: any, item: any) {
     );
   }
 
-  // Repair historical/imported items once a unique normalized SKU match is
-  // proven. This turns old '- Combo' / '-Combo' variants into the canonical
-  // Product Master link before any stock is deducted.
+  // Repair historical/imported items once an exact/normalized/catalog mapping
+  // is proven. From this point forward the order item behaves like a native OMS
+  // Product Master item and normal stock rules apply.
   if (
     item.id &&
     (!item.productId ||
@@ -184,7 +230,10 @@ export async function getOrderStockWarnings(
   if (!ids.length) return [];
   const items = await db.orderItem.findMany({
     where: { orderId: { in: ids }, stockDeductedAt: null },
-    include: { product: { include: { parent: true } } },
+    include: {
+      product: { include: { parent: true } },
+      order: { select: { integrationId: true } },
+    },
   });
   const totals = new Map<string, {
     ownerType: "PRODUCT" | "PRODUCT_PARENT";
@@ -218,7 +267,10 @@ export async function deductOrderStock(
 ) {
   const items = await tx.orderItem.findMany({
     where: { orderId },
-    include: { product: { include: { parent: true } } },
+    include: {
+      product: { include: { parent: true } },
+      order: { select: { integrationId: true } },
+    },
   });
   let deductedUnits = 0;
   const affectedOwners: Array<{
@@ -284,6 +336,7 @@ export async function restoreReturnedStock(
     include: {
       product: { include: { parent: true } },
       order: { select: {
+        integrationId: true,
         csvDownloaded: true,
         pathaoSubmissionStatus: true,
         pathaoConsignmentId: true,

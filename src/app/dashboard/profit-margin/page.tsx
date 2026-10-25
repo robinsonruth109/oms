@@ -944,6 +944,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       pathaoDeliveryFee: true,
       pathaoAmountToCollect: true,
       pathaoAuthorizedCodAmount: true,
+      pathaoOrderStatus: true,
+      pathaoOrderStatusSlug: true,
+      pathaoPaymentStatus: true,
+      pathaoPaymentVerifiedAt: true,
+      pathaoSettlementCollectedAmount: true,
+      pathaoSettlementDeliveryFee: true,
+      pathaoSettlementCodFee: true,
+      pathaoSettlementTotalFee: true,
       source: { select: { id: true, name: true, type: true } },
       items: {
         select: {
@@ -1029,8 +1037,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       let deliveredAt = -1;
       let returnedAt = -1;
       let cancelledAt = -1;
-      let deliveredPayload: unknown = null;
-      let returnCost = 0;
 
       for (const webhook of events) {
         const name = eventName(webhook.eventName);
@@ -1043,14 +1049,16 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
         if (name === "order.delivered" || name === "delivered") {
           deliveredAt = Math.max(deliveredAt, time);
-          deliveredPayload = webhook.rawPayload;
         }
 
         if (
           name === "order.returned-to-merchant" ||
           name === "returned-to-merchant" ||
           name === "order.paid-return" ||
-          name === "paid-return"
+          name === "paid-return" ||
+          name === "order.returned" ||
+          name === "returned" ||
+          name === "order.return"
         ) {
           returnedAt = Math.max(returnedAt, time);
         }
@@ -1058,70 +1066,60 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         if (name.includes("cancel")) {
           cancelledAt = Math.max(cancelledAt, time);
         }
-
-        if (name === "order.paid-return" || name === "paid-return") {
-          const fee = rawNumber(webhook.rawPayload, [
-            "collected_amount",
-            "return_charge",
-            "return_fee",
-          ]);
-          if (fee !== null) returnCost = Math.max(returnCost, Math.max(0, fee));
-        }
       }
 
-      const latestOutcomeAt = Math.max(deliveredAt, returnedAt, cancelledAt);
-      const returnedToMerchant =
-        returnedAt >= 0 && returnedAt === latestOutcomeAt;
-      const cancelled =
-        cancelledAt >= 0 && cancelledAt === latestOutcomeAt;
-      const delivered =
-        deliveredAt >= 0 && deliveredAt === latestOutcomeAt;
+      const savedStatus = `${order.pathaoOrderStatusSlug || ""} ${order.pathaoOrderStatus || ""}`
+        .toLowerCase()
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const eventOutcomeAt = Math.max(deliveredAt, returnedAt, cancelledAt);
+      const hasEventOutcome = eventOutcomeAt >= 0;
+      const returnedToMerchant = hasEventOutcome
+        ? returnedAt >= 0 && returnedAt === eventOutcomeAt
+        : savedStatus.includes("return");
+      const cancelled = hasEventOutcome
+        ? cancelledAt >= 0 && cancelledAt === eventOutcomeAt
+        : savedStatus.includes("cancel");
+      const delivered = hasEventOutcome
+        ? deliveredAt >= 0 && deliveredAt === eventOutcomeAt
+        : savedStatus.includes("deliver") &&
+          !savedStatus.includes("return") &&
+          !savedStatus.includes("cancel");
       const pending = !delivered && !returnedToMerchant && !cancelled;
 
-      const collected = delivered
-        ? rawNumber(deliveredPayload, [
-            "collected_amount",
-            "amount_collected",
-            "amount_to_collect",
-            "cod_amount",
-          ])
-        : null;
-      const codDue = numberValue(order.totalAmount);
-      const codRevenue = delivered
-        ? collected !== null
-          ? Math.max(0, collected)
-          : numberValue(order.pathaoAmountToCollect) ||
-            numberValue(order.pathaoAuthorizedCodAmount) ||
-            codDue
-        : 0;
-      const realizedRevenue = delivered
-        ? codRevenue + numberValue(order.advance)
-        : 0;
-      const realizedMerchandise = delivered
-        ? Math.max(0, realizedRevenue - numberValue(order.deliveryCharge))
-        : 0;
+      const paymentVerified =
+        order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+        Boolean(order.pathaoPaymentVerifiedAt);
 
-      const webhookDeliveryFee = delivered
-        ? rawNumber(deliveredPayload, ["delivery_fee"])
-        : null;
-      const deliveryCost = delivered
-        ? Math.max(
-            0,
-            webhookDeliveryFee !== null
-              ? webhookDeliveryFee
-              : numberValue(order.pathaoDeliveryFee)
-          )
+      const collectedAmount = paymentVerified
+        ? numberValue(order.pathaoSettlementCollectedAmount)
+        : 0;
+      const realizedRevenue =
+        delivered && paymentVerified
+          ? collectedAmount + numberValue(order.advance)
+          : 0;
+      const realizedMerchandise =
+        delivered && paymentVerified
+          ? Math.max(0, realizedRevenue - numberValue(order.deliveryCharge))
+          : 0;
+
+      const totalSettlementFee = paymentVerified
+        ? numberValue(order.pathaoSettlementTotalFee)
         : 0;
 
       return {
         order,
-        latest,
+        latest: latest || savedStatus || "unknown",
         delivered,
         returnedToMerchant,
         cancelled,
         pending,
-        deliveryCost,
-        returnCost,
+        deliveryCost:
+          delivered && paymentVerified ? totalSettlementFee : 0,
+        returnCost:
+          returnedToMerchant && paymentVerified ? totalSettlementFee : 0,
         realizedMerchandise,
       };
     }
@@ -1201,7 +1199,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     const realizedMerchandise = row.realizedMerchandise;
     const returnedToMerchantStatus = row.returnedToMerchant;
     const cancelledStatus = row.cancelled;
-    const deliveredStatus = row.delivered;
+    const deliveredStatus =
+      row.delivered &&
+      row.order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+      Boolean(row.order.pathaoPaymentVerifiedAt);
 
     for (const item of row.order.items) {
       if (merchantFilterActive) {

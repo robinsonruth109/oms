@@ -305,14 +305,37 @@ export default function ReadyDateShiftClient({
 
     try {
       const text = await csvFile.text();
+
+      // Ready Date Shift only needs column A. A perfectly valid one-column CSV
+      // has no delimiter at all, which makes PapaParse's auto-detection emit
+      // "Unable to auto-detect delimiting character". Choose a delimiter
+      // explicitly so one-column invoice lists are accepted, while still
+      // supporting common comma / semicolon / tab exports.
+      const firstNonEmptyLine =
+        text
+          .replace(/^\uFEFF/, "")
+          .split(/\r?\n/)
+          .find((line) => line.trim().length > 0) || "";
+
+      const delimiter = firstNonEmptyLine.includes("\t")
+        ? "\t"
+        : firstNonEmptyLine.includes(";")
+          ? ";"
+          : ",";
+
       const parsed = Papa.parse<string[]>(text, {
-        skipEmptyLines: true,
+        delimiter,
+        skipEmptyLines: "greedy",
       });
 
-      if (parsed.errors.length) {
+      const fatalParseError = parsed.errors.find(
+        (error) => error.type !== "Delimiter"
+      );
+
+      if (fatalParseError) {
         setCsvMessage({
           kind: "error",
-          text: parsed.errors[0]?.message || "The CSV file could not be read.",
+          text: fatalParseError.message || "The CSV file could not be read.",
         });
         return;
       }

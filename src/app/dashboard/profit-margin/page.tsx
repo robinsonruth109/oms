@@ -25,7 +25,6 @@ import ProductPerformanceReport, {
   type ParentProductPerformanceRow,
   type ProductPerformanceChildRow,
 } from "./product-performance-report";
-import PathaoSettlementUpload from "../pathao-daily-report/pathao-settlement-upload";
 
 type Props = {
   searchParams?: Promise<{
@@ -205,18 +204,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   );
   const { prisma } = await import("@/lib/prisma");
 
-  const latestSettlementUpload = await prisma.pathaoSettlementUpload.findFirst({
-    orderBy: { createdAt: "desc" },
-    select: {
-      fileName: true,
-      rowCount: true,
-      matchedCount: true,
-      unmatchedCount: true,
-      duplicateCount: true,
-      createdAt: true,
-    },
-  });
-
   const [sources, couriers, merchants, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles] =
     await Promise.all([
       prisma.orderSource.findMany({
@@ -324,6 +311,14 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
           pathaoDeliveryFee: true,
           pathaoAmountToCollect: true,
           pathaoAuthorizedCodAmount: true,
+          pathaoOrderStatus: true,
+          pathaoOrderStatusSlug: true,
+          pathaoPaymentStatus: true,
+          pathaoPaymentVerifiedAt: true,
+          pathaoSettlementCollectedAmount: true,
+          pathaoSettlementDeliveryFee: true,
+          pathaoSettlementCodFee: true,
+          pathaoSettlementTotalFee: true,
           source: { select: { id: true, name: true, type: true } },
           pathaoCourier: { select: { id: true, name: true } },
           items: {
@@ -362,58 +357,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         },
       });
 
-  const settlementRows = orders.length
-    ? await prisma.pathaoSettlement.findMany({
-        where: {
-          orderId: { in: orders.map((order) => order.id) },
-        },
-        select: {
-          id: true,
-          orderId: true,
-          consignmentId: true,
-          collectedAmount: true,
-          deliveryFee: true,
-          codFee: true,
-          totalFee: true,
-          orderStatus: true,
-          paymentStatus: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: "desc" },
-      })
-    : [];
-
-  function settlementPriority(status: string | null | undefined) {
-    const value = String(status || "").trim().toLowerCase();
-    if (["return", "returned", "paid return", "returned to merchant"].includes(value)) return 3;
-    if (value === "delivered") return 2;
-    return 1;
-  }
-
-  const settlementMap = new Map<
-    string,
-    (typeof settlementRows)[number]
-  >();
-
-  for (const row of settlementRows) {
-    if (!row.orderId) continue;
-    const current = settlementMap.get(row.orderId);
-    if (
-      !current ||
-      settlementPriority(row.orderStatus) > settlementPriority(current.orderStatus) ||
-      (settlementPriority(row.orderStatus) === settlementPriority(current.orderStatus) &&
-        row.updatedAt.getTime() > current.updatedAt.getTime())
-    ) {
-      settlementMap.set(row.orderId, row);
-    }
-  }
-
-  const orderMap = new Map(orders.map((row) => [row.id, row]));
-  const settlementCourierIds = new Set(
-    settlementRows
-      .map((row) => (row.orderId ? orderMap.get(row.orderId)?.pathaoCourierId : null))
-      .filter((id): id is string => Boolean(id))
-  );
   const eventMap = new Map<string, typeof webhooks>();
   for (const webhook of webhooks) {
     if (!webhook.orderId) continue;
@@ -442,7 +385,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     missingCost: number;
     missingReturnFee: boolean;
     settlementVerified: boolean;
-    feeSource: "SETTLEMENT" | "WEBHOOK_ESTIMATE" | "UNRESOLVED";
+    feeSource: "SETTLEMENT" | "UNRESOLVED";
   };
 
   function cogsForItem(item: (typeof orders)[number]["items"][number]) {
@@ -528,19 +471,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const evaluated: Evaluated[] = [];
   for (const order of orders) {
     const events = eventMap.get(order.id) || [];
-    const settlement = settlementMap.get(order.id) || null;
-    const settlementMode = Boolean(
-      order.pathaoCourierId && settlementCourierIds.has(order.pathaoCourierId)
-    );
 
     let deliveredAt = -1;
     let returnedAt = -1;
     let partialAt = -1;
-    let deliveredPayload: unknown = null;
-    let returnPayload: unknown = null;
-    let paidReturnPayload: unknown = null;
-    let returnCollectedAmount = 0;
-    let paidReturn = false;
     let latest = "unknown";
     let latestAt = -1;
 
@@ -553,7 +487,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }
       if (name === "order.delivered" || name === "delivered") {
         deliveredAt = time;
-        deliveredPayload = webhook.rawPayload;
       }
       if (name === "order.partial-delivery" || name === "partial-delivery") {
         partialAt = time;
@@ -568,83 +501,47 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         name === "returned" ||
         name === "return"
       ) {
-        if (time >= returnedAt) {
-          returnedAt = time;
-          returnPayload = webhook.rawPayload;
-        }
-      }
-      if (name === "order.paid-return" || name === "paid-return") {
-        paidReturn = true;
-        paidReturnPayload = webhook.rawPayload;
-        const collectedReturn = rawNumber(webhook.rawPayload, [
-          "collected_amount",
-          "amount_collected",
-          "amount_to_collect",
-          "cod_amount",
-        ]);
-        if (collectedReturn !== null) {
-          returnCollectedAmount = Math.max(0, collectedReturn);
-        }
+        returnedAt = Math.max(returnedAt, time);
       }
     }
 
-    const settlementStatus = String(settlement?.orderStatus || "")
-      .trim()
-      .toLowerCase();
-    const settlementDelivered = settlementStatus === "delivered";
-    const settlementReturned = [
-      "return",
-      "returned",
-      "paid return",
-      "returned to merchant",
-    ].includes(settlementStatus);
+    // Webhook/saved Pathao fields are lifecycle-only. They may classify the
+    // parcel as delivered/returned, but they never provide accounting money.
+    const savedStatus = `${order.pathaoOrderStatusSlug || ""} ${order.pathaoOrderStatus || ""}`
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const savedReturned = savedStatus.includes("return");
+    const savedDelivered = savedStatus.includes("deliver") && !savedReturned;
+    const hasLifecycleEvent = deliveredAt >= 0 || returnedAt >= 0 || partialAt >= 0;
 
-    const returned = settlementMode
-      ? Boolean(settlement && settlementReturned)
-      : settlement
-        ? settlementReturned
-        : returnedAt >= 0 && returnedAt >= deliveredAt;
-    const delivered = settlementMode
-      ? Boolean(settlement && settlementDelivered)
-      : settlement
-        ? settlementDelivered
-        : deliveredAt >= 0 && deliveredAt > returnedAt;
-    const partial = settlementMode
-      ? false
-      : settlement
-        ? false
-        : !delivered && !returned && partialAt >= 0;
+    const returned = returnedAt >= 0
+      ? returnedAt >= deliveredAt
+      : !hasLifecycleEvent && savedReturned;
+    const delivered = deliveredAt >= 0
+      ? deliveredAt > returnedAt
+      : !hasLifecycleEvent && savedDelivered;
+    const partial = !delivered && !returned && partialAt >= 0;
 
-    const collected = delivered
-      ? settlement
-        ? numberValue(settlement.collectedAmount)
-        : settlementMode
-          ? null
-          : rawNumber(deliveredPayload, [
-              "collected_amount",
-              "amount_collected",
-              "amount_to_collect",
-              "cod_amount",
-            ])
-      : null;
+    const settlementVerified =
+      order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+      Boolean(order.pathaoPaymentVerifiedAt);
 
     const codDue = numberValue(order.totalAmount);
-    const advanceRevenue = delivered ? numberValue(order.advance) : 0;
-    const codRevenue = delivered
-      ? collected !== null
-        ? Math.max(0, collected)
-        : numberValue(order.pathaoAmountToCollect) ||
-          numberValue(order.pathaoAuthorizedCodAmount) ||
-          codDue
-      : 0;
-    // OMS totalAmount/COD is net of advance. The advance was already received,
-    // so realized order revenue must add it back exactly once.
-    const revenue = delivered ? codRevenue + advanceRevenue : 0;
-    const billed = delivered ? codDue + advanceRevenue : 0;
+    const codRevenue =
+      delivered && settlementVerified
+        ? Math.max(0, numberValue(order.pathaoSettlementCollectedAmount))
+        : 0;
+    const advanceRevenue =
+      delivered && settlementVerified ? numberValue(order.advance) : 0;
+    const revenue =
+      delivered && settlementVerified ? codRevenue + advanceRevenue : 0;
+    const billed = delivered ? codDue + numberValue(order.advance) : 0;
 
     let cogs = 0;
     let missingCost = 0;
-    if (delivered) {
+    if (delivered && settlementVerified) {
       for (const item of order.items) {
         const result = cogsForItem(item);
         cogs += result.amount;
@@ -652,143 +549,41 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
       }
     }
 
-    const RETURN_LIFECYCLE_NAMES = new Set([
-      "order.return-id-created",
-      "order.return-in-transit",
-      "order.returned-to-merchant",
-    ]);
+    const deliveryBaseCost = settlementVerified
+      ? numberValue(order.pathaoSettlementDeliveryFee)
+      : 0;
+    const codFeeCost = settlementVerified
+      ? numberValue(order.pathaoSettlementCodFee)
+      : 0;
+    const parcelCourierCost = settlementVerified
+      ? numberValue(order.pathaoSettlementTotalFee)
+      : 0;
 
-    // Reconstruct the ORIGINAL outbound parcel delivery fee from webhook
-    // history. The event list is already sorted oldest -> newest.
-    // This repairs historical orders whose saved pathaoDeliveryFee was later
-    // overwritten by a return-leg webhook.
-    let originalWebhookDeliveryFee: number | null = null;
-    for (const webhook of events) {
-      const name = eventName(webhook.eventName);
-      if (RETURN_LIFECYCLE_NAMES.has(name)) continue;
-      const fee = rawNumber(webhook.rawPayload, ["delivery_fee"]);
-      if (fee !== null && fee >= 0) {
-        originalWebhookDeliveryFee = fee;
-        break;
-      }
-    }
-
-    const estimatedDeliveryBaseCost = Math.max(
-      0,
-      originalWebhookDeliveryFee !== null
-        ? originalWebhookDeliveryFee
-        : numberValue(order.pathaoDeliveryFee)
-    );
-
-    // Prefer exact fee fields from Pathao whenever present.
-    const deliveredWebhookCodFee = delivered
-      ? rawNumber(deliveredPayload, [
-          "cod_fee",
-          "cod_charge",
-          "cod_fee_amount",
-          "cash_on_delivery_fee",
-        ])
-      : null;
-    const deliveredWebhookTotalFee = delivered
-      ? rawNumber(deliveredPayload, [
-          "total_fee",
-          "total_charge",
-          "courier_fee",
-          "total_courier_fee",
-        ])
-      : null;
-
-    const returnFeePayload = paidReturnPayload ?? returnPayload;
-    const returnWebhookCodFee = returned
-      ? rawNumber(returnFeePayload, [
-          "cod_fee",
-          "cod_charge",
-          "cod_fee_amount",
-          "cash_on_delivery_fee",
-        ])
-      : null;
-    const returnWebhookTotalFee = returned
-      ? rawNumber(returnFeePayload, [
-          "total_fee",
-          "total_charge",
-          "courier_fee",
-          "total_courier_fee",
-        ])
-      : null;
-
-    // Webhook estimate only. Once a payment settlement exists, every courier
-    // money field below is replaced by the exact Pathao sheet value.
-    const outsideRoute = Math.max(0, numberValue(order.deliveryCharge)) >= 120;
-    let estimatedCodFeeCost = 0;
-    if (delivered) {
-      estimatedCodFeeCost = Math.max(
-        0,
-        deliveredWebhookCodFee !== null
-          ? deliveredWebhookCodFee
-          : deliveredWebhookTotalFee !== null
-            ? deliveredWebhookTotalFee - estimatedDeliveryBaseCost
-            : outsideRoute
-              ? codRevenue * 0.005
-              : 0
-      );
-    } else if (returned) {
-      estimatedCodFeeCost = Math.max(
-        0,
-        returnWebhookCodFee !== null
-          ? returnWebhookCodFee
-          : returnWebhookTotalFee !== null
-            ? returnWebhookTotalFee - estimatedDeliveryBaseCost
-            : paidReturn && outsideRoute
-              ? returnCollectedAmount * 0.005
-              : 0
-      );
-    }
-
-    const settlementVerified = Boolean(settlement);
-    const deliveryBaseCost = settlement
-      ? numberValue(settlement.deliveryFee)
-      : settlementMode
-        ? 0
-        : estimatedDeliveryBaseCost;
-    const codFeeCost = settlement
-      ? numberValue(settlement.codFee)
-      : settlementMode
-        ? 0
-        : estimatedCodFeeCost;
-    const parcelCourierCost = settlement
-      ? numberValue(settlement.totalFee)
-      : settlementMode
-        ? 0
-        : deliveryBaseCost + codFeeCost;
-
-    const deliveryCost = delivered ? parcelCourierCost : 0;
-    const returnCost = returned ? parcelCourierCost : 0;
+    const deliveryCost = delivered && settlementVerified ? parcelCourierCost : 0;
+    const returnCost = returned && settlementVerified ? parcelCourierCost : 0;
 
     evaluated.push({
       order,
       delivered,
       returned,
       partial,
-      latest,
+      latest: latest === "unknown" ? savedStatus || "unknown" : latest,
       revenue,
       codRevenue,
       advanceRevenue,
       billed,
-      deliveryIncome: delivered ? numberValue(order.deliveryCharge) : 0,
+      deliveryIncome:
+        delivered && settlementVerified ? numberValue(order.deliveryCharge) : 0,
       cogs,
       deliveryBaseCost,
       codFeeCost,
       deliveryCost,
       returnCost,
-      returnCollectedAmount,
+      returnCollectedAmount: 0,
       missingCost,
       missingReturnFee: false,
       settlementVerified,
-      feeSource: settlementVerified
-        ? "SETTLEMENT"
-        : settlementMode
-          ? "UNRESOLVED"
-          : "WEBHOOK_ESTIMATE",
+      feeSource: settlementVerified ? "SETTLEMENT" : "UNRESOLVED",
     });
   }
 
@@ -804,7 +599,6 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const returned = selected.filter((row) => row.returned);
   const settlementVerifiedCount = selected.filter((row) => row.settlementVerified).length;
   const unresolvedSettlementCount = selected.filter((row) => row.feeSource === "UNRESOLVED").length;
-  const webhookEstimatedCount = selected.filter((row) => row.feeSource === "WEBHOOK_ESTIMATE").length;
   const partialCount = selected.filter((row) => row.partial).length;
   const allRevenue = evaluated
     .filter((row) => row.delivered)
@@ -1819,56 +1613,32 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         </p>
       </section>
 
-      <PathaoSettlementUpload
-        couriers={couriers.map((courier) => ({
-          id: courier.id,
-          name: courier.name,
-        }))}
-        latest={
-          latestSettlementUpload
-            ? {
-                ...latestSettlementUpload,
-                createdAt: latestSettlementUpload.createdAt.toISOString(),
-              }
-            : null
-        }
-      />
-
       {unresolvedSettlementCount > 0 ? (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <p className="font-semibold">PAYMENT CSV MODE · settlement only</p>
-              <p className="mt-1">
-                {settlementVerifiedCount} parcel(s) are VERIFIED from the payment sheet and {unresolvedSettlementCount}
-                parcel(s) are UNRESOLVED. Unresolved parcels are excluded from collected amount, delivery fee,
-                COD fee, total Pathao fee, revenue and profit calculations. Webhook money is NOT used for this courier.
-              </p>
-              <p className="mt-1 font-medium text-rose-800">
-                Fix the remaining CSV-to-OMS matches, then re-upload the same payment sheet.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : webhookEstimatedCount > 0 ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <p className="font-semibold">ESTIMATED Pathao accounting</p>
-              <p className="mt-1">
-                No payment-settlement CSV is active for these parcel(s), so {webhookEstimatedCount} parcel(s)
-                still use webhook/order estimates. Upload the correct courier payment CSV to switch that courier
-                to settlement-only accounting.
-              </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Need to upload Pathao payment file</p>
+                <p className="mt-1">
+                  {unresolvedSettlementCount} parcel(s) in this report are not payment-verified.
+                  Webhook is used only for status tracking. Unverified parcels contribute no
+                  Pathao collected amount or courier fee to Profit Margin.
+                </p>
+              </div>
             </div>
+            <a
+              href="/dashboard/pathao-payment-settlement"
+              className="shrink-0 rounded-xl bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-white"
+            >
+              Open Payment Settlement
+            </a>
           </div>
         </section>
       ) : selected.length > 0 ? (
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          <strong>VERIFIED:</strong> all {selected.length} Pathao parcel(s) in this report are using exact
-          payment-sheet settlement data for collected amount and courier fees.
+          <strong>PAYMENT VERIFIED:</strong> all {settlementVerifiedCount} parcel(s) in this report
+          use settlement CSV accounting values.
         </section>
       ) : null}
 
@@ -2042,7 +1812,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         Partial Delivery is excluded until OMS can identify accepted items. Product Purchase cash-book
         entries are not deducted again because delivered product COGS already uses Product Master buying cost.
         Salary and Salary Advance cash-book categories are also excluded to prevent double counting the Salary module.
-        Pathao settlement data is the accounting source of truth when uploaded. For unmatched parcels only, OMS falls back to webhook/order estimates and marks the report ESTIMATED.
+        Pathao payment-settlement CSV is the only source of truth for collected amount and courier fees. Webhooks are used only for parcel lifecycle/status tracking. Unverified parcels are excluded from settlement revenue and courier-fee accounting.
         General Daily Costing and Office Daily Costing are treated as monthly operating overhead:
         each month's eligible total is divided by that month's calendar days and prorated to the selected date range.
       </section>

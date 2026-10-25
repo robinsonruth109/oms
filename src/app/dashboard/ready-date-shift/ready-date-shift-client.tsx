@@ -450,7 +450,7 @@ export default function ReadyDateShiftClient({
                 Shift Orders
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Only READY_TO_SHIP orders with no invoice download are eligible.
+                Any READY_TO_SHIP order can be shifted, even if its invoice was already printed or downloaded.
               </p>
             </div>
 
@@ -531,7 +531,7 @@ export default function ReadyDateShiftClient({
               selectedIds={manualSelectedIds}
               onSelectedIdsChange={setManualSelectedIds}
               courierMap={courierMap}
-              emptyText="No non-invoiced Ready to Ship orders were found for this date/filter."
+              emptyText="No Ready to Ship orders were found for this date/filter."
             />
           </div>
         ) : (

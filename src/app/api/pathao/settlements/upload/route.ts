@@ -397,6 +397,12 @@ export async function POST(request: Request) {
           duplicateCount,
         },
       });
+    }, {
+      // A daily Pathao payment file can contain hundreds of parcels.
+      // Prisma's default interactive transaction timeout is too short for
+      // all settlement upserts + audit rows + OMS payment updates.
+      maxWait: 15_000,
+      timeout: 120_000,
     });
   } catch (error) {
     await prisma.pathaoSettlementUpload.delete({ where: { id: upload.id } }).catch(() => undefined);

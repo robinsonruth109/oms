@@ -11,10 +11,6 @@ import {
   Loader2,
   MoveRight,
 } from "lucide-react";
-import {
-  lookupReadyToShipOrdersByInvoiceIds,
-  shiftReadyToShipOrders,
-} from "./actions";
 
 type OrderRow = {
   id: string;
@@ -270,11 +266,17 @@ export default function ReadyDateShiftClient({
     setManualMessage({ kind: "info", text: "Shifting selected orders..." });
 
     try {
-      const result = await shiftReadyToShipOrders({
-        orderIds: manualSelectedIds,
-        targetDate: manualTargetDate,
-        method: "DATE_FILTER",
+      const response = await fetch("/api/ready-date-shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SHIFT",
+          orderIds: manualSelectedIds,
+          targetDate: manualTargetDate,
+          method: "DATE_FILTER",
+        }),
       });
+      const result = await response.json();
 
       setManualMessage({
         kind: result.success ? "success" : "error",
@@ -365,7 +367,12 @@ export default function ReadyDateShiftClient({
         return;
       }
 
-      const result = await lookupReadyToShipOrdersByInvoiceIds(invoiceIds);
+      const response = await fetch("/api/ready-date-shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "LOOKUP", invoiceIds }),
+      });
+      const result = await response.json();
 
       setCsvOrders(result.orders);
       setCsvSelectedIds(result.orders.map((order) => order.id));
@@ -415,12 +422,18 @@ export default function ReadyDateShiftClient({
     setCsvMessage({ kind: "info", text: "Shifting CSV-matched orders..." });
 
     try {
-      const result = await shiftReadyToShipOrders({
-        orderIds: csvSelectedIds,
-        targetDate: csvTargetDate,
-        method: "CSV_UPLOAD",
-        uploadedFileName: csvFile?.name,
+      const response = await fetch("/api/ready-date-shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SHIFT",
+          orderIds: csvSelectedIds,
+          targetDate: csvTargetDate,
+          method: "CSV_UPLOAD",
+          uploadedFileName: csvFile?.name,
+        }),
       });
+      const result = await response.json();
 
       setCsvMessage({
         kind: result.success ? "success" : "error",

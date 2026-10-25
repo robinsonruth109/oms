@@ -65,10 +65,26 @@ export default function SettlementUpload({
         method: "POST",
         body,
       });
-      const data = await response.json();
+      const raw = await response.text();
+      let data: any = null;
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = null;
+        }
+      }
 
       if (!response.ok) {
-        throw new Error(data?.error || "Payment sheet upload failed.");
+        throw new Error(
+          data?.error ||
+            raw ||
+            `Payment sheet upload failed (HTTP ${response.status}).`
+        );
+      }
+
+      if (!data?.ok) {
+        throw new Error("Payment sheet upload returned an invalid response.");
       }
 
       setResult(data);

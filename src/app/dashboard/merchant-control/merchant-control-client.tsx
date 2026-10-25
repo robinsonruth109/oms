@@ -773,10 +773,21 @@ export default function MerchantControlClient({
                   </p>
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
                     {merchant.recentOmsPurchases.slice(0, 3).map((row) => (
-                      <p key={row.id}>
-                        {row.sku} · {row.quantity} sale qty ·{" "}
-                        {money(row.totalCost)}
-                      </p>
+                      <div
+                        key={row.id}
+                        className="flex flex-wrap items-center justify-between gap-2"
+                      >
+                        <p>
+                          {row.sku} · {row.quantity} sale qty ·{" "}
+                          {money(row.totalCost)}
+                        </p>
+                        <a
+                          href={"/dashboard/merchant-control/stock-receipt/" + row.id}
+                          className="font-semibold text-blue-700 hover:underline"
+                        >
+                          View receipt
+                        </a>
+                      </div>
                     ))}
                   </div>
                 </div>

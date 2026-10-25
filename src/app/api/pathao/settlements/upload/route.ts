@@ -311,22 +311,10 @@ export async function POST(request: Request) {
         });
 
         // Payment/accounting truth comes ONLY from the uploaded Pathao sheet.
-        // Webhooks continue to track parcel lifecycle but never mark payment done.
+        // Do not write per-row totals to Order here because one OMS order can
+        // have both outbound and return consignment rows. We aggregate all
+        // resolved settlement rows for that OMS order after the upserts finish.
         if (item.orderId) {
-          await tx.order.update({
-            where: { id: item.orderId },
-            data: {
-              pathaoPaymentStatus: "PAYMENT_DONE",
-              pathaoPaymentVerifiedAt: new Date(),
-              pathaoSettlementCollectedAmount: item.collectedAmount,
-              pathaoSettlementDeliveryFee: item.deliveryFee,
-              pathaoSettlementCodFee: item.codFee,
-              pathaoSettlementTotalFee: item.totalFee,
-              pathaoSettlementConsignmentId: item.consignmentId,
-              pathaoSettlementUploadId: upload.id,
-            },
-          });
-
           await tx.orderAuditEvent.create({
             data: {
               orderId: item.orderId,
@@ -350,6 +338,55 @@ export async function POST(request: Request) {
             },
           });
         }
+      }
+
+      // Aggregate every resolved Pathao settlement row belonging to the same
+      // OMS order. This is critical when outbound and return consignment IDs
+      // differ. Re-uploaded consignment rows are upserted, so totals do not
+      // duplicate.
+      const matchedOrderIds = Array.from(
+        new Set(
+          resolvedRows
+            .map((row) => row.orderId)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
+
+      for (const orderId of matchedOrderIds) {
+        const totals = await tx.pathaoSettlement.aggregate({
+          where: { orderId },
+          _sum: {
+            collectedAmount: true,
+            deliveryFee: true,
+            codFee: true,
+            totalFee: true,
+          },
+        });
+
+        const latestRow = await tx.pathaoSettlement.findFirst({
+          where: { orderId },
+          orderBy: { updatedAt: "desc" },
+          select: { consignmentId: true },
+        });
+
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            pathaoPaymentStatus: "PAYMENT_DONE",
+            pathaoPaymentVerifiedAt: new Date(),
+            pathaoSettlementCollectedAmount:
+              totals._sum.collectedAmount || 0,
+            pathaoSettlementDeliveryFee:
+              totals._sum.deliveryFee || 0,
+            pathaoSettlementCodFee:
+              totals._sum.codFee || 0,
+            pathaoSettlementTotalFee:
+              totals._sum.totalFee || 0,
+            pathaoSettlementConsignmentId:
+              latestRow?.consignmentId || null,
+            pathaoSettlementUploadId: upload.id,
+          },
+        });
       }
 
       await tx.pathaoSettlementUpload.update({

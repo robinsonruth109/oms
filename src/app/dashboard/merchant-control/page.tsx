@@ -20,7 +20,6 @@ export default async function MerchantControlPage() {
       include: {
         user: { select: { username: true, status: true } },
         couriers: { include: { courier: { select: { id: true, name: true } } } },
-        productParents: { select: { id: true, sku: true, name: true } },
         dollarRecharges: {
           orderBy: { rechargeDate: "desc" },
           take: 5,
@@ -29,11 +28,11 @@ export default async function MerchantControlPage() {
           orderBy: { costMonth: "desc" },
           take: 3,
         },
-        omsPurchases: {
-          orderBy: { purchaseDate: "desc" },
-          take: 5,
+        stockAllocations: {
+          orderBy: { allocationDate: "desc" },
+          take: 100,
           include: {
-            product: { select: { sku: true, name: true } },
+            product: { select: { id: true, sku: true, name: true } },
           },
         },
       },
@@ -89,47 +88,61 @@ export default async function MerchantControlPage() {
       <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-bold text-slate-950">Merchant Control</h1>
         <p className="mt-1 max-w-4xl text-sm text-slate-500">
-          Create Merchant accounts, assign Product Parents and couriers, recharge
-          Meta dollars, set monthly operating cost, and reserve Merchant stock
-          purchased by OMS. Unassigned ownership remains default OMS.
+          Create Merchant accounts, assign courier access, recharge Meta dollars,
+          set monthly operating cost, and allocate OMS-owned product stock to each
+          Merchant. OMS remains the permanent Product Master owner.
         </p>
       </section>
 
       <MerchantControlClient
-        merchants={merchants.map((merchant) => ({
-          id: merchant.id,
-          name: merchant.name,
-          phone: merchant.phone,
-          address: merchant.address,
-          status: merchant.status,
-          username: merchant.user?.username || "",
-          loginEnabled: merchant.user?.status ?? false,
-          courierIds: merchant.couriers.map((row) => row.courierId),
-          courierNames: merchant.couriers.map((row) => row.courier.name),
-          parentCount: merchant.productParents.length,
-          parentCodes: merchant.productParents.slice(0, 8).map((row) => row.sku),
-          recentRecharges: merchant.dollarRecharges.map((row) => ({
-            id: row.id,
-            date: row.rechargeDate.toISOString(),
-            usd: Number(row.usdAmount),
-            bdt: Number(row.bdtAmount),
-            rate: Number(row.usdRate),
-          })),
-          recentOperatingCosts: merchant.operatingCosts.map((row) => ({
-            id: row.id,
-            month: row.costMonth.toISOString(),
-            amount: Number(row.amount),
-          })),
-          recentOmsPurchases: merchant.omsPurchases.map((row) => ({
-            id: row.id,
-            date: row.purchaseDate.toISOString(),
-            sku: row.product.sku,
-            name: row.product.name,
-            quantity: row.enteredQuantity,
-            physicalUnits: row.physicalUnits,
-            totalCost: Number(row.totalCost),
-          })),
-        }))}
+        merchants={merchants.map((merchant) => {
+          const activeAllocations = merchant.stockAllocations.filter(
+            (row) => row.remainingPhysicalUnits > 0
+          );
+          const allocatedProducts = Array.from(
+            new Map(
+              activeAllocations.map((row) => [
+                row.product.id,
+                { id: row.product.id, sku: row.product.sku, name: row.product.name },
+              ])
+            ).values()
+          );
+
+          return {
+            id: merchant.id,
+            name: merchant.name,
+            phone: merchant.phone,
+            address: merchant.address,
+            status: merchant.status,
+            username: merchant.user?.username || "",
+            loginEnabled: merchant.user?.status ?? false,
+            courierIds: merchant.couriers.map((row) => row.courierId),
+            courierNames: merchant.couriers.map((row) => row.courier.name),
+            parentCount: allocatedProducts.length,
+            parentCodes: allocatedProducts.slice(0, 8).map((row) => row.sku),
+            recentRecharges: merchant.dollarRecharges.map((row) => ({
+              id: row.id,
+              date: row.rechargeDate.toISOString(),
+              usd: Number(row.usdAmount),
+              bdt: Number(row.bdtAmount),
+              rate: Number(row.usdRate),
+            })),
+            recentOperatingCosts: merchant.operatingCosts.map((row) => ({
+              id: row.id,
+              month: row.costMonth.toISOString(),
+              amount: Number(row.amount),
+            })),
+            recentOmsPurchases: merchant.stockAllocations.slice(0, 5).map((row) => ({
+              id: row.id,
+              date: row.allocationDate.toISOString(),
+              sku: row.product.sku,
+              name: row.product.name,
+              quantity: row.enteredQuantity,
+              physicalUnits: row.physicalUnits,
+              totalCost: Number(row.totalCost),
+            })),
+          };
+        })}
         couriers={couriers}
         parents={parents.map((parent) => ({
           ...parent,

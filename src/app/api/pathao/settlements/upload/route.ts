@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 import Papa from "papaparse";
 
 import { authOptions } from "@/lib/auth";
@@ -258,6 +259,8 @@ export async function POST(request: Request) {
   const upload = await prisma.pathaoSettlementUpload.create({
     data: {
       fileName: name,
+      courierId: courier.id,
+      courierName: courier.name,
       rowCount: rows.length,
       matchedCount: 0,
       unmatchedCount: 0,
@@ -298,7 +301,7 @@ export async function POST(request: Request) {
           uploadId: upload.id,
         };
 
-        await tx.pathaoSettlement.upsert({
+        const settlement = await tx.pathaoSettlement.upsert({
           where: { consignmentId: item.consignmentId },
           create: {
             consignmentId: item.consignmentId,
@@ -306,6 +309,47 @@ export async function POST(request: Request) {
           },
           update: data,
         });
+
+        // Payment/accounting truth comes ONLY from the uploaded Pathao sheet.
+        // Webhooks continue to track parcel lifecycle but never mark payment done.
+        if (item.orderId) {
+          await tx.order.update({
+            where: { id: item.orderId },
+            data: {
+              pathaoPaymentStatus: "PAYMENT_DONE",
+              pathaoPaymentVerifiedAt: new Date(),
+              pathaoSettlementCollectedAmount: item.collectedAmount,
+              pathaoSettlementDeliveryFee: item.deliveryFee,
+              pathaoSettlementCodFee: item.codFee,
+              pathaoSettlementTotalFee: item.totalFee,
+              pathaoSettlementConsignmentId: item.consignmentId,
+              pathaoSettlementUploadId: upload.id,
+            },
+          });
+
+          await tx.orderAuditEvent.create({
+            data: {
+              orderId: item.orderId,
+              eventType: "PATHAO_PAYMENT_SETTLED",
+              title: "Pathao payment verified from CSV",
+              details: {
+                settlementId: settlement.id,
+                uploadId: upload.id,
+                fileName: name,
+                courierId: courier.id,
+                courierName: courier.name,
+                sheetConsignmentId: item.consignmentId,
+                merchantOrderId: item.apiMerchantOrderId || item.merchantOrderId || null,
+                collectedAmount: item.collectedAmount,
+                deliveryFee: item.deliveryFee,
+                codFee: item.codFee,
+                totalFee: item.totalFee,
+              },
+              performedByUserId: session.user.id || null,
+              actorLabel: session.user.name || session.user.email || "OMS user",
+            },
+          });
+        }
       }
 
       await tx.pathaoSettlementUpload.update({
@@ -321,6 +365,10 @@ export async function POST(request: Request) {
     await prisma.pathaoSettlementUpload.delete({ where: { id: upload.id } }).catch(() => undefined);
     throw error;
   }
+
+  revalidatePath("/dashboard/pathao-payment-settlement");
+  revalidatePath("/dashboard/profit-margin");
+  revalidatePath("/dashboard/pathao-daily-report");
 
   return NextResponse.json({
     ok: true,

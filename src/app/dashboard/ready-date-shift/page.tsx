@@ -49,7 +49,6 @@ export default async function ReadyDateShiftPage({ searchParams }: PageProps) {
     prisma.order.findMany({
       where: {
         orderStatus: "READY_TO_SHIP",
-        invoiceDownloaded: false,
         readyToShipAt: {
           gte: bangladeshDateStartUtc(sourceDate),
           lte: bangladeshDateEndUtc(sourceDate),
@@ -71,7 +70,6 @@ export default async function ReadyDateShiftPage({ searchParams }: PageProps) {
     prisma.order.count({
       where: {
         orderStatus: "READY_TO_SHIP",
-        invoiceDownloaded: false,
         readyToShipAt: {
           gte: bangladeshDateStartUtc(sourceDate),
           lte: bangladeshDateEndUtc(sourceDate),
@@ -111,8 +109,8 @@ export default async function ReadyDateShiftPage({ searchParams }: PageProps) {
           Ready to Ship Date Shift
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Move non-invoiced Ready to Ship orders to another Bangladesh business
-          date using a date filter or a CSV invoice list.
+          Move Ready to Ship orders to another Bangladesh business date using a
+          date filter or a CSV invoice list. Printed/downloaded invoices are allowed.
         </p>
       </section>
 

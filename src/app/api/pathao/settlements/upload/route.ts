@@ -196,55 +196,72 @@ export async function POST(request: Request) {
     const batch = rows.slice(index, index + batchSize);
     const batchResults = await Promise.all(
       batch.map(async (item): Promise<ResolvedRow> => {
+        let info: any = null;
+        let apiLookupError: string | null = null;
+        let apiMerchantOrderId = "";
+
         try {
-          const info = await getPathaoOrderInfo(courier.id, item.consignmentId);
-          const apiMerchantOrderId = String(
-            info.merchant_order_id || info.invoice_id || ""
+          info = await getPathaoOrderInfo(courier.id, item.consignmentId);
+          apiMerchantOrderId = String(
+            info?.merchant_order_id || info?.invoice_id || ""
           )
             .trim()
             .replace(/^["']|["']$/g, "");
-
-          if (!apiMerchantOrderId) {
-            return {
-              ...item,
-              apiMerchantOrderId: "",
-              orderId: null,
-              apiError: "Pathao returned no merchant_order_id/invoice_id.",
-              pathaoInfo: info,
-            };
-          }
-
-          const order = await prisma.order.findFirst({
-            where: {
-              OR: [
-                { invoiceId: apiMerchantOrderId },
-                { pathaoMerchantOrderId: apiMerchantOrderId },
-              ],
-            },
-            select: { id: true },
-          });
-
-          return {
-            ...item,
-            apiMerchantOrderId,
-            orderId: order?.id || null,
-            apiError: order
-              ? null
-              : `OMS order not found for Pathao merchant order ID ${apiMerchantOrderId}.`,
-            pathaoInfo: info,
-          };
         } catch (error) {
+          apiLookupError =
+            error instanceof Error
+              ? error.message
+              : "Pathao order lookup failed.";
+        }
+
+        // Preferred source: Pathao API result resolved from the consignment ID.
+        // Fallback source: the Merchant order id included in Pathao's own
+        // payment CSV. Historical/return consignment IDs are not always
+        // resolvable through the live Pathao order-info endpoint, but the
+        // settlement sheet still carries the original OMS merchant order ID.
+        const resolvedMerchantOrderId =
+          apiMerchantOrderId || item.merchantOrderId;
+
+        if (!resolvedMerchantOrderId) {
           return {
             ...item,
             apiMerchantOrderId: "",
             orderId: null,
             apiError:
-              error instanceof Error
-                ? error.message
-                : "Pathao order lookup failed.",
-            pathaoInfo: null,
+              apiLookupError ||
+              "No merchant order ID was available from Pathao API or payment CSV.",
+            pathaoInfo: info,
           };
         }
+
+        const order = await prisma.order.findFirst({
+          where: {
+            OR: [
+              { invoiceId: resolvedMerchantOrderId },
+              { pathaoMerchantOrderId: resolvedMerchantOrderId },
+            ],
+          },
+          select: { id: true },
+        });
+
+        return {
+          ...item,
+          apiMerchantOrderId: resolvedMerchantOrderId,
+          orderId: order?.id || null,
+          apiError: order
+            ? null
+            : `OMS order not found for merchant order ID ${resolvedMerchantOrderId}.`,
+          pathaoInfo: info
+            ? {
+                ...info,
+                resolutionSource: apiMerchantOrderId ? "PATHAO_API" : "CSV_MERCHANT_ORDER_ID",
+                apiLookupError,
+              }
+            : {
+                resolutionSource: "CSV_MERCHANT_ORDER_ID",
+                apiLookupError,
+              },
+        };
       })
     );
 
@@ -427,10 +444,18 @@ export async function POST(request: Request) {
       name: courier.name,
     },
     totals: {
-      collectedAmount: rows.reduce((sum, row) => sum + row.collectedAmount, 0),
-      deliveryFee: rows.reduce((sum, row) => sum + row.deliveryFee, 0),
-      codFee: rows.reduce((sum, row) => sum + row.codFee, 0),
-      totalFee: rows.reduce((sum, row) => sum + row.totalFee, 0),
+      collectedAmount: resolvedRows
+        .filter((row) => Boolean(row.orderId))
+        .reduce((sum, row) => sum + row.collectedAmount, 0),
+      deliveryFee: resolvedRows
+        .filter((row) => Boolean(row.orderId))
+        .reduce((sum, row) => sum + row.deliveryFee, 0),
+      codFee: resolvedRows
+        .filter((row) => Boolean(row.orderId))
+        .reduce((sum, row) => sum + row.codFee, 0),
+      totalFee: resolvedRows
+        .filter((row) => Boolean(row.orderId))
+        .reduce((sum, row) => sum + row.totalFee, 0),
     },
   });
 }

@@ -340,6 +340,201 @@ export async function assignProductParentToMerchant(input: {
   }
 }
 
+export async function allocateOmsStockToMerchant(input: {
+  merchantId: string;
+  productId: string;
+  allocationDate: string;
+  quantity: number;
+  note?: string;
+}): Promise<MerchantActionResult & { receiptNo?: string }> {
+  try {
+    const session = await requireAdmin();
+
+    const merchantId = String(input.merchantId || "").trim();
+    const productId = String(input.productId || "").trim();
+    const allocationDate = String(input.allocationDate || "").trim();
+    const quantity = positiveInt(input.quantity);
+    const note = String(input.note || "").trim();
+
+    if (
+      !merchantId ||
+      !productId ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(allocationDate) ||
+      !quantity
+    ) {
+      return {
+        success: false,
+        message: "Merchant, OMS product, allocation date and quantity are required.",
+      };
+    }
+
+    const [merchant, product] = await Promise.all([
+      prisma.merchant.findFirst({
+        where: { id: merchantId, status: true },
+        select: { id: true, name: true },
+      }),
+      prisma.product.findUnique({
+        where: { id: productId },
+        include: { parent: true },
+      }),
+    ]);
+
+    if (!merchant) {
+      return { success: false, message: "Merchant not found or inactive." };
+    }
+    if (!product || !product.status) {
+      return { success: false, message: "OMS product not found or inactive." };
+    }
+    if (product.inventoryKind === "BUNDLE") {
+      return {
+        success: false,
+        message:
+          "Virtual bundles cannot be allocated directly. Allocate their physical component SKU(s).",
+      };
+    }
+
+    const parentStock = product.parent.stockMode === "PARENT_STOCK";
+    const unitsPerSale = parentStock
+      ? Math.max(1, Number(product.unitsPerSale || 1))
+      : 1;
+    const physicalUnits = quantity * unitsPerSale;
+    const stockOwnerType = parentStock ? "PRODUCT_PARENT" : "PRODUCT";
+    const stockOwnerId = parentStock ? product.parentId : product.id;
+
+    const unitCost = parentStock
+      ? Number(product.parent.purchasePrice || 0)
+      : Number(product.purchasePrice || 0);
+
+    if (unitCost <= 0) {
+      return {
+        success: false,
+        message:
+          "Buying price is missing. Set the Product Master buying price before allocating stock.",
+      };
+    }
+
+    const receiptNo =
+      "MSA-" +
+      allocationDate.replace(/-/g, "") +
+      "-" +
+      randomBytes(4).toString("hex").toUpperCase();
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Re-read inside the transaction so the stock check and decrement use the
+      // latest stored quantity.
+      const liveProduct = await tx.product.findUnique({
+        where: { id: product.id },
+        include: { parent: true },
+      });
+
+      if (!liveProduct) throw new Error("Product no longer exists.");
+
+      const omsStockBefore =
+        liveProduct.parent.stockMode === "PARENT_STOCK"
+          ? Number(liveProduct.parent.stockQuantity || 0)
+          : Number(liveProduct.quantity || 0);
+
+      if (physicalUnits > omsStockBefore) {
+        throw new Error(
+          "OMS has only " +
+            omsStockBefore +
+            " physical unit(s) available; " +
+            physicalUnits +
+            " unit(s) are required for this allocation."
+        );
+      }
+
+      const existingMerchantStock = await tx.merchantStockAllocation.aggregate({
+        where: { merchantId, productId: liveProduct.id },
+        _sum: { remainingPhysicalUnits: true },
+      });
+      const merchantStockBefore = Number(
+        existingMerchantStock._sum.remainingPhysicalUnits || 0
+      );
+      const omsStockAfter = omsStockBefore - physicalUnits;
+      const merchantStockAfter = merchantStockBefore + physicalUnits;
+      const totalCost = unitCost * physicalUnits;
+
+      if (liveProduct.parent.stockMode === "PARENT_STOCK") {
+        await tx.productParent.update({
+          where: { id: liveProduct.parentId },
+          data: { stockQuantity: { decrement: physicalUnits } },
+        });
+      } else {
+        await tx.product.update({
+          where: { id: liveProduct.id },
+          data: { quantity: { decrement: physicalUnits } },
+        });
+      }
+
+      const allocation = await tx.merchantStockAllocation.create({
+        data: {
+          receiptNo,
+          merchantId,
+          productId: liveProduct.id,
+          parentId: liveProduct.parentId,
+          allocationDate: new Date(allocationDate + "T00:00:00.000Z"),
+          enteredQuantity: quantity,
+          unitsPerSale,
+          physicalUnits,
+          remainingPhysicalUnits: physicalUnits,
+          stockOwnerType,
+          stockOwnerId,
+          omsStockBefore,
+          omsStockAfter,
+          merchantStockBefore,
+          merchantStockAfter,
+          unitCost,
+          totalCost,
+          note: note || null,
+          createdByUserId: session.user.id,
+        },
+      });
+
+      await enqueueStockSyncForOwners(tx, [
+        {
+          ownerType: stockOwnerType,
+          ownerId: stockOwnerId,
+        },
+      ]);
+
+      return allocation;
+    });
+
+    refreshMerchantPages();
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/stock-valuation");
+
+    return {
+      success: true,
+      receiptNo: result.receiptNo,
+      message:
+        result.receiptNo +
+        " created. Allocated " +
+        quantity +
+        " sale unit(s) / " +
+        physicalUnits +
+        " physical unit(s) of " +
+        product.sku +
+        " to " +
+        merchant.name +
+        " at buying cost Tk " +
+        unitCost.toFixed(2) +
+        " = Tk " +
+        Number(result.totalCost).toFixed(2) +
+        ".",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to allocate OMS stock to Merchant.",
+    };
+  }
+}
+
 export async function rechargeMerchantDollar(input: {
   merchantId: string;
   rechargeDate: string;

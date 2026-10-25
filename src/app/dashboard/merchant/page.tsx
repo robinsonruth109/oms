@@ -50,27 +50,16 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
 
-  const [parents, recharges, spends, rates, confirmedOrders, omsPurchases] =
+  const [stockAllocations, recharges, spends, rates, confirmedOrders, allocationHistory] =
     await Promise.all([
-      prisma.productParent.findMany({
-        where: { merchantId: merchant.id, status: true },
+      prisma.merchantStockAllocation.findMany({
+        where: {
+          merchantId: merchant.id,
+          remainingPhysicalUnits: { gt: 0 },
+        },
         select: {
-          id: true,
-          stockMode: true,
-          stockQuantity: true,
-          stockVerifiedAt: true,
-          purchasePrice: true,
-          omsOwnedStockQuantity: true,
-          products: {
-            where: { status: true },
-            select: {
-              inventoryKind: true,
-              quantity: true,
-              stockVerifiedAt: true,
-              purchasePrice: true,
-              omsOwnedStockQuantity: true,
-            },
-          },
+          remainingPhysicalUnits: true,
+          unitCost: true,
         },
       }),
       prisma.merchantDollarRecharge.findMany({
@@ -107,42 +96,22 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
           },
         },
       }),
-      prisma.merchantOmsPurchase.findMany({
+      prisma.merchantStockAllocation.findMany({
         where: { merchantId: merchant.id },
         select: { totalCost: true },
       }),
     ]);
 
-  let stockValue = 0;
-  let availablePhysicalUnits = 0;
-
-  for (const parent of parents) {
-    if (parent.stockMode === "PARENT_STOCK") {
-      const available = Math.max(
-        0,
-        Number(parent.stockQuantity || 0) -
-          Number(parent.omsOwnedStockQuantity || 0)
-      );
-      availablePhysicalUnits += available;
-      if (parent.stockVerifiedAt) {
-        stockValue += available * Number(parent.purchasePrice || 0);
-      }
-      continue;
-    }
-
-    for (const product of parent.products) {
-      if (product.inventoryKind === "BUNDLE") continue;
-      const available = Math.max(
-        0,
-        Number(product.quantity || 0) -
-          Number(product.omsOwnedStockQuantity || 0)
-      );
-      availablePhysicalUnits += available;
-      if (product.stockVerifiedAt) {
-        stockValue += available * Number(product.purchasePrice || 0);
-      }
-    }
-  }
+  const availablePhysicalUnits = stockAllocations.reduce(
+    (sum, row) => sum + Number(row.remainingPhysicalUnits || 0),
+    0
+  );
+  const stockValue = stockAllocations.reduce(
+    (sum, row) =>
+      sum +
+      Number(row.remainingPhysicalUnits || 0) * Number(row.unitCost || 0),
+    0
+  );
 
   const dollarByDay = new Map<string, number>();
   for (const row of rates) {
@@ -173,7 +142,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
   }, 0);
   const dollarBalance = totalRechargeUsd - totalBurnUsd;
 
-  const omsPurchasedValue = omsPurchases.reduce(
+  const omsPurchasedValue = allocationHistory.reduce(
     (sum, row) => sum + Number(row.totalCost || 0),
     0
   );
@@ -272,7 +241,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
           bad={dollarBalance < 10}
         />
         <Card
-          label="OMS Purchased Value"
+          label="Total Allocated Value"
           value={formatTaka(omsPurchasedValue)}
           icon={Package}
         />
@@ -299,7 +268,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
         <QuickLink
           href="/dashboard/merchant/products"
           title="Products & Stock"
-          description="See assigned Parent Codes, available qty and stock valuation."
+          description="See OMS-allocated SKUs, available qty and allocated stock valuation."
           icon={Package}
         />
         <QuickLink

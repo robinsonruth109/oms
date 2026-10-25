@@ -428,6 +428,7 @@ export async function POST(request: Request) {
 
   revalidatePath("/dashboard/pathao-payment-settlement");
   revalidatePath("/dashboard/profit-margin");
+  revalidatePath("/dashboard/pathao-return-track");
   revalidatePath("/dashboard/pathao-daily-report");
 
   return NextResponse.json({

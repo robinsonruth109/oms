@@ -57,12 +57,6 @@ export default async function MerchantStockReceiptPage({
               Receipt No: <span className="font-mono font-semibold text-slate-800">{receipt.receiptNo}</span>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={undefined}
-            className="hidden"
-            aria-hidden="true"
-          />
           <div className="text-right text-sm">
             <p className="font-semibold text-slate-900">
               {receipt.allocationDate.toISOString().slice(0, 10)}

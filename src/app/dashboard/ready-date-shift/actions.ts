@@ -97,20 +97,14 @@ export async function lookupReadyToShipOrdersByInvoiceIds(invoiceIds: string[]) 
     );
 
     const ineligible = rows
-      .filter(
-        (row) => row.orderStatus !== "READY_TO_SHIP" || row.invoiceDownloaded
-      )
+      .filter((row) => row.orderStatus !== "READY_TO_SHIP")
       .map((row) => ({
         invoiceId: row.invoiceId || "N/A",
-        reason: row.invoiceDownloaded
-          ? "Invoice already downloaded"
-          : `Order status is ${row.orderStatus}`,
+        reason: `Order status is ${row.orderStatus}`,
       }));
 
     const eligible = rows
-      .filter(
-        (row) => row.orderStatus === "READY_TO_SHIP" && !row.invoiceDownloaded
-      )
+      .filter((row) => row.orderStatus === "READY_TO_SHIP")
       .sort((a, b) => {
         const aIndex = a.invoiceId ? normalized.indexOf(a.invoiceId) : 999999;
         const bIndex = b.invoiceId ? normalized.indexOf(b.invoiceId) : 999999;
@@ -128,7 +122,7 @@ export async function lookupReadyToShipOrdersByInvoiceIds(invoiceIds: string[]) 
 
     return {
       success: true,
-      message: `${eligible.length} eligible non-invoiced Ready to Ship order(s) found.`,
+      message: `${eligible.length} eligible Ready to Ship order(s) found. Printed/downloaded invoices are allowed.`,
       orders: eligible,
       missingInvoiceIds,
       ineligible,
@@ -205,7 +199,6 @@ export async function shiftReadyToShipOrders(input: {
         where: {
           id: { in: selectedIds },
           orderStatus: "READY_TO_SHIP",
-          invoiceDownloaded: false,
         },
         select: {
           id: true,
@@ -216,7 +209,7 @@ export async function shiftReadyToShipOrders(input: {
 
       if (orders.length !== selectedIds.length) {
         throw new Error(
-          "Shift blocked. One or more selected orders are no longer eligible. Only non-invoiced READY_TO_SHIP orders can be moved. Refresh the page and try again."
+          "Shift blocked. One or more selected orders are no longer READY_TO_SHIP. Printed/downloaded invoices are allowed, but the order must still be READY_TO_SHIP. Refresh the page and try again."
         );
       }
 
@@ -267,7 +260,6 @@ export async function shiftReadyToShipOrders(input: {
         where: {
           id: { in: shiftableOrders.map((order) => order.id) },
           orderStatus: "READY_TO_SHIP",
-          invoiceDownloaded: false,
         },
         data: {
           readyToShipAt: targetReadyToShipAt,
@@ -293,7 +285,7 @@ export async function shiftReadyToShipOrders(input: {
             method,
             fromDate: getBangladeshDateInputValue(order.readyToShipAt),
             toDate: targetDate,
-            invoiceDownloaded: false,
+            invoiceDownloaded: undefined,
           },
         })),
       });

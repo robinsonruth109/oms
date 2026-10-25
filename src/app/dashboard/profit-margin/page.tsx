@@ -302,6 +302,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         },
         select: {
           id: true,
+          invoiceId: true,
           sourceId: true,
           pathaoCourierId: true,
           pathaoConsignmentId: true,
@@ -600,6 +601,95 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   const settlementVerifiedCount = selected.filter((row) => row.settlementVerified).length;
   const unresolvedSettlementCount = selected.filter((row) => row.feeSource === "UNRESOLVED").length;
   const partialCount = selected.filter((row) => row.partial).length;
+
+  // Payment reconciliation is OMS-order based. Return consignment IDs can differ
+  // from outbound consignment IDs, and payment CSV vs physical return may arrive
+  // on different days.
+  const selectedOrderIds = Array.from(new Set(selected.map((row) => row.order.id)));
+  const [selectedReturnTracks, selectedSettlementRows] = selectedOrderIds.length
+    ? await Promise.all([
+        prisma.pathaoReturnTrack.findMany({
+          where: { orderId: { in: selectedOrderIds } },
+          select: {
+            orderId: true,
+            returnConsignmentId: true,
+            processedAt: true,
+          },
+          orderBy: { processedAt: "asc" },
+        }),
+        prisma.pathaoSettlement.findMany({
+          where: { orderId: { in: selectedOrderIds } },
+          select: {
+            orderId: true,
+            consignmentId: true,
+            orderStatus: true,
+            paymentStatus: true,
+            totalFee: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: "asc" },
+        }),
+      ])
+    : [[], []];
+
+  const returnTrackByOrder = new Map<string, typeof selectedReturnTracks>();
+  for (const row of selectedReturnTracks) {
+    const list = returnTrackByOrder.get(row.orderId) || [];
+    list.push(row);
+    returnTrackByOrder.set(row.orderId, list);
+  }
+
+  const returnSettlementByOrder = new Map<string, typeof selectedSettlementRows>();
+  for (const row of selectedSettlementRows) {
+    if (!row.orderId) continue;
+    const statusText = `${row.orderStatus || ""} ${row.paymentStatus || ""}`
+      .toLowerCase()
+      .replace(/[_-]+/g, " ");
+    if (!statusText.includes("return")) continue;
+    const list = returnSettlementByOrder.get(row.orderId) || [];
+    list.push(row);
+    returnSettlementByOrder.set(row.orderId, list);
+  }
+
+  const unsettledParcels = selected
+    .filter((row) => !row.settlementVerified)
+    .map((row) => ({
+      orderId: row.order.id,
+      invoiceId: row.order.invoiceId || row.order.id,
+      consignmentId: row.order.pathaoConsignmentId || "N/A",
+      sourceName: row.order.source?.name || "N/A",
+      courierName: row.order.pathaoCourier?.name || "N/A",
+      pathaoStatus:
+        row.order.pathaoOrderStatus ||
+        row.order.pathaoOrderStatusSlug ||
+        row.latest ||
+        "Pending",
+    }));
+
+  const returnReconciliation = selected
+    .map((row) => {
+      const physical = returnTrackByOrder.get(row.order.id) || [];
+      const payment = returnSettlementByOrder.get(row.order.id) || [];
+      if (!physical.length && !payment.length) return null;
+
+      const reconciliationStatus =
+        physical.length && payment.length
+          ? "MATCHED"
+          : payment.length
+            ? "PAYMENT_FIRST"
+            : "PHYSICAL_FIRST";
+
+      return {
+        orderId: row.order.id,
+        invoiceId: row.order.invoiceId || row.order.id,
+        outboundConsignmentId: row.order.pathaoConsignmentId || "N/A",
+        paymentReturnIds: payment.map((item) => item.consignmentId),
+        physicalReturnIds: physical.map((item) => item.returnConsignmentId),
+        reconciliationStatus,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
   const allRevenue = evaluated
     .filter((row) => row.delivered)
     .reduce((sum, row) => sum + row.revenue, 0);
@@ -1640,6 +1730,117 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           <strong>PAYMENT VERIFIED:</strong> all {settlementVerifiedCount} parcel(s) in this report
           use settlement CSV accounting values.
+        </section>
+      ) : null}
+
+      {unsettledParcels.length ? (
+        <section className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+          <div className="border-b border-amber-100 bg-amber-50 px-5 py-4 sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-amber-950">
+                  Payment Not Settled · Selected Date
+                </h2>
+                <p className="mt-1 text-sm text-amber-800">
+                  These {unsettledParcels.length} parcel(s) are in the selected Ready-to-Ship cohort
+                  but do not yet have a verified Pathao payment CSV match.
+                </p>
+              </div>
+              <a
+                href="/dashboard/pathao-payment-settlement"
+                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Open Payment Settlement
+              </a>
+            </div>
+          </div>
+          <div className="max-h-[420px] overflow-auto">
+            <table className="min-w-[900px] w-full text-left text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-5 py-3">OMS Invoice</th>
+                  <th className="px-5 py-3">Pathao CID</th>
+                  <th className="px-5 py-3">Source</th>
+                  <th className="px-5 py-3">Courier</th>
+                  <th className="px-5 py-3">Latest Status</th>
+                  <th className="px-5 py-3">Payment</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {unsettledParcels.map((row) => (
+                  <tr key={row.orderId}>
+                    <td className="px-5 py-3 font-semibold text-slate-900">{row.invoiceId}</td>
+                    <td className="px-5 py-3">{row.consignmentId}</td>
+                    <td className="px-5 py-3">{row.sourceName}</td>
+                    <td className="px-5 py-3">{row.courierName}</td>
+                    <td className="px-5 py-3">{row.pathaoStatus}</td>
+                    <td className="px-5 py-3">
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                        NOT SETTLED
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {returnReconciliation.length ? (
+        <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-4 sm:px-6">
+            <h2 className="text-lg font-bold text-slate-900">Pathao Return Cross-Match</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Payment CSV return rows are cross-matched with physically received parcels from Pathao Return Track by OMS order.
+            </p>
+          </div>
+          <div className="max-h-[420px] overflow-auto">
+            <table className="min-w-[980px] w-full text-left text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-5 py-3">OMS Invoice</th>
+                  <th className="px-5 py-3">Outbound CID</th>
+                  <th className="px-5 py-3">Payment Return CID</th>
+                  <th className="px-5 py-3">Physical Return CID</th>
+                  <th className="px-5 py-3">Cross-Match</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {returnReconciliation.map((row) => {
+                  const tone =
+                    row.reconciliationStatus === "MATCHED"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : row.reconciliationStatus === "PAYMENT_FIRST"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-amber-100 text-amber-800";
+                  const label =
+                    row.reconciliationStatus === "MATCHED"
+                      ? "Matched"
+                      : row.reconciliationStatus === "PAYMENT_FIRST"
+                        ? "Payment First · Waiting Physical Return"
+                        : "Physical Return First · Waiting Payment";
+                  return (
+                    <tr key={row.orderId}>
+                      <td className="px-5 py-3 font-semibold">{row.invoiceId}</td>
+                      <td className="px-5 py-3">{row.outboundConsignmentId}</td>
+                      <td className="px-5 py-3">
+                        {row.paymentReturnIds.length ? row.paymentReturnIds.join(", ") : "Not received"}
+                      </td>
+                      <td className="px-5 py-3">
+                        {row.physicalReturnIds.length ? row.physicalReturnIds.join(", ") : "Not scanned"}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={"rounded-full px-2.5 py-1 text-xs font-semibold " + tone}>
+                          {label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
 

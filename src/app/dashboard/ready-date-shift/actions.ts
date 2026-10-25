@@ -203,6 +203,7 @@ export async function shiftReadyToShipOrders(input: {
         select: {
           id: true,
           invoiceId: true,
+          invoiceDownloaded: true,
           readyToShipAt: true,
         },
       });
@@ -285,7 +286,7 @@ export async function shiftReadyToShipOrders(input: {
             method,
             fromDate: getBangladeshDateInputValue(order.readyToShipAt),
             toDate: targetDate,
-            invoiceDownloaded: undefined,
+            invoiceDownloaded: order.invoiceDownloaded,
           },
         })),
       });

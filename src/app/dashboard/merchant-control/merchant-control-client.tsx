@@ -16,10 +16,9 @@ import {
 } from "lucide-react";
 
 import {
+  allocateOmsStockToMerchant,
   assignMerchantCouriers,
-  assignProductParentToMerchant,
   createMerchant,
-  omsBuyMerchantProduct,
   rechargeMerchantDollar,
   saveMerchantOperatingCost,
   updateMerchant,
@@ -168,10 +167,6 @@ export default function MerchantControlClient({
     selectedMerchant?.courierIds || []
   );
 
-  const [parentQuery, setParentQuery] = useState("");
-  const [parentId, setParentId] = useState("");
-  const [parentMerchantId, setParentMerchantId] = useState("");
-
   const [rechargeMerchantId, setRechargeMerchantId] = useState(
     merchants[0]?.id || ""
   );
@@ -223,20 +218,9 @@ export default function MerchantControlClient({
     setEditError("");
   }
 
-  const filteredParents = useMemo(() => {
-    const q = parentQuery.toLowerCase().trim();
-    if (!q) return parents.slice(0, 30);
-    return parents
-      .filter((parent) =>
-        (parent.sku + " " + parent.name).toLowerCase().includes(q)
-      )
-      .slice(0, 30);
-  }, [parents, parentQuery]);
-
   const filteredBuyProducts = useMemo(() => {
     const q = buyProductQuery.toLowerCase().trim();
     return products
-      .filter((product) => product.merchantId === buyMerchantId)
       .filter(
         (product) =>
           !q ||
@@ -256,11 +240,8 @@ export default function MerchantControlClient({
   const buyProduct = products.find((product) => product.id === buyProductId);
   const buyAvailable = buyProduct
     ? buyProduct.stockMode === "PARENT_STOCK"
-      ? Math.max(
-          0,
-          buyProduct.parentQuantity - buyProduct.parentOmsOwnedStockQuantity
-        )
-      : Math.max(0, buyProduct.quantity - buyProduct.omsOwnedStockQuantity)
+      ? Math.max(0, buyProduct.parentQuantity)
+      : Math.max(0, buyProduct.quantity)
     : 0;
   const buyUnitsPerSale =
     buyProduct?.stockMode === "PARENT_STOCK"
@@ -444,84 +425,19 @@ export default function MerchantControlClient({
         </Panel>
       </div>
 
-      <Panel
-        title="Product Parent Ownership"
-        description="Search a Parent Code and assign it to a Merchant. Selecting Default OMS removes Merchant ownership."
-        icon={PackageCheck}
-      >
-        <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_auto]">
+      <section className="rounded-3xl border border-blue-200 bg-blue-50 p-5 text-sm text-blue-950 shadow-sm">
+        <div className="flex items-start gap-3">
+          <PackageCheck className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <input
-              value={parentQuery}
-              onChange={(event) => {
-                setParentQuery(event.target.value);
-                setParentId("");
-              }}
-              placeholder="Search Parent SKU or product name"
-              className="w-full rounded-xl border px-3 py-2.5 text-sm"
-            />
-            {parentQuery ? (
-              <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border bg-white">
-                {filteredParents.map((parent) => {
-                  const owner = parent.merchantId
-                    ? merchants.find(
-                        (merchant) => merchant.id === parent.merchantId
-                      )?.name || "Merchant"
-                    : "OMS";
-                  return (
-                    <button
-                      key={parent.id}
-                      type="button"
-                      onClick={() => {
-                        setParentId(parent.id);
-                        setParentQuery(parent.sku + " - " + parent.name);
-                        setParentMerchantId(parent.merchantId || "");
-                      }}
-                      className="block w-full border-b px-3 py-2.5 text-left last:border-0 hover:bg-slate-50"
-                    >
-                      <span className="font-semibold text-slate-900">
-                        {parent.sku}
-                      </span>
-                      <span className="ml-2 text-xs text-slate-500">
-                        {parent.name} · Owner: {owner}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
+            <h2 className="text-lg font-bold">OMS is the Product Master Owner</h2>
+            <p className="mt-1">
+              Products are no longer transferred by changing Product Parent ownership.
+              Use the stock allocation section below to move a specific quantity from OMS
+              inventory to a Merchant. Each allocation creates a buying-cost receipt.
+            </p>
           </div>
-
-          <select
-            value={parentMerchantId}
-            onChange={(event) => setParentMerchantId(event.target.value)}
-            className="rounded-xl border px-3 py-2.5 text-sm"
-          >
-            <option value="">Default OMS</option>
-            {merchants.map((merchant) => (
-              <option key={merchant.id} value={merchant.id}>
-                {merchant.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            disabled={pending || !parentId}
-            onClick={() =>
-              run(() =>
-                assignProductParentToMerchant({
-                  parentId,
-                  merchantId: parentMerchantId || undefined,
-                })
-              )
-            }
-            className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            Assign
-          </button>
         </div>
-      </Panel>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Panel
@@ -686,7 +602,7 @@ export default function MerchantControlClient({
                 setBuyProductQuery(event.target.value);
                 setBuyProductId("");
               }}
-              placeholder="Search Merchant SKU / Parent Code"
+              placeholder="Search OMS SKU / Parent Code / product name"
               className="w-full rounded-xl border px-3 py-2.5 text-sm"
             />
             {buyProductQuery && !buyProductId ? (
@@ -741,8 +657,7 @@ export default function MerchantControlClient({
             {buyProduct ? (
               <div className="grid gap-2 sm:grid-cols-4">
                 <span>
-                  Merchant available: <strong>{buyAvailable}</strong> physical
-                  units
+                  OMS available: <strong>{buyAvailable}</strong> physical units
                 </span>
                 <span>
                   Units / sale: <strong>{buyUnitsPerSale}</strong>
@@ -751,11 +666,11 @@ export default function MerchantControlClient({
                   Buying price: <strong>{money(buyUnitCost)}</strong>
                 </span>
                 <span>
-                  OMS payable: <strong>{money(buyTotal)}</strong>
+                  Receipt value: <strong>{money(buyTotal)}</strong>
                 </span>
               </div>
             ) : (
-              "Select a Merchant product to see stock and payable value."
+              "Select an OMS product to see available stock and receipt value."
             )}
           </div>
         </div>
@@ -771,10 +686,10 @@ export default function MerchantControlClient({
           }
           onClick={() =>
             run(() =>
-              omsBuyMerchantProduct({
+              allocateOmsStockToMerchant({
                 merchantId: buyMerchantId,
                 productId: buyProductId,
-                purchaseDate: buyDate,
+                allocationDate: buyDate,
                 quantity: buyQty,
                 note: buyNote,
               })
@@ -782,7 +697,7 @@ export default function MerchantControlClient({
           }
           className="mt-4 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
         >
-          Confirm OMS Purchase
+          Allocate Stock & Create Receipt
         </button>
       </Panel>
 
@@ -831,7 +746,7 @@ export default function MerchantControlClient({
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Product Parents</p>
+                  <p className="text-xs text-slate-500">Allocated Products</p>
                   <p className="mt-1 font-bold">{merchant.parentCount}</p>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-3">
@@ -844,7 +759,7 @@ export default function MerchantControlClient({
 
               {merchant.parentCodes.length ? (
                 <p className="mt-3 text-xs text-slate-500">
-                  Parents: {merchant.parentCodes.join(", ")}
+                  Allocated: {merchant.parentCodes.join(", ")}
                   {merchant.parentCount > merchant.parentCodes.length
                     ? " …"
                     : ""}
@@ -854,7 +769,7 @@ export default function MerchantControlClient({
               {merchant.recentOmsPurchases.length ? (
                 <div className="mt-4 border-t pt-3">
                   <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                    Recent OMS purchases
+                    Recent Stock Allocations
                   </p>
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
                     {merchant.recentOmsPurchases.slice(0, 3).map((row) => (
@@ -920,7 +835,7 @@ export default function MerchantControlClient({
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Product Parents
+                    Allocated Products
                   </p>
                   <p className="mt-1 text-xl font-bold text-slate-950">
                     {editingMerchant.parentCount}

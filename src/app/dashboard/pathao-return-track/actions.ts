@@ -169,6 +169,7 @@ export async function deleteUnmatchedPathaoReturnAction({
     }
 
     revalidatePath("/dashboard/pathao-return-track");
+    revalidatePath("/dashboard/profit-margin");
     return {
       success: true,
       message: `Removed ${cleanConsignmentId} from Not Found / Previous Parcel. Its scan record will no longer appear in the report or CSV.`,
@@ -240,6 +241,7 @@ async function saveUnmatchedScan({
   });
 
   revalidatePath("/dashboard/pathao-return-track");
+    revalidatePath("/dashboard/profit-margin");
   return {
     success: false,
     action: "NOT_FOUND_SAVED",
@@ -519,6 +521,7 @@ async function processReturn({
     });
 
     revalidatePath("/dashboard/pathao-return-track");
+    revalidatePath("/dashboard/profit-margin");
     revalidatePath("/dashboard/all-orders");
     revalidatePath(`/dashboard/all-orders/${orderId}`);
     revalidatePath("/dashboard/products");
@@ -725,6 +728,7 @@ export async function repairZeroRestoredReturnsAction(
     }
 
     revalidatePath("/dashboard/pathao-return-track");
+    revalidatePath("/dashboard/profit-margin");
     revalidatePath("/dashboard/all-orders");
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/stock-valuation");

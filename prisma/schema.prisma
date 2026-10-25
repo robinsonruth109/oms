@@ -70,6 +70,7 @@ model User {
   salaryMonths SalaryMonth[] @relation("SalaryMonthUser")
   salaryTransactions SalaryTransaction[] @relation("SalaryTransactionUser")
   salaryTransactionsCreated SalaryTransaction[] @relation("SalaryTransactionCreatedBy")
+  merchantStockAllocationsCreated MerchantStockAllocation[] @relation("MerchantStockAllocationCreatedBy")
 }
 
 model Page {
@@ -185,6 +186,7 @@ model ProductParent {
   damageEntries ProductDamageEntry[]
   stockAdjustments ProductStockAdjustment[]
   merchantOmsPurchases MerchantOmsPurchase[]
+  merchantStockAllocations MerchantStockAllocation[]
 
   @@index([merchantId])
 }
@@ -357,6 +359,7 @@ model Product {
   damageEntries ProductDamageEntry[]
   stockAdjustments ProductStockAdjustment[]
   merchantOmsPurchases MerchantOmsPurchase[]
+  merchantStockAllocations MerchantStockAllocation[]
   bundleComponents ProductBundleComponent[] @relation("BundleSku")
   usedInBundles ProductBundleComponent[] @relation("BundleComponentSku")
 
@@ -1296,6 +1299,7 @@ model Merchant {
   dollarRecharges  MerchantDollarRecharge[]
   operatingCosts   MerchantOperatingCost[]
   omsPurchases     MerchantOmsPurchase[]
+  stockAllocations MerchantStockAllocation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1394,6 +1398,53 @@ model MerchantOmsPurchase {
   @@index([merchantId, purchaseDate])
   @@index([productId])
   @@index([parentId])
+  @@index([createdByUserId])
+}
+
+model MerchantStockAllocation {
+  id String @id @default(uuid())
+
+  receiptNo String @unique
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  allocationDate DateTime
+
+  enteredQuantity Int
+  unitsPerSale Int
+  physicalUnits Int
+  remainingPhysicalUnits Int
+
+  stockOwnerType StockOwnerType
+  stockOwnerId String
+
+  omsStockBefore Int
+  omsStockAfter Int
+  merchantStockBefore Int
+  merchantStockAfter Int
+
+  unitCost Decimal @db.Decimal(12, 2)
+  totalCost Decimal @db.Decimal(14, 2)
+
+  note String? @db.Text
+
+  createdByUserId String
+  createdByUser User @relation("MerchantStockAllocationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([merchantId, allocationDate])
+  @@index([merchantId, productId])
+  @@index([productId])
+  @@index([parentId])
+  @@index([stockOwnerType, stockOwnerId])
   @@index([createdByUserId])
 }
 

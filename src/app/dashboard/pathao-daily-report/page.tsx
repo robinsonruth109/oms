@@ -1,7 +1,6 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
-import PathaoSettlementUpload from "./pathao-settlement-upload";
 import {
   bangladeshDateEndUtc,
   bangladeshDateStartUtc,
@@ -65,18 +64,6 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
     params.date || getBangladeshDateInputValue()
   ).trim();
   const selectedCourier = String(params.courier || "").trim();
-
-  const latestSettlementUpload = await prisma.pathaoSettlementUpload.findFirst({
-    orderBy: { createdAt: "desc" },
-    select: {
-      fileName: true,
-      rowCount: true,
-      matchedCount: true,
-      unmatchedCount: true,
-      duplicateCount: true,
-      createdAt: true,
-    },
-  });
 
   const couriers = await prisma.courier.findMany({
     where: { status: true },
@@ -278,20 +265,6 @@ export default async function PathaoDailyReportPage({ searchParams }: Props) {
           </button>
         </form>
       </section>
-
-      <PathaoSettlementUpload
-        couriers={couriers
-          .filter((courier) => courier.pathaoEnabled)
-          .map((courier) => ({ id: courier.id, name: courier.name }))}
-        latest={
-          latestSettlementUpload
-            ? {
-                ...latestSettlementUpload,
-                createdAt: latestSettlementUpload.createdAt.toISOString(),
-              }
-            : null
-        }
-      />
 
       <section className="space-y-4">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">

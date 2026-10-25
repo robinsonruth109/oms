@@ -1774,9 +1774,9 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
             />
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            VERIFIED parcels use exact Pathao payment-sheet Delivery Fee, COD Fee and Total Fee.
-            Parcels without a matched settlement remain ESTIMATED from webhook/order data and are clearly warned above.
-            Settlement values always override estimates.
+            Only PAYMENT DONE parcels use Pathao payment-sheet Collected Amount, Delivery Fee,
+            COD Fee and Total Fee. Webhook data is used only for parcel status tracking.
+            Unverified parcels contribute Tk 0.00 to Pathao payment accounting until a settlement CSV is verified.
           </p>
         </div>
       </section>

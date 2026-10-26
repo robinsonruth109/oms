@@ -78,6 +78,8 @@ function isAllowed(pathname: string, role: string, userId: string) {
       pathname.startsWith("/dashboard/stock-adjustments/") ||
       pathname === "/dashboard/pathao-return-track" ||
       pathname.startsWith("/dashboard/pathao-return-track/") ||
+      pathname === "/dashboard/pathao-past-return-history" ||
+      pathname.startsWith("/dashboard/pathao-past-return-history/") ||
       pathname === "/dashboard/pathao-daily-report" ||
       pathname.startsWith("/dashboard/pathao-daily-report/") ||
       pathname === "/dashboard/pathao-delivery-report" ||
@@ -116,6 +118,8 @@ function isAllowed(pathname: string, role: string, userId: string) {
       pathname.startsWith("/dashboard/pathao-orders/") ||
       pathname === "/dashboard/pathao-return-track" ||
       pathname.startsWith("/dashboard/pathao-return-track/") ||
+      pathname === "/dashboard/pathao-past-return-history" ||
+      pathname.startsWith("/dashboard/pathao-past-return-history/") ||
       pathname === "/dashboard/pathao-daily-report" ||
       pathname.startsWith("/dashboard/pathao-daily-report/") ||
       pathname === "/dashboard/stock-out-import" ||

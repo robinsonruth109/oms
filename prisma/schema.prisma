@@ -187,6 +187,7 @@ model ProductParent {
   stockAdjustments ProductStockAdjustment[]
   merchantOmsPurchases MerchantOmsPurchase[]
   merchantStockAllocations MerchantStockAllocation[]
+  merchantPastHistory MerchantPastHistory[]
 
   @@index([merchantId])
 }
@@ -360,7 +361,6 @@ model Product {
   stockAdjustments ProductStockAdjustment[]
   merchantOmsPurchases MerchantOmsPurchase[]
   merchantStockAllocations MerchantStockAllocation[]
-  merchantPastHistory MerchantPastHistory[]
   bundleComponents ProductBundleComponent[] @relation("BundleSku")
   usedInBundles ProductBundleComponent[] @relation("BundleComponentSku")
 

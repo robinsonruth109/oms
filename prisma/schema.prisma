@@ -360,6 +360,7 @@ model Product {
   stockAdjustments ProductStockAdjustment[]
   merchantOmsPurchases MerchantOmsPurchase[]
   merchantStockAllocations MerchantStockAllocation[]
+  merchantPastHistory MerchantPastHistory[]
   bundleComponents ProductBundleComponent[] @relation("BundleSku")
   usedInBundles ProductBundleComponent[] @relation("BundleComponentSku")
 
@@ -1314,6 +1315,10 @@ model Merchant {
   address String @db.Text
   status  Boolean @default(true)
 
+  // Border date: before this date merchant accounting is maintained as manual past history.
+  // From this date onward OMS live accounting is the source of truth.
+  omsAccountingStartDate DateTime?
+
   userId String? @unique
   user   User? @relation("MerchantUser", fields: [userId], references: [id], onDelete: SetNull)
 
@@ -1326,6 +1331,7 @@ model Merchant {
   operatingCosts   MerchantOperatingCost[]
   omsPurchases     MerchantOmsPurchase[]
   stockAllocations MerchantStockAllocation[]
+  pastHistory      MerchantPastHistory[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1473,6 +1479,37 @@ model MerchantStockAllocation {
   @@index([stockOwnerType, stockOwnerId])
   @@index([createdByUserId])
 }
+
+model MerchantPastHistory {
+  id String @id @default(uuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  parentId String
+  parent   ProductParent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+
+  // Stored as the first day of the month; one row per Merchant + Parent + Month.
+  historyMonth DateTime
+
+  courierSendQty    Int @default(0)
+  returnReceivedQty Int @default(0)
+
+  adsCostBdt Decimal @default(0) @db.Decimal(14, 2)
+  returnCost Decimal @default(0) @db.Decimal(14, 2)
+  discount   Decimal @default(0) @db.Decimal(14, 2)
+  profit     Decimal @default(0) @db.Decimal(14, 2)
+
+  note String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchantId, parentId, historyMonth], map: "MPH_merchant_parent_month_uq")
+  @@index([merchantId, historyMonth], map: "MPH_merchant_month_idx")
+  @@index([parentId, historyMonth], map: "MPH_parent_month_idx")
+}
+
 
 model PurchaseOrder {
   id String @id @default(uuid())

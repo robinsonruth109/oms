@@ -9,9 +9,9 @@ CREATE TABLE `MetaCampaignMerchantAllocation` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
-    UNIQUE INDEX `MetaCampaignMerchantAllocation_mappingId_merchantId_fromDate_toDate_key`(`mappingId`, `merchantId`, `fromDate`, `toDate`),
-    INDEX `MetaCampaignMerchantAllocation_mappingId_fromDate_toDate_idx`(`mappingId`, `fromDate`, `toDate`),
-    INDEX `MetaCampaignMerchantAllocation_merchantId_fromDate_toDate_idx`(`merchantId`, `fromDate`, `toDate`),
+    UNIQUE INDEX `MCMA_mapping_merchant_period_uq`(`mappingId`, `merchantId`, `fromDate`, `toDate`),
+    INDEX `MCMA_mapping_period_idx`(`mappingId`, `fromDate`, `toDate`),
+    INDEX `MCMA_merchant_period_idx`(`merchantId`, `fromDate`, `toDate`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

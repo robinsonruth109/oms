@@ -1,7 +1,6 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { formatBangladeshDateTime } from "@/lib/bangladesh-time";
 import PastReturnHistoryClient from "./past-return-history-client";
 
@@ -14,6 +13,10 @@ export default async function PathaoPastReturnHistoryPage() {
   if (!session || !["ADMIN", "MANAGER", "PACKAGING_AGENT"].includes(session.user.role)) {
     redirect("/dashboard");
   }
+
+  // Load Prisma only at request time so Railway/Next build-time page collection
+  // does not require DATABASE_URL.
+  const { prisma } = await import("@/lib/prisma");
 
   const [passedRows, failedRows] = await Promise.all([
     prisma.pathaoReturnTrack.findMany({

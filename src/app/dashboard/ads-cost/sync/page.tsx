@@ -85,6 +85,10 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
               sources: {
                 include: { source: true },
               },
+              merchantAllocations: {
+                where: { fromDate: from, toDate: to },
+                include: { merchant: { select: { id: true, name: true } } },
+              },
               reportGroup: {
                 include: {
                   mappings: {
@@ -159,6 +163,14 @@ export default async function AdsCostSyncPage({ searchParams }: PageProps) {
               id: item.source.id,
               name: item.source.name,
             })),
+            partialMerchant:
+              mapping.merchantAllocations[0]
+                ? {
+                    merchantId: mapping.merchantAllocations[0].merchantId,
+                    merchantName: mapping.merchantAllocations[0].merchant.name,
+                    amountUsd: Number(mapping.merchantAllocations[0].amountUsd),
+                  }
+                : null,
             reportGroupId: mapping.reportGroupId,
             linkedCampaigns:
               mapping.reportGroup?.mappings

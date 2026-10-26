@@ -136,21 +136,33 @@ export async function saveMetaCampaignMapping(input: {
 
 
 export async function saveMetaCampaignMappings(input: {
+  fromDate: string;
+  toDate: string;
   mappings: {
     campaignId: string;
     productParentId: string;
     merchantId?: string;
     sourceIds: string[];
+    partialMerchantId?: string;
+    partialAmountUsd?: number;
   }[];
 }): Promise<ActionResult> {
   try {
     await requireAdmin();
+
+    const fromDate = String(input.fromDate || "").trim();
+    const toDate = String(input.toDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+      return { success: false, message: "Valid From and To dates are required for merchant allocation." };
+    }
 
     const rows = (input.mappings || []).map((row) => ({
       campaignId: String(row.campaignId || "").trim(),
       productParentId: String(row.productParentId || "").trim(),
       merchantId: String(row.merchantId || "").trim() || null,
       sourceIds: cleanIds(row.sourceIds || []),
+      partialMerchantId: String(row.partialMerchantId || "").trim() || null,
+      partialAmountUsd: Math.max(0, Number(row.partialAmountUsd || 0)),
     }));
 
     if (!rows.length) {
@@ -177,18 +189,43 @@ export async function saveMetaCampaignMappings(input: {
           message: "Every changed campaign must have one Product Parent and at least one Source, or be fully cleared to remove the mapping.",
         };
       }
+
+      if (row.partialAmountUsd > 0 && !row.partialMerchantId) {
+        return { success: false, message: "Choose a Partial Merchant before entering a partial dollar amount." };
+      }
+      if (row.partialMerchantId && row.partialAmountUsd <= 0) {
+        return { success: false, message: "Enter a Partial Merchant dollar amount greater than 0." };
+      }
+      if (row.partialMerchantId && row.partialMerchantId === row.merchantId) {
+        return { success: false, message: "Partial Merchant must be different from the Main Merchant." };
+      }
     }
 
     const campaignIds = rows.map((row) => row.campaignId);
-    const parentIds = Array.from(
-      new Set(rows.map((row) => row.productParentId).filter(Boolean))
-    );
-    const sourceIds = Array.from(
-      new Set(rows.flatMap((row) => row.sourceIds))
+    const parentIds = Array.from(new Set(rows.map((row) => row.productParentId).filter(Boolean)));
+    const sourceIds = Array.from(new Set(rows.flatMap((row) => row.sourceIds)));
+    const merchantIds = Array.from(
+      new Set(
+        rows.flatMap((row) => [row.merchantId, row.partialMerchantId]).filter((id): id is string => Boolean(id))
+      )
     );
 
-    const [campaignCount, parentRows, sourceCount] = await Promise.all([
-      prisma.metaCampaign.count({ where: { id: { in: campaignIds } } }),
+    const [campaignRows, parentRows, sourceCount, merchantCount] = await Promise.all([
+      prisma.metaCampaign.findMany({
+        where: { id: { in: campaignIds } },
+        select: {
+          id: true,
+          dailySpends: {
+            where: {
+              spendDate: {
+                gte: new Date(fromDate + "T00:00:00.000Z"),
+                lte: new Date(toDate + "T23:59:59.999Z"),
+              },
+            },
+            select: { amountSpent: true },
+          },
+        },
+      }),
       parentIds.length
         ? prisma.productParent.findMany({
             where: { id: { in: parentIds }, status: true },
@@ -198,9 +235,12 @@ export async function saveMetaCampaignMappings(input: {
       sourceIds.length
         ? prisma.orderSource.count({ where: { id: { in: sourceIds }, status: true } })
         : Promise.resolve(0),
+      merchantIds.length
+        ? prisma.merchant.count({ where: { id: { in: merchantIds }, status: true } })
+        : Promise.resolve(0),
     ]);
 
-    if (campaignCount !== campaignIds.length) {
+    if (campaignRows.length !== campaignIds.length) {
       return { success: false, message: "One or more campaigns are invalid." };
     }
     if (parentRows.length !== parentIds.length) {
@@ -208,6 +248,26 @@ export async function saveMetaCampaignMappings(input: {
     }
     if (sourceCount !== sourceIds.length) {
       return { success: false, message: "One or more Sources are invalid or inactive." };
+    }
+    if (merchantCount !== merchantIds.length) {
+      return { success: false, message: "One or more Merchants are invalid or inactive." };
+    }
+
+    const campaignSpend = new Map(
+      campaignRows.map((campaign) => [
+        campaign.id,
+        campaign.dailySpends.reduce((sum, spend) => sum + Number(spend.amountSpent), 0),
+      ])
+    );
+
+    for (const row of rows) {
+      const spend = campaignSpend.get(row.campaignId) || 0;
+      if (row.partialAmountUsd > spend + 0.005) {
+        return {
+          success: false,
+          message: `Partial Merchant amount cannot exceed campaign spend. Campaign spend is ${spend.toFixed(2)}.`,
+        };
+      }
     }
 
     let saved = 0;
@@ -271,17 +331,27 @@ export async function saveMetaCampaignMappings(input: {
           },
         });
 
-        await tx.metaCampaignSource.deleteMany({
-          where: { mappingId: mapping.id },
-        });
-
+        await tx.metaCampaignSource.deleteMany({ where: { mappingId: mapping.id } });
         await tx.metaCampaignSource.createMany({
-          data: row.sourceIds.map((sourceId) => ({
-            mappingId: mapping.id,
-            sourceId,
-          })),
+          data: row.sourceIds.map((sourceId) => ({ mappingId: mapping.id, sourceId })),
           skipDuplicates: true,
         });
+
+        await tx.metaCampaignMerchantAllocation.deleteMany({
+          where: { mappingId: mapping.id, fromDate, toDate },
+        });
+
+        if (row.partialMerchantId && row.partialAmountUsd > 0) {
+          await tx.metaCampaignMerchantAllocation.create({
+            data: {
+              mappingId: mapping.id,
+              merchantId: row.partialMerchantId,
+              fromDate,
+              toDate,
+              amountUsd: row.partialAmountUsd,
+            },
+          });
+        }
 
         saved += 1;
       }
@@ -293,10 +363,11 @@ export async function saveMetaCampaignMappings(input: {
 
     revalidatePath("/dashboard/ads-cost/sync");
     revalidatePath("/dashboard/ads-cost/report");
+    revalidatePath("/dashboard/profit-margin");
 
     return {
       success: true,
-      message: `Updated ${saved} campaign mapping(s)${removed ? ` and removed ${removed}` : ""}.`,
+      message: `Updated ${saved} campaign mapping(s)${removed ? ` and removed ${removed}` : ""}. Partial Merchant allocations were saved for ${fromDate} to ${toDate}.`,
     };
   } catch (error) {
     return {
@@ -308,7 +379,6 @@ export async function saveMetaCampaignMappings(input: {
     };
   }
 }
-
 
 export async function connectMetaCampaignToExisting(input: {
   campaignId: string;

@@ -5,10 +5,8 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import {
-  searchAllPathaoCouriersForConsignment,
-  type PathaoReturnCourierMatch,
-} from "@/lib/pathao/return-tracking";
+import { getPathaoOrderInfo } from "@/lib/pathao/client";
+import type { PathaoReturnCourierMatch } from "@/lib/pathao/return-tracking";
 
 const PROCESSING_METHOD = "PAST_HISTORY_NO_STOCK";
 
@@ -108,6 +106,213 @@ function rawInfo(
   ) as Prisma.InputJsonValue;
 }
 
+
+async function searchHistoricalPathaoForConsignment(consignmentId: string) {
+  const normalized = normalizeConsignmentId(consignmentId);
+
+  // 1) Exact Pathao payment-settlement history. This is already verified
+  // against a Pathao account and is the strongest local historical source.
+  const settlement = await prisma.pathaoSettlement.findUnique({
+    where: { consignmentId: normalized },
+    include: {
+      upload: { select: { courierId: true, courierName: true } },
+      order: {
+        select: {
+          id: true,
+          invoiceId: true,
+          pathaoConsignmentId: true,
+          pathaoMerchantOrderId: true,
+        },
+      },
+    },
+  });
+
+  if (settlement?.order?.invoiceId) {
+    const info = {
+      consignment_id: settlement.order.pathaoConsignmentId || undefined,
+      return_consignment_id: normalized,
+      merchant_order_id: settlement.order.invoiceId,
+      order_status: settlement.orderStatus || undefined,
+      order_status_slug: settlement.orderStatus || undefined,
+    };
+
+    return {
+      checkedCourierCount: 0,
+      matches: [{
+        courierId: settlement.upload.courierId,
+        courierName: settlement.upload.courierName,
+        courierSlug: "",
+        merchantOrderId: settlement.order.invoiceId,
+        pathaoStatus: settlement.orderStatus,
+        pathaoStatusSlug: settlement.orderStatus,
+        outboundConsignmentId: settlement.order.pathaoConsignmentId,
+        source: "ORDER_INFO" as const,
+        info,
+      } satisfies PathaoReturnCourierMatch],
+      errors: [] as { courierId: string; courierName: string; message: string }[],
+      resolutionSource: "PATHAO_SETTLEMENT",
+    };
+  }
+
+  // 2) Verified webhook history. For historical reconciliation we intentionally
+  // do NOT require the courier to still be active today.
+  const webhook = await prisma.pathaoWebhookEvent.findFirst({
+    where: {
+      signatureValid: true,
+      OR: [
+        { returnConsignmentId: normalized },
+        { consignmentId: normalized },
+      ],
+      orderId: { not: null },
+    },
+    orderBy: { receivedAt: "desc" },
+    include: {
+      courier: { select: { id: true, name: true, slug: true } },
+      order: {
+        select: {
+          invoiceId: true,
+          pathaoConsignmentId: true,
+          pathaoMerchantOrderId: true,
+        },
+      },
+    },
+  });
+
+  if (webhook?.order?.invoiceId) {
+    const returnId =
+      normalizeConsignmentId(webhook.returnConsignmentId) || normalized;
+    const outbound =
+      normalizeConsignmentId(webhook.order.pathaoConsignmentId) ||
+      normalizeConsignmentId(webhook.consignmentId) ||
+      null;
+
+    const info = {
+      consignment_id: outbound || undefined,
+      return_consignment_id: returnId,
+      merchant_order_id: webhook.order.invoiceId,
+      order_status: webhook.eventName,
+      order_status_slug: webhook.eventName,
+    };
+
+    return {
+      checkedCourierCount: 0,
+      matches: [{
+        courierId: webhook.courier.id,
+        courierName: webhook.courier.name,
+        courierSlug: webhook.courier.slug,
+        merchantOrderId: webhook.order.invoiceId,
+        pathaoStatus: webhook.eventName,
+        pathaoStatusSlug: webhook.eventName,
+        outboundConsignmentId: outbound,
+        source: "RETURN_WEBHOOK" as const,
+        info,
+      } satisfies PathaoReturnCourierMatch],
+      errors: [] as { courierId: string; courierName: string; message: string }[],
+      resolutionSource: "VERIFIED_WEBHOOK",
+    };
+  }
+
+  // 3) Original outbound CID already stored on an OMS order.
+  const directOrder = await prisma.order.findUnique({
+    where: { pathaoConsignmentId: normalized },
+    select: {
+      invoiceId: true,
+      pathaoConsignmentId: true,
+      pathaoCourierId: true,
+      pathaoCourier: { select: { id: true, name: true, slug: true } },
+    },
+  });
+
+  if (directOrder?.invoiceId && directOrder.pathaoCourier) {
+    const info = {
+      consignment_id: normalized,
+      merchant_order_id: directOrder.invoiceId,
+    };
+
+    return {
+      checkedCourierCount: 0,
+      matches: [{
+        courierId: directOrder.pathaoCourier.id,
+        courierName: directOrder.pathaoCourier.name,
+        courierSlug: directOrder.pathaoCourier.slug,
+        merchantOrderId: directOrder.invoiceId,
+        pathaoStatus: null,
+        pathaoStatusSlug: null,
+        outboundConsignmentId: normalized,
+        source: "ORDER_INFO" as const,
+        info,
+      } satisfies PathaoReturnCourierMatch],
+      errors: [] as { courierId: string; courierName: string; message: string }[],
+      resolutionSource: "OMS_OUTBOUND_CID",
+    };
+  }
+
+  // 4) Live Pathao lookup. Historical imports must include inactive/legacy
+  // courier accounts; active-only filtering caused old parcels to be skipped.
+  const couriers = await prisma.courier.findMany({
+    where: { pathaoEnabled: true },
+    orderBy: [{ status: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, slug: true, status: true },
+  });
+
+  const results = await Promise.all(
+    couriers.map(async (courier) => {
+      try {
+        const info = await getPathaoOrderInfo(courier.id, normalized);
+        const merchantOrderId = String(
+          info?.merchant_order_id || info?.invoice_id || ""
+        ).trim().replace(/^["']|["']$/g, "");
+
+        if (!merchantOrderId) return { type: "EMPTY" as const, courier };
+
+        return {
+          type: "MATCH" as const,
+          match: {
+            courierId: courier.id,
+            courierName: courier.name,
+            courierSlug: courier.slug,
+            merchantOrderId,
+            pathaoStatus: info?.order_status ? String(info.order_status) : null,
+            pathaoStatusSlug: info?.order_status_slug ? String(info.order_status_slug) : null,
+            outboundConsignmentId: info?.consignment_id
+              ? String(info.consignment_id)
+              : null,
+            source: "ORDER_INFO" as const,
+            info,
+          } satisfies PathaoReturnCourierMatch,
+        };
+      } catch (error) {
+        return {
+          type: "ERROR" as const,
+          courier,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    })
+  );
+
+  const matches: PathaoReturnCourierMatch[] = [];
+  const errors: { courierId: string; courierName: string; message: string }[] = [];
+
+  for (const result of results) {
+    if (result.type === "MATCH") matches.push(result.match);
+    if (result.type === "ERROR") {
+      errors.push({
+        courierId: result.courier.id,
+        courierName: result.courier.name,
+        message: result.error,
+      });
+    }
+  }
+
+  return {
+    checkedCourierCount: couriers.length,
+    matches,
+    errors,
+    resolutionSource: "PATHAO_API",
+  };
+}
+
 async function processOne(
   rawConsignmentId: string,
   user: { id: string; name?: string | null; username?: string | null }
@@ -163,7 +368,7 @@ async function processOne(
       };
     }
 
-    const search = await searchAllPathaoCouriersForConsignment(consignmentId);
+    const search = await searchHistoricalPathaoForConsignment(consignmentId);
 
     if (!search.checkedCourierCount) {
       const reason = "No active Pathao courier account is configured in OMS.";
@@ -180,9 +385,10 @@ async function processOne(
 
     if (!search.matches.length) {
       const hardErrors = search.errors.filter((row) => !/\(404\)/.test(row.message));
+      const notFoundCount = search.errors.length - hardErrors.length;
       const reason = hardErrors.length
-        ? `Pathao lookup incomplete: ${hardErrors.length} account(s) failed to respond.`
-        : "No matching Pathao parcel was found for this consignment ID.";
+        ? `Pathao lookup incomplete: ${hardErrors.length} account(s) failed; ${notFoundCount} account(s) returned not found.`
+        : `No matching Pathao parcel was found after checking ${search.checkedCourierCount} configured Pathao account(s), including inactive historical accounts.`;
 
       await saveFailure({
         consignmentId,

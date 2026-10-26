@@ -157,6 +157,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/recruitment", label: "Staff Recruitment", icon: BriefcaseBusiness, roles: ["ADMIN"] },
       { href: "/dashboard/merchant-control", label: "Merchant Control", icon: Store, roles: ["ADMIN"] },
+      { href: "/dashboard/merchant-past-history", label: "Merchant Past History", icon: FileSpreadsheet, roles: ["ADMIN"] },
       { href: "/dashboard/users", label: "Manage Users", icon: Users, roles: ["ADMIN"] },
       { href: "/dashboard/customer-data-retention", label: "Customer Data", icon: UserRoundCog, roles: ["ADMIN"] },
     ],

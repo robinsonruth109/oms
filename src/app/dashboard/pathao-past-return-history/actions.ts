@@ -116,22 +116,41 @@ async function searchHistoricalPathaoForConsignment(consignmentId: string) {
     where: { consignmentId: normalized },
     include: {
       upload: { select: { courierId: true, courierName: true } },
-      order: {
+    },
+  });
+
+  const settlementOrder = settlement?.orderId
+    ? await prisma.order.findUnique({
+        where: { id: settlement.orderId },
         select: {
           id: true,
           invoiceId: true,
           pathaoConsignmentId: true,
           pathaoMerchantOrderId: true,
         },
-      },
-    },
-  });
+      })
+    : settlement?.merchantOrderId
+      ? await prisma.order.findFirst({
+          where: {
+            OR: [
+              { invoiceId: settlement.merchantOrderId },
+              { pathaoMerchantOrderId: settlement.merchantOrderId },
+            ],
+          },
+          select: {
+            id: true,
+            invoiceId: true,
+            pathaoConsignmentId: true,
+            pathaoMerchantOrderId: true,
+          },
+        })
+      : null;
 
-  if (settlement?.order?.invoiceId) {
+  if (settlement && settlementOrder?.invoiceId) {
     const info = {
-      consignment_id: settlement.order.pathaoConsignmentId || undefined,
+      consignment_id: settlementOrder.pathaoConsignmentId || undefined,
       return_consignment_id: normalized,
-      merchant_order_id: settlement.order.invoiceId,
+      merchant_order_id: settlementOrder.invoiceId,
       order_status: settlement.orderStatus || undefined,
       order_status_slug: settlement.orderStatus || undefined,
     };
@@ -142,10 +161,10 @@ async function searchHistoricalPathaoForConsignment(consignmentId: string) {
         courierId: settlement.upload.courierId,
         courierName: settlement.upload.courierName,
         courierSlug: "",
-        merchantOrderId: settlement.order.invoiceId,
+        merchantOrderId: settlementOrder.invoiceId,
         pathaoStatus: settlement.orderStatus,
         pathaoStatusSlug: settlement.orderStatus,
-        outboundConsignmentId: settlement.order.pathaoConsignmentId,
+        outboundConsignmentId: settlementOrder.pathaoConsignmentId,
         source: "ORDER_INFO" as const,
         info,
       } satisfies PathaoReturnCourierMatch],

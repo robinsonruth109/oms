@@ -2,7 +2,6 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import MerchantPastHistoryClient from "./merchant-past-history-client";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +11,10 @@ export default async function MerchantPastHistoryPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
   if (session.user.role !== "ADMIN") redirect("/dashboard");
+
+  // Load Prisma only at request time. This keeps Next/Railway build-time page
+  // collection from trying to open the production database.
+  const { prisma } = await import("@/lib/prisma");
 
   const [merchants, history] = await Promise.all([
     prisma.merchant.findMany({

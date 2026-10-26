@@ -277,6 +277,10 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
                   productParentId: true,
                   reportGroupId: true,
                   merchantId: true,
+                  merchantAllocations: {
+                    where: { fromDate: from, toDate: to },
+                    select: { merchantId: true, amountUsd: true },
+                  },
                   sources: { select: { sourceId: true } },
                 },
               },
@@ -865,6 +869,18 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   let adsSourceAttributed = 0;
   let unmappedAdsForSource = 0;
 
+  // Partial merchant allocations are saved for this exact report period.
+  // Allocate the saved period amount proportionally across that campaign's
+  // daily spend rows so date-level currency conversion remains correct.
+  const campaignPeriodSpend = new Map<string, number>();
+  for (const row of adsRowsRaw) {
+    campaignPeriodSpend.set(
+      row.campaign.id,
+      (campaignPeriodSpend.get(row.campaign.id) || 0) +
+        numberValue(row.amountSpent)
+    );
+  }
+
   for (const row of adsRowsRaw) {
     const currency = String(row.currency || "USD").toUpperCase();
     const amount = numberValue(row.amountSpent);
@@ -888,12 +904,36 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
 
     if (merchantFilterActive) {
       const mappingMerchantId = mapping?.merchantId || null;
-      const merchantMatches = omsMerchantSelected
+      const allocation = mapping?.merchantAllocations?.[0] || null;
+      const totalCampaignSpend = Math.max(
+        0,
+        campaignPeriodSpend.get(row.campaign.id) || 0
+      );
+      const partialShare =
+        allocation && totalCampaignSpend > 0
+          ? Math.max(
+              0,
+              Math.min(
+                1,
+                numberValue(allocation.amountUsd) / totalCampaignSpend
+              )
+            )
+          : 0;
+
+      let merchantShare = 0;
+      const selectedIsPartial =
+        Boolean(allocation) && allocation?.merchantId === merchantId;
+      const selectedIsMain = omsMerchantSelected
         ? mappingMerchantId === null
         : mappingMerchantId === merchantId;
-      if (!merchantMatches) {
-        sourceAmount = 0;
+
+      if (selectedIsPartial) {
+        merchantShare = partialShare;
+      } else if (selectedIsMain) {
+        merchantShare = 1 - partialShare;
       }
+
+      sourceAmount = bdt * merchantShare;
     }
 
     if (sourceId && sourceAmount > 0) {
@@ -1609,7 +1649,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   if (merchantFilterActive) {
     warnings.push(
       selectedMerchant +
-        " filter uses Product Parent ownership. Mixed-merchant invoices are allocated by product line value so another merchant's revenue, COGS and courier cost are not counted in this view."
+        " filter uses Product Parent ownership for orders. Meta ad cost also respects saved Partial Merchant allocations for the selected Ads Cost period; the Main Merchant receives only the remaining ad spend."
     );
   }
   if (sourceId) {

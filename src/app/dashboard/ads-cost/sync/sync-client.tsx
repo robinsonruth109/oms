@@ -60,6 +60,11 @@ type Campaign = {
     productParent: { sku: string; name: string };
     sourceIds: string[];
     sources: { id: string; name: string }[];
+    partialMerchant: {
+      merchantId: string;
+      merchantName: string;
+      amountUsd: number;
+    } | null;
     reportGroupId: string | null;
     linkedCampaigns: { id: string; campaignName: string }[];
   } | null;
@@ -69,6 +74,8 @@ type Draft = {
   productParentId: string;
   merchantId: string;
   sourceIds: string[];
+  partialMerchantId: string;
+  partialAmountUsd: string;
 };
 
 function formatDateTime(value: string | null) {
@@ -256,6 +263,7 @@ function CampaignConnectionPicker({
   onDisconnect: (campaignId: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [groupOpen, setGroupOpen] = useState(false);
 
   const candidates = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -285,26 +293,46 @@ function CampaignConnectionPicker({
   }
 
   if (campaign.mapping.reportGroupId) {
+    const connectedCount = campaign.mapping.linkedCampaigns.length;
     return (
       <div className="w-72 rounded-xl border bg-emerald-50 p-3">
-        <p className="text-xs font-semibold text-emerald-800">
-          Connected campaign group
-        </p>
-        <div className="mt-2 space-y-1">
-          {campaign.mapping.linkedCampaigns.map((linked) => (
-            <p key={linked.id} className="text-xs text-emerald-700">
-              • {linked.campaignName}
-            </p>
-          ))}
-        </div>
         <button
           type="button"
-          disabled={pending}
-          onClick={() => onDisconnect(campaign.id)}
-          className="mt-3 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50"
+          onClick={() => setGroupOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 text-left"
         >
-          Disconnect from group
+          <span>
+            <span className="block text-xs font-semibold text-emerald-800">
+              Connected campaign group
+            </span>
+            <span className="mt-0.5 block text-[11px] text-emerald-700">
+              {connectedCount} connected campaign{connectedCount === 1 ? "" : "s"}
+            </span>
+          </span>
+          <span className="text-xs font-bold text-emerald-800">
+            {groupOpen ? "Hide" : "View all"}
+          </span>
         </button>
+
+        {groupOpen ? (
+          <>
+            <div className="mt-3 max-h-52 space-y-1 overflow-y-auto border-t border-emerald-200 pt-3">
+              {campaign.mapping.linkedCampaigns.map((linked) => (
+                <p key={linked.id} className="text-xs text-emerald-700">
+                  • {linked.campaignName}
+                </p>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => onDisconnect(campaign.id)}
+              className="mt-3 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50"
+            >
+              Disconnect from group
+            </button>
+          </>
+        ) : null}
       </div>
     );
   }
@@ -426,6 +454,10 @@ export default function AdsCostSyncClient({
           productParentId: campaign.mapping?.productParentId || "",
           merchantId: campaign.mapping?.merchantId || "",
           sourceIds: campaign.mapping?.sourceIds || [],
+          partialMerchantId: campaign.mapping?.partialMerchant?.merchantId || "",
+          partialAmountUsd: campaign.mapping?.partialMerchant
+            ? String(campaign.mapping.partialMerchant.amountUsd)
+            : "",
         },
       ])
     )
@@ -464,6 +496,8 @@ export default function AdsCostSyncClient({
           productParentId: "",
           merchantId: "",
           sourceIds: [],
+          partialMerchantId: "",
+          partialAmountUsd: "",
         }),
         ...patch,
       },
@@ -481,24 +515,43 @@ export default function AdsCostSyncClient({
           productParentId: "",
           merchantId: "",
           sourceIds: [],
+          partialMerchantId: "",
+          partialAmountUsd: "",
         };
         const originalParentId = campaign.mapping?.productParentId || "";
         const originalMerchantId = campaign.mapping?.merchantId || "";
         const originalSourceIds = normalizeIds(campaign.mapping?.sourceIds || []);
         const draftSourceIds = normalizeIds(draft.sourceIds || []);
+        const originalPartialMerchantId =
+          campaign.mapping?.partialMerchant?.merchantId || "";
+        const originalPartialAmount = Number(
+          campaign.mapping?.partialMerchant?.amountUsd || 0
+        );
+        const draftPartialAmount = Number(draft.partialAmountUsd || 0);
 
         const parentChanged = draft.productParentId !== originalParentId;
         const merchantChanged = draft.merchantId !== originalMerchantId;
         const sourcesChanged =
           originalSourceIds.length !== draftSourceIds.length ||
           originalSourceIds.some((id, index) => id !== draftSourceIds[index]);
+        const partialMerchantChanged =
+          draft.partialMerchantId !== originalPartialMerchantId;
+        const partialAmountChanged =
+          Math.abs(draftPartialAmount - originalPartialAmount) > 0.005;
 
         return {
           campaignId: campaign.id,
           productParentId: draft.productParentId,
           merchantId: draft.merchantId,
           sourceIds: draftSourceIds,
-          changed: parentChanged || merchantChanged || sourcesChanged,
+          partialMerchantId: draft.partialMerchantId,
+          partialAmountUsd: draftPartialAmount,
+          changed:
+            parentChanged ||
+            merchantChanged ||
+            sourcesChanged ||
+            partialMerchantChanged ||
+            partialAmountChanged,
         };
       })
       .filter((row) => row.changed);
@@ -530,11 +583,15 @@ export default function AdsCostSyncClient({
     setMessage("");
     startTransition(async () => {
       const result = await saveMetaCampaignMappings({
+        fromDate: from,
+        toDate: to,
         mappings: dirtyMappings.map((row) => ({
           campaignId: row.campaignId,
           productParentId: row.productParentId,
           merchantId: row.merchantId || undefined,
           sourceIds: row.sourceIds,
+          partialMerchantId: row.partialMerchantId || undefined,
+          partialAmountUsd: row.partialAmountUsd,
         })),
       });
       setMessage(result.message);
@@ -853,7 +910,17 @@ export default function AdsCostSyncClient({
                   productParentId: "",
                   merchantId: "",
                   sourceIds: [],
+                  partialMerchantId: "",
+                  partialAmountUsd: "",
                 };
+                const partialAmount = Math.max(
+                  0,
+                  Number(draft.partialAmountUsd || 0)
+                );
+                const mainRemainder = Math.max(
+                  0,
+                  Number(campaign.spend || 0) - partialAmount
+                );
 
                 return (
                   <tr key={campaign.id} className="border-b align-top last:border-b-0">
@@ -894,8 +961,61 @@ export default function AdsCostSyncClient({
                         ))}
                       </select>
                       <p className="mt-1 max-w-52 text-[11px] text-slate-400">
-                        Leave as OMS unless this campaign spend belongs to a Merchant.
+                        Main Merchant receives the remaining campaign spend after any partial allocation.
                       </p>
+
+                      <div className="mt-3 w-52 rounded-xl border border-dashed bg-slate-50 p-2.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Partial Merchant
+                        </p>
+                        <select
+                          value={draft.partialMerchantId}
+                          onChange={(event) =>
+                            patchDraft(campaign.id, {
+                              partialMerchantId: event.target.value,
+                            })
+                          }
+                          className="mt-2 w-full rounded-lg border bg-white px-2 py-2 text-xs"
+                        >
+                          <option value="">No partial merchant</option>
+                          {merchants
+                            .filter((merchant) => merchant.id !== draft.merchantId)
+                            .map((merchant) => (
+                              <option key={merchant.id} value={merchant.id}>
+                                {merchant.name}
+                              </option>
+                            ))}
+                        </select>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-500">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            max={campaign.spend}
+                            value={draft.partialAmountUsd}
+                            onChange={(event) =>
+                              patchDraft(campaign.id, {
+                                partialAmountUsd: event.target.value,
+                              })
+                            }
+                            placeholder="0.00"
+                            className="min-w-0 flex-1 rounded-lg border bg-white px-2 py-2 text-xs"
+                          />
+                        </div>
+
+                        <div className="mt-2 rounded-lg bg-white px-2 py-2 text-[11px] text-slate-600">
+                          <div className="flex justify-between gap-2">
+                            <span>Partial</span>
+                            <strong>{amount(partialAmount, campaign.account.currency)}</strong>
+                          </div>
+                          <div className="mt-1 flex justify-between gap-2">
+                            <span>Main remainder</span>
+                            <strong>{amount(mainRemainder, campaign.account.currency)}</strong>
+                          </div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="max-h-40 w-64 overflow-y-auto rounded-xl border p-2">

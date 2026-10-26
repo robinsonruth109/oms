@@ -1109,6 +1109,7 @@ model MetaCampaignMapping {
   updatedAt DateTime @updatedAt
 
   sources MetaCampaignSource[]
+  merchantAllocations MetaCampaignMerchantAllocation[]
 
   reportGroupId String?
   reportGroup   MetaCampaignReportGroup? @relation(fields: [reportGroupId], references: [id], onDelete: SetNull)
@@ -1116,6 +1117,30 @@ model MetaCampaignMapping {
   @@index([productParentId])
   @@index([merchantId])
   @@index([reportGroupId])
+}
+
+model MetaCampaignMerchantAllocation {
+  id String @id @default(uuid())
+
+  mappingId String
+  mapping   MetaCampaignMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  // Allocation belongs to the exact Ads Cost Sync report period.
+  fromDate String @db.VarChar(10)
+  toDate   String @db.VarChar(10)
+
+  // User enters a partial amount in the Meta account currency (normally USD).
+  amountUsd Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([mappingId, merchantId, fromDate, toDate], name: "mapping_merchant_period")
+  @@index([mappingId, fromDate, toDate])
+  @@index([merchantId, fromDate, toDate])
 }
 
 model MetaCampaignReportGroup {
@@ -1295,6 +1320,7 @@ model Merchant {
   productParents   ProductParent[]
   purchaseOrders   PurchaseOrder[]
   campaignMappings MetaCampaignMapping[]
+  campaignMerchantAllocations MetaCampaignMerchantAllocation[]
   couriers         MerchantCourier[]
   dollarRecharges  MerchantDollarRecharge[]
   operatingCosts   MerchantOperatingCost[]

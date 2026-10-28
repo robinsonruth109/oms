@@ -2171,6 +2171,7 @@ model ShopSetting {
 
   insideDhakaDeliveryCharge  Decimal @default(70) @db.Decimal(10, 2)
   outsideDhakaDeliveryCharge Decimal @default(150) @db.Decimal(10, 2)
+  defaultDollarRate          Decimal @default(127.50) @db.Decimal(10, 2)
 
   metaPixelId                               String?
   metaPixelEnabled                          Boolean @default(false)

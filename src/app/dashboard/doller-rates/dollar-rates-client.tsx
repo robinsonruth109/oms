@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createDollarRate, deleteDollarRate } from "./actions";
+import { createDollarRate, deleteDollarRate, updateDefaultDollarRate } from "./actions";
 
 type GroupedRate = {
   date: string;
@@ -30,10 +30,12 @@ export default function DollarRatesClient({
   from,
   to,
   groupedRates,
+  defaultDollarRate,
 }: {
   from: string;
   to: string;
   groupedRates: GroupedRate[];
+  defaultDollarRate: number;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -46,8 +48,18 @@ export default function DollarRatesClient({
   const [usdAmount, setUsdAmount] = useState(1);
   const [bdtAmount, setBdtAmount] = useState(0);
   const [note, setNote] = useState("");
+  const [defaultRate, setDefaultRate] = useState(defaultDollarRate);
 
   const usdRate = usdAmount > 0 ? bdtAmount / usdAmount : 0;
+
+  async function handleDefaultRateSave() {
+    setMessage("");
+    startTransition(async () => {
+      const result = await updateDefaultDollarRate(defaultRate);
+      setMessage(result.message);
+      if (result.success) window.location.reload();
+    });
+  }
 
   async function handleSubmit() {
     setMessage("");
@@ -90,6 +102,39 @@ export default function DollarRatesClient({
 
   return (
     <div className="space-y-6">
+      <section className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">System Fallback Rate</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-950">Default Dollar Rate</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+              Used only when the selected date has no daily dollar purchase rate. As soon as a daily weighted rate exists, that daily rate automatically overrides this default.
+            </p>
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <div className="min-w-[220px]">
+              <label className="mb-2 block text-sm font-medium text-slate-700">1 USD = BDT</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={defaultRate}
+                onChange={(e) => setDefaultRate(Number(e.target.value || 0))}
+                className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-lg font-bold outline-none"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={pending || defaultRate <= 0}
+              onClick={handleDefaultRateSave}
+              className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {pending ? "Saving..." : "Save Default Rate"}
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section className="rounded-3xl border bg-white p-5 shadow-sm">
         <h2 className="text-xl font-bold text-slate-900">
           Add Dollar Purchase

@@ -127,7 +127,7 @@ export async function calculateMerchantProfitLoss(
   const allocatedProductIds = Array.from(new Set((merchantScope?.stockAllocations || []).map((row) => row.productId)));
   const allocatedParentIds = Array.from(new Set((merchantScope?.stockAllocations || []).map((row) => row.parentId)));
 
-  const [webhooks, dollarRates, adSpends, operatingCosts] = await Promise.all([
+  const [webhooks, dollarRates, adSpends, operatingCosts, shopSetting] = await Promise.all([
     prisma.pathaoWebhookEvent.findMany({
       where: {
         signatureValid: true,
@@ -211,7 +211,13 @@ export async function calculateMerchantProfitLoss(
         amount: true,
       },
     }),
+    prisma.shopSetting.findUnique({
+      where: { id: "default" },
+      select: { defaultDollarRate: true },
+    }),
   ]);
+
+  const defaultDollarRate = numberValue(shopSetting?.defaultDollarRate) || 127.5;
 
   const orderIds = Array.from(
     new Set(
@@ -510,8 +516,8 @@ export async function calculateMerchantProfitLoss(
       bdtAmount = nativeAmount;
     } else if (currency === "USD") {
       const day = getBangladeshDateInputValue(row.spendDate);
-      const rate = dollarByDay.get(day) || 0;
-      if (!rate && nativeAmount > 0) missingDollarRateDays.add(day);
+      const dailyRate = dollarByDay.get(day) || 0;
+      const rate = dailyRate > 0 ? dailyRate : defaultDollarRate;
       bdtAmount = nativeAmount * rate;
     } else if (nativeAmount > 0) {
       unsupportedAdCurrencies.add(currency);

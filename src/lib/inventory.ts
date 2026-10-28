@@ -320,6 +320,14 @@ export async function deductOrderStock(
         new Set(candidates.map((row: any) => row.merchantId))
       );
 
+      if (candidateMerchantIds.length > 1) {
+        throw new InventoryError(
+          "Ambiguous Merchant stock ownership for " +
+            product.sku +
+            ": this Pathao courier is assigned to multiple Merchants that both have allocated stock for the SKU. Use a Merchant-specific courier or remove the duplicate allocation before submission."
+        );
+      }
+
       if (candidateMerchantIds.length === 1) {
         merchantId = String(candidateMerchantIds[0]);
         merchantAllocationRows = candidates.filter(

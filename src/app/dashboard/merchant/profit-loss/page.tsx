@@ -35,9 +35,9 @@ export default async function MerchantProfitLossPage({ searchParams }: Props) {
               Profit & Loss
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-500">
-              {merchant.name} · Same Pathao realized-revenue, COGS, courier-fee
-              and Meta spend rules used by OMS, scoped to this Merchant. Only
-              date range filtering is available here.
+              {merchant.name} · Reports are scoped by the Merchant's assigned Pathao courier(s)
+              and OMS-allocated products. Payment Settlement CSV is the accounting source for
+              collected amount and courier fees; webhook remains status tracking only.
             </p>
           </div>
 
@@ -91,7 +91,7 @@ export default async function MerchantProfitLossPage({ searchParams }: Props) {
         ) : null}
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric
           label="Delivered Revenue"
           value={formatTaka(report.realizedRevenue)}
@@ -120,9 +120,16 @@ export default async function MerchantProfitLossPage({ searchParams }: Props) {
           negative
         />
         <Metric
-          label="Meta Ads"
+          label="Meta Ads (BDT)"
           value={formatTaka(report.metaAds)}
-          sub="Campaigns assigned to this Merchant in Ads Cost Sync"
+          sub="Campaign spend allocated to this Merchant"
+          icon={Megaphone}
+          negative
+        />
+        <Metric
+          label="Selected Period Ads (USD)"
+          value={"$" + report.metaAdsUsd.toFixed(2)}
+          sub={from === to ? "Daily Meta spend in USD" : "Selected date-range Meta spend in USD"}
           icon={Megaphone}
           negative
         />
@@ -257,6 +264,77 @@ export default async function MerchantProfitLossPage({ searchParams }: Props) {
           </div>
         </section>
       </div>
+
+      <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="border-b px-5 py-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-950">Parent Code Performance</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Only products allocated to {merchant.name}, on Pathao couriers assigned to this Merchant.
+              </p>
+            </div>
+            <p className="text-xs font-semibold text-slate-500">
+              {report.parentRows.length} parent code(s)
+            </p>
+          </div>
+        </div>
+        <div className="max-h-[620px] overflow-auto">
+          <table className="min-w-[1320px] w-full text-sm">
+            <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-3 text-left">Parent Code</th>
+                <th className="px-4 py-3 text-right">Qty</th>
+                <th className="px-4 py-3 text-right">Invoices</th>
+                <th className="px-4 py-3 text-right">Delivered</th>
+                <th className="px-4 py-3 text-right">Returned</th>
+                <th className="px-4 py-3 text-right">Pending</th>
+                <th className="px-4 py-3 text-right">Sales</th>
+                <th className="px-4 py-3 text-right">COGS</th>
+                <th className="px-4 py-3 text-right">Courier</th>
+                <th className="px-4 py-3 text-right">Ads</th>
+                <th className="px-4 py-3 text-right">Final Profit / Loss</th>
+                <th className="px-4 py-3 text-right">Delivery %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.parentRows.map((row) => {
+                const deliveryPct = row.totalInvoices > 0
+                  ? (row.deliveredInvoices / row.totalInvoices) * 100
+                  : 0;
+                return (
+                  <tr key={row.parentId} className="border-t">
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-slate-950">{row.sku}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{row.name}</p>
+                    </td>
+                    <td className="px-4 py-3 text-right">{row.qty.toLocaleString("en-BD")}</td>
+                    <td className="px-4 py-3 text-right">{row.totalInvoices.toLocaleString("en-BD")}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-emerald-700">{row.deliveredInvoices.toLocaleString("en-BD")}</td>
+                    <td className="px-4 py-3 text-right text-rose-700">{row.returnedInvoices.toLocaleString("en-BD")}</td>
+                    <td className="px-4 py-3 text-right text-amber-700">{row.pendingInvoices.toLocaleString("en-BD")}</td>
+                    <td className="px-4 py-3 text-right">{formatTaka(row.merchandiseSales)}</td>
+                    <td className="px-4 py-3 text-right text-rose-700">- {formatTaka(row.cogs)}</td>
+                    <td className="px-4 py-3 text-right text-rose-700">- {formatTaka(row.courierCost)}</td>
+                    <td className="px-4 py-3 text-right text-violet-700">- {formatTaka(row.adsCost)}</td>
+                    <td className={"px-4 py-3 text-right font-bold " + (row.profit >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                      {row.profit >= 0 ? "+ " : "- "}{formatTaka(Math.abs(row.profit))}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-emerald-700">{deliveryPct.toFixed(2)}%</td>
+                  </tr>
+                );
+              })}
+              {!report.parentRows.length ? (
+                <tr>
+                  <td colSpan={12} className="px-4 py-10 text-center text-slate-500">
+                    No Merchant parent-code activity found for the selected period.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="rounded-3xl border bg-white p-5 text-sm leading-6 text-slate-600 shadow-sm">
         <p>

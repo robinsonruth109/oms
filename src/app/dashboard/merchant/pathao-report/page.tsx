@@ -34,22 +34,24 @@ export default async function MerchantPathaoReportPage({
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
   const courierIds = merchant.couriers.map((row) => row.courierId);
+  const allocations = await prisma.merchantStockAllocation.findMany({
+    where: { merchantId: merchant.id },
+    select: { productId: true },
+  });
+  const productIds = Array.from(new Set(allocations.map((row) => row.productId)));
 
-  const webhooks = courierIds.length
+  const webhooks = courierIds.length && productIds.length
     ? await prisma.pathaoWebhookEvent.findMany({
         where: {
           signatureValid: true,
           processed: true,
           orderId: { not: null },
-          receivedAt: { gte: start, lte: end },
           courierId: { in: courierIds },
           order: {
-            items: {
-              some: {
-                product: {
-                  parent: { merchantId: merchant.id },
-                },
-              },
+            is: {
+              readyToShipAt: { gte: start, lte: end },
+              pathaoCourierId: { in: courierIds },
+              items: { some: { productId: { in: productIds } } },
             },
           },
         },
@@ -94,8 +96,9 @@ export default async function MerchantPathaoReportPage({
               productSku: true,
               product: {
                 select: {
+                  id: true,
                   parent: {
-                    select: { merchantId: true, sku: true },
+                    select: { sku: true },
                   },
                 },
               },
@@ -186,7 +189,7 @@ export default async function MerchantPathaoReportPage({
       0
     );
     const merchantItems = order.items.filter(
-      (item) => item.product?.parent.merchantId === merchant.id
+      (item) => item.product?.id && productIds.includes(item.product.id)
     );
     const merchantLineTotal = merchantItems.reduce(
       (sum, item) => sum + numberValue(item.lineTotal),
@@ -307,8 +310,8 @@ export default async function MerchantPathaoReportPage({
               Pathao Delivery Report
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Verified webhook report for {merchant.name}, limited to couriers
-              assigned by Admin.
+              Pathao lifecycle report for {merchant.name}, limited to Admin-assigned
+              courier(s) and OMS-allocated products.
             </p>
           </div>
           <form className="flex flex-wrap items-end gap-2">

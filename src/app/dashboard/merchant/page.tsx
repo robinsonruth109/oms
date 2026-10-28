@@ -56,7 +56,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
   });
   const allocatedProductIds = Array.from(new Set(merchantAllocationProducts.map((row) => row.productId)));
 
-  const [stockAllocations, recharges, spends, rates, confirmedOrders, allocationHistory] =
+  const [stockAllocations, recharges, spends, rates, confirmedOrders, allocationHistory, shopSetting] =
     await Promise.all([
       prisma.merchantStockAllocation.findMany({
         where: {
@@ -105,7 +105,13 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
         where: { merchantId: merchant.id },
         select: { totalCost: true },
       }),
+      prisma.shopSetting.findUnique({
+        where: { id: "default" },
+        select: { defaultDollarRate: true },
+      }),
     ]);
+
+  const defaultDollarRate = Number(shopSetting?.defaultDollarRate || 127.5);
 
   const availablePhysicalUnits = stockAllocations.reduce(
     (sum, row) => sum + Number(row.remainingPhysicalUnits || 0),
@@ -139,7 +145,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
     if (currency === "USD") return sum + amount;
     if (currency === "BDT" || currency === "TK" || currency === "TAKA") {
       const rate =
-        dollarByDay.get(getBangladeshDateInputValue(row.spendDate)) || 0;
+        dollarByDay.get(getBangladeshDateInputValue(row.spendDate)) || defaultDollarRate;
       return sum + (rate > 0 ? amount / rate : 0);
     }
 

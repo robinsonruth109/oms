@@ -67,6 +67,7 @@ export type MerchantProfitResult = {
   deliveryCost: number;
   returnCost: number;
   metaAds: number;
+  metaAdsUsd: number;
   operatingCost: number;
   netProfit: number;
   netMargin: number;
@@ -87,6 +88,21 @@ export type MerchantProfitResult = {
     nativeAmount: number;
     bdtAmount: number;
   }[];
+  parentRows: {
+    parentId: string;
+    sku: string;
+    name: string;
+    qty: number;
+    totalInvoices: number;
+    deliveredInvoices: number;
+    returnedInvoices: number;
+    pendingInvoices: number;
+    merchandiseSales: number;
+    cogs: number;
+    courierCost: number;
+    adsCost: number;
+    profit: number;
+  }[];
 };
 
 export async function calculateMerchantProfitLoss(
@@ -98,20 +114,32 @@ export async function calculateMerchantProfitLoss(
   const end = bangladeshDateEndUtc(to);
   const { prisma } = await import("@/lib/prisma");
 
+  const merchantScope = await prisma.merchant.findUnique({
+    where: { id: merchantId },
+    select: {
+      couriers: { select: { courierId: true } },
+      stockAllocations: {
+        select: { productId: true, parentId: true },
+      },
+    },
+  });
+  const courierIds = Array.from(new Set((merchantScope?.couriers || []).map((row) => row.courierId)));
+  const allocatedProductIds = Array.from(new Set((merchantScope?.stockAllocations || []).map((row) => row.productId)));
+  const allocatedParentIds = Array.from(new Set((merchantScope?.stockAllocations || []).map((row) => row.parentId)));
+
   const [webhooks, dollarRates, adSpends, operatingCosts] = await Promise.all([
     prisma.pathaoWebhookEvent.findMany({
       where: {
         signatureValid: true,
         processed: true,
         orderId: { not: null },
-        receivedAt: { gte: start, lte: end },
+        ...(courierIds.length ? { courierId: { in: courierIds } } : { courierId: "__NO_MERCHANT_COURIER__" }),
         order: {
-          items: {
-            some: {
-              product: {
-                parent: { merchantId },
-              },
-            },
+          is: {
+            readyToShipAt: { gte: start, lte: end },
+            ...(allocatedProductIds.length
+              ? { items: { some: { productId: { in: allocatedProductIds } } } }
+              : { id: "__NO_ALLOCATED_PRODUCT__" }),
           },
         },
       },
@@ -138,7 +166,16 @@ export async function calculateMerchantProfitLoss(
         spendDate: { gte: start, lte: end },
         campaign: {
           mapping: {
-            merchantId,
+            is: {
+              OR: [
+                { merchantId },
+                {
+                  merchantAllocations: {
+                    some: { merchantId, fromDate: from, toDate: to },
+                  },
+                },
+              ],
+            },
           },
         },
       },
@@ -149,6 +186,21 @@ export async function calculateMerchantProfitLoss(
         amountSpent: true,
         currency: true,
         campaignNameSnapshot: true,
+        campaign: {
+          select: {
+            id: true,
+            mapping: {
+              select: {
+                productParentId: true,
+                merchantId: true,
+                merchantAllocations: {
+                  where: { fromDate: from, toDate: to },
+                  select: { merchantId: true, amountUsd: true },
+                },
+              },
+            },
+          },
+        },
       },
     }),
     prisma.merchantOperatingCost.findMany({
@@ -180,11 +232,19 @@ export async function calculateMerchantProfitLoss(
           pathaoDeliveryFee: true,
           pathaoAmountToCollect: true,
           pathaoAuthorizedCodAmount: true,
+          pathaoPaymentStatus: true,
+          pathaoPaymentVerifiedAt: true,
+          pathaoSettlementCollectedAmount: true,
+          pathaoSettlementDeliveryFee: true,
+          pathaoSettlementCodFee: true,
+          pathaoSettlementTotalFee: true,
           items: {
             select: {
               id: true,
               quantity: true,
               lineTotal: true,
+              productSku: true,
+              productName: true,
               product: {
                 select: {
                   id: true,
@@ -193,6 +253,9 @@ export async function calculateMerchantProfitLoss(
                   unitsPerSale: true,
                   parent: {
                     select: {
+                      id: true,
+                      sku: true,
+                      name: true,
                       merchantId: true,
                       stockMode: true,
                       purchasePrice: true,
@@ -232,6 +295,8 @@ export async function calculateMerchantProfitLoss(
   let productCogs = 0;
   let deliveryCost = 0;
   let returnCost = 0;
+
+  const parentMap = new Map<string, MerchantProfitResult["parentRows"][number] & { invoiceIds: Set<string> }>();
 
   for (const [orderId, events] of eventMap) {
     const order = orderMap.get(orderId);
@@ -279,7 +344,7 @@ export async function calculateMerchantProfitLoss(
     const delivered = deliveredAt >= 0 && deliveredAt > returnedAt;
 
     const merchantItems = order.items.filter(
-      (item) => item.product?.parent.merchantId === merchantId
+      (item) => item.product?.id && allocatedProductIds.includes(item.product.id)
     );
     if (!merchantItems.length) continue;
 
@@ -303,19 +368,13 @@ export async function calculateMerchantProfitLoss(
         0
       );
 
-      const collected = rawNumber(deliveredPayload, [
-        "collected_amount",
-        "amount_collected",
-        "amount_to_collect",
-        "cod_amount",
-      ]);
+      const settlementVerified =
+        order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+        Boolean(order.pathaoPaymentVerifiedAt);
 
-      const codRevenue =
-        collected !== null
-          ? Math.max(0, collected)
-          : numberValue(order.pathaoAmountToCollect) ||
-            numberValue(order.pathaoAuthorizedCodAmount) ||
-            numberValue(order.totalAmount);
+      const codRevenue = settlementVerified
+        ? Math.max(0, numberValue(order.pathaoSettlementCollectedAmount))
+        : 0;
 
       const fullRevenue = codRevenue + numberValue(order.advance);
       realizedRevenue += fullRevenue * merchantShare;
@@ -324,45 +383,85 @@ export async function calculateMerchantProfitLoss(
         productCogs += cogsForMerchantItem(item);
       }
 
-      const webhookDeliveryFee = rawNumber(deliveredPayload, ["delivery_fee"]);
-      const webhookCodFee = rawNumber(deliveredPayload, [
-        "cod_fee",
-        "cod_charge",
-        "cod_fee_amount",
-        "cash_on_delivery_fee",
-      ]);
-      const webhookTotalFee = rawNumber(deliveredPayload, [
-        "total_fee",
-        "total_charge",
-        "courier_fee",
-        "total_courier_fee",
-      ]);
-      const baseDeliveryCost = Math.max(
-        0,
-        webhookDeliveryFee !== null
-          ? webhookDeliveryFee
-          : numberValue(order.pathaoDeliveryFee)
-      );
-      const codFeeCost = Math.max(
-        0,
-        webhookCodFee !== null
-          ? webhookCodFee
-          : webhookTotalFee !== null
-            ? webhookTotalFee - baseDeliveryCost
-            : 0
-      );
-      const fullDeliveryCost = Math.max(
-        0,
-        webhookTotalFee !== null
-          ? webhookTotalFee
-          : baseDeliveryCost + codFeeCost
-      );
+      const fullDeliveryCost = settlementVerified
+        ? Math.max(0, numberValue(order.pathaoSettlementTotalFee))
+        : 0;
       deliveryCost += fullDeliveryCost * merchantShare;
     } else if (returned) {
       returnedOrders += 1;
-      returnCost += paidReturnCost * merchantShare;
+      const settlementVerified =
+        order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+        Boolean(order.pathaoPaymentVerifiedAt);
+      const verifiedReturnCost = settlementVerified
+        ? Math.max(0, numberValue(order.pathaoSettlementTotalFee))
+        : 0;
+      returnCost += verifiedReturnCost * merchantShare;
     } else {
       pendingOrders += 1;
+    }
+
+    const invoiceKey = orderId;
+    const totalMerchantLine = merchantItems.reduce(
+      (sum, item) => sum + numberValue(item.lineTotal),
+      0
+    );
+
+    for (const item of merchantItems) {
+      const parent = item.product?.parent;
+      if (!parent) continue;
+      const key = parent.id;
+      const line = numberValue(item.lineTotal);
+      const lineShare = totalMerchantLine > 0 ? line / totalMerchantLine : 1 / merchantItems.length;
+      const existing = parentMap.get(key) || {
+        parentId: key,
+        sku: parent.sku,
+        name: parent.name,
+        qty: 0,
+        totalInvoices: 0,
+        deliveredInvoices: 0,
+        returnedInvoices: 0,
+        pendingInvoices: 0,
+        merchandiseSales: 0,
+        cogs: 0,
+        courierCost: 0,
+        adsCost: 0,
+        profit: 0,
+        invoiceIds: new Set<string>(),
+      };
+
+      existing.qty += Math.max(0, Number(item.quantity || 0));
+      if (!existing.invoiceIds.has(invoiceKey)) {
+        existing.invoiceIds.add(invoiceKey);
+        existing.totalInvoices += 1;
+        if (delivered) existing.deliveredInvoices += 1;
+        else if (returned) existing.returnedInvoices += 1;
+        else existing.pendingInvoices += 1;
+      }
+
+      if (delivered) {
+        const settlementVerified =
+          order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+          Boolean(order.pathaoPaymentVerifiedAt);
+        const orderRevenue = settlementVerified
+          ? Math.max(0, numberValue(order.pathaoSettlementCollectedAmount)) + numberValue(order.advance)
+          : numberValue(order.advance);
+        existing.merchandiseSales += orderRevenue * merchantShare * lineShare;
+        existing.cogs += cogsForMerchantItem(item);
+        existing.courierCost +=
+          (settlementVerified ? Math.max(0, numberValue(order.pathaoSettlementTotalFee)) : 0) *
+          merchantShare *
+          lineShare;
+      } else if (returned) {
+        const settlementVerified =
+          order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+          Boolean(order.pathaoPaymentVerifiedAt);
+        existing.courierCost +=
+          (settlementVerified ? Math.max(0, numberValue(order.pathaoSettlementTotalFee)) : 0) *
+          merchantShare *
+          lineShare;
+      }
+
+      parentMap.set(key, existing);
     }
   }
 
@@ -380,10 +479,31 @@ export async function calculateMerchantProfitLoss(
   const unsupportedAdCurrencies = new Set<string>();
   const adRows: MerchantProfitResult["adRows"] = [];
   let metaAds = 0;
+  let metaAdsUsd = 0;
+
+  const campaignPeriodSpend = new Map<string, number>();
+  for (const row of adSpends) {
+    campaignPeriodSpend.set(
+      row.campaign.id,
+      (campaignPeriodSpend.get(row.campaign.id) || 0) + numberValue(row.amountSpent)
+    );
+  }
 
   for (const row of adSpends) {
     const currency = String(row.currency || "USD").toUpperCase();
-    const nativeAmount = numberValue(row.amountSpent);
+    const fullNativeAmount = numberValue(row.amountSpent);
+    const mapping = row.campaign.mapping;
+    const allocations = mapping?.merchantAllocations || [];
+    const totalCampaignSpend = Math.max(0, campaignPeriodSpend.get(row.campaign.id) || 0);
+    const partial = allocations.find((item) => item.merchantId === merchantId);
+    const totalPartial = allocations.reduce((sum, item) => sum + numberValue(item.amountUsd), 0);
+    let merchantShare = 0;
+    if (partial && totalCampaignSpend > 0) {
+      merchantShare = Math.max(0, Math.min(1, numberValue(partial.amountUsd) / totalCampaignSpend));
+    } else if (mapping?.merchantId === merchantId && totalCampaignSpend > 0) {
+      merchantShare = Math.max(0, Math.min(1, 1 - totalPartial / totalCampaignSpend));
+    }
+    const nativeAmount = fullNativeAmount * merchantShare;
     let bdtAmount = 0;
 
     if (currency === "BDT" || currency === "TK" || currency === "TAKA") {
@@ -398,6 +518,16 @@ export async function calculateMerchantProfitLoss(
     }
 
     metaAds += bdtAmount;
+    if (currency === "USD") metaAdsUsd += nativeAmount;
+
+    if (mapping?.productParentId && allocatedParentIds.includes(mapping.productParentId)) {
+      const parent = parentMap.get(mapping.productParentId);
+      if (parent) {
+        parent.adsCost += bdtAmount;
+        parentMap.set(mapping.productParentId, parent);
+      }
+    }
+
     adRows.push({
       id: row.id,
       date: getBangladeshDateInputValue(row.spendDate),
@@ -440,6 +570,13 @@ export async function calculateMerchantProfitLoss(
   const netMargin =
     realizedRevenue > 0 ? (netProfit / realizedRevenue) * 100 : 0;
 
+  const parentRows = Array.from(parentMap.values())
+    .map(({ invoiceIds, ...row }) => ({
+      ...row,
+      profit: row.merchandiseSales - row.cogs - row.courierCost - row.adsCost,
+    }))
+    .sort((a, b) => b.merchandiseSales - a.merchandiseSales || a.sku.localeCompare(b.sku));
+
   return {
     from,
     to,
@@ -452,6 +589,7 @@ export async function calculateMerchantProfitLoss(
     deliveryCost,
     returnCost,
     metaAds,
+    metaAdsUsd,
     operatingCost,
     netProfit,
     netMargin,
@@ -459,5 +597,6 @@ export async function calculateMerchantProfitLoss(
     unsupportedAdCurrencies: Array.from(unsupportedAdCurrencies).sort(),
     operatingCostRows,
     adRows,
+    parentRows,
   };
 }

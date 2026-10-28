@@ -87,6 +87,10 @@ export default async function MerchantPathaoReportPage({
           pathaoDeliveryFee: true,
           pathaoAmountToCollect: true,
           pathaoAuthorizedCodAmount: true,
+          pathaoPaymentStatus: true,
+          pathaoPaymentVerifiedAt: true,
+          pathaoSettlementCollectedAmount: true,
+          pathaoSettlementTotalFee: true,
           pathaoConsignmentId: true,
           pathaoCourier: { select: { name: true } },
           items: {
@@ -205,68 +209,21 @@ export default async function MerchantPathaoReportPage({
       0
     );
 
-    const deliveryFeeRaw = delivered
-      ? rawNumber(deliveredPayload, ["delivery_fee"])
-      : null;
-    const codFeeRaw = delivered
-      ? rawNumber(deliveredPayload, [
-          "cod_fee",
-          "cod_charge",
-          "cod_fee_amount",
-          "cash_on_delivery_fee",
-        ])
-      : null;
-    const totalFeeRaw = delivered
-      ? rawNumber(deliveredPayload, [
-          "total_fee",
-          "total_charge",
-          "courier_fee",
-          "total_courier_fee",
-        ])
-      : null;
-    const baseDeliveryCost = delivered
-      ? Math.max(
-          0,
-          deliveryFeeRaw !== null
-            ? deliveryFeeRaw
-            : numberValue(order.pathaoDeliveryFee)
-        )
-      : 0;
-    const codFeeCost = delivered
-      ? Math.max(
-          0,
-          codFeeRaw !== null
-            ? codFeeRaw
-            : totalFeeRaw !== null
-              ? totalFeeRaw - baseDeliveryCost
-              : 0
-        )
-      : 0;
-    const deliveryCost = delivered
-      ? Math.max(
-          0,
-          totalFeeRaw !== null
-            ? totalFeeRaw
-            : baseDeliveryCost + codFeeCost
-        ) * share
+    const settlementVerified =
+      order.pathaoPaymentStatus === "PAYMENT_DONE" &&
+      Boolean(order.pathaoPaymentVerifiedAt);
+
+    const deliveryCost = delivered && settlementVerified
+      ? Math.max(0, numberValue(order.pathaoSettlementTotalFee)) * share
       : 0;
 
-    const collected = delivered
-      ? rawNumber(deliveredPayload, [
-          "collected_amount",
-          "amount_collected",
-          "amount_to_collect",
-          "cod_amount",
-        ])
-      : null;
-    const cod =
-      delivered
-        ? collected !== null
-          ? Math.max(0, collected)
-          : numberValue(order.pathaoAmountToCollect) ||
-            numberValue(order.pathaoAuthorizedCodAmount) ||
-            numberValue(order.totalAmount)
-        : 0;
+    const cod = delivered && settlementVerified
+      ? Math.max(0, numberValue(order.pathaoSettlementCollectedAmount))
+      : 0;
+
+    const verifiedReturnCost = returned && settlementVerified
+      ? Math.max(0, numberValue(order.pathaoSettlementTotalFee)) * share
+      : 0;
 
     reportRows.push({
       id: order.id,
@@ -284,7 +241,7 @@ export default async function MerchantPathaoReportPage({
       qty,
       codShare: cod * share,
       deliveryCost,
-      returnCost: returnCost * share,
+      returnCost: verifiedReturnCost,
     });
   }
 
@@ -311,7 +268,8 @@ export default async function MerchantPathaoReportPage({
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Pathao lifecycle report for {merchant.name}, limited to Admin-assigned
-              courier(s) and OMS-allocated products.
+              courier(s) and OMS-allocated products. Payment figures come only from
+              verified Pathao Payment Settlement CSV data.
             </p>
           </div>
           <form className="flex flex-wrap items-end gap-2">

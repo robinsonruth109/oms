@@ -82,6 +82,40 @@ export async function createDollarRate(
   }
 }
 
+export async function updateDefaultDollarRate(rate: number): Promise<ActionResult> {
+  const session = await getServerSession(authOptions);
+
+  if (!session || session.user.role !== "ADMIN") {
+    return { success: false, message: "Unauthorized action." };
+  }
+
+  const value = toMoney(rate);
+  if (value <= 0) {
+    return { success: false, message: "Default dollar rate must be greater than 0." };
+  }
+
+  try {
+    await prisma.shopSetting.upsert({
+      where: { id: "default" },
+      update: { defaultDollarRate: value },
+      create: { id: "default", defaultDollarRate: value },
+    });
+
+    revalidatePath("/dashboard/dollar-rates");
+    revalidatePath("/dashboard/doller-rates");
+    revalidatePath("/dashboard/profit-margin");
+    revalidatePath("/dashboard/ads-cost/report");
+    revalidatePath("/dashboard/merchant");
+
+    return { success: true, message: "Default dollar rate updated successfully." };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to update default dollar rate.",
+    };
+  }
+}
+
 export async function deleteDollarRate(id: string): Promise<ActionResult> {
   const session = await getServerSession(authOptions);
 

@@ -204,7 +204,7 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
   );
   const { prisma } = await import("@/lib/prisma");
 
-  const [sources, couriers, merchants, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles] =
+  const [sources, couriers, merchants, webhooks, financeRows, dollarRates, adsRowsRaw, salaryProfiles, shopSetting] =
     await Promise.all([
       prisma.orderSource.findMany({
         where: { status: true },
@@ -295,7 +295,13 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
         },
         orderBy: { user: { name: "asc" } },
       }),
+      prisma.shopSetting.findUnique({
+        where: { id: "default" },
+        select: { defaultDollarRate: true },
+      }),
     ]);
+
+  const defaultDollarRate = numberValue(shopSetting?.defaultDollarRate) || 127.5;
 
   // Profit Margin cohort is shipment-date based. Do not require a webhook:
   // a Pathao settlement sheet can verify a parcel even if callback history is incomplete.
@@ -891,8 +897,8 @@ export default async function ProfitMarginPage({ searchParams }: Props) {
     } else if (currency === "USD") {
       const day = getBangladeshDateInputValue(row.spendDate);
       const rateRow = dollarByDay.get(day);
-      const rate = rateRow && rateRow.usd > 0 ? rateRow.bdt / rateRow.usd : 0;
-      if (!rate && amount > 0) missingRateDays.add(day);
+      const dailyRate = rateRow && rateRow.usd > 0 ? rateRow.bdt / rateRow.usd : 0;
+      const rate = dailyRate > 0 ? dailyRate : defaultDollarRate;
       bdt = amount * rate;
     } else if (amount > 0) {
       unsupportedAdCurrencies.add(currency);

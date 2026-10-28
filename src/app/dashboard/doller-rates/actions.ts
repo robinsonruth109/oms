@@ -67,7 +67,7 @@ export async function createDollarRate(
       },
     });
 
-    revalidatePath("/dashboard/dollar-rates");
+    revalidatePath("/dashboard/doller-rates");
 
     return {
       success: true,
@@ -101,7 +101,7 @@ export async function updateDefaultDollarRate(rate: number): Promise<ActionResul
       create: { id: "default", defaultDollarRate: value },
     });
 
-    revalidatePath("/dashboard/dollar-rates");
+    revalidatePath("/dashboard/doller-rates");
     revalidatePath("/dashboard/doller-rates");
     revalidatePath("/dashboard/profit-margin");
     revalidatePath("/dashboard/ads-cost/report");
@@ -131,7 +131,7 @@ export async function deleteDollarRate(id: string): Promise<ActionResult> {
       where: { id },
     });
 
-    revalidatePath("/dashboard/dollar-rates");
+    revalidatePath("/dashboard/doller-rates");
 
     return {
       success: true,

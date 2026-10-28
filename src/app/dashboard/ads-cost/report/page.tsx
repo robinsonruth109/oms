@@ -159,7 +159,7 @@ export default async function AdsCostReportPage({
   const fromDate = bangladeshDateStartUtc(from);
   const toDate = bangladeshDateEndUtc(to);
 
-  const [sources, adAccounts, dollarRates, receivedOrders, products] =
+  const [sources, adAccounts, dollarRates, receivedOrders, products, shopSetting] =
     await Promise.all([
       prisma.orderSource.findMany({
         where: { status: true },
@@ -204,7 +204,13 @@ export default async function AdsCostReportPage({
           parent: true,
         },
       }),
+      prisma.shopSetting.findUnique({
+        where: { id: "default" },
+        select: { defaultDollarRate: true },
+      }),
     ]);
+
+  const defaultDollarRate = Number(shopSetting?.defaultDollarRate || 127.5);
 
   const selectedSourceIds = getSelectedSourceIds(sourceId, sources);
   const selectedSourceIdSet = new Set(selectedSourceIds);
@@ -442,7 +448,8 @@ export default async function AdsCostReportPage({
         if (String(spend.currency).toUpperCase() === "USD") {
           spendUsd += amountSpent;
           const dateKey = getBangladeshDateInputValue(spend.spendDate);
-          const rate = dollarRateMap.get(dateKey)?.averageRate || 0;
+          const dailyRate = dollarRateMap.get(dateKey)?.averageRate || 0;
+          const rate = dailyRate > 0 ? dailyRate : defaultDollarRate;
           spendBdt += amountSpent * rate;
         }
       }

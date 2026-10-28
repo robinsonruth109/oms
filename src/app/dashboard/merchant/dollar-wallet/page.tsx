@@ -14,7 +14,7 @@ export default async function MerchantDollarWalletPage() {
   const { merchant } = await requireMerchantContext();
   const { prisma } = await import("@/lib/prisma");
 
-  const [recharges, spends, rates] = await Promise.all([
+  const [recharges, spends, rates, shopSetting] = await Promise.all([
     prisma.merchantDollarRecharge.findMany({
       where: { merchantId: merchant.id },
       orderBy: [{ rechargeDate: "desc" }, { createdAt: "desc" }],
@@ -41,7 +41,13 @@ export default async function MerchantDollarWalletPage() {
       orderBy: { rateDate: "asc" },
       select: { rateDate: true, usdAmount: true, bdtAmount: true },
     }),
+    prisma.shopSetting.findUnique({
+      where: { id: "default" },
+      select: { defaultDollarRate: true },
+    }),
   ]);
+
+  const defaultDollarRate = Number(shopSetting?.defaultDollarRate || 127.5);
 
   const rateMap = new Map(
     rates.map((row) => {
@@ -60,7 +66,7 @@ export default async function MerchantDollarWalletPage() {
 
     if (currency === "USD") return amount;
     if (currency === "BDT" || currency === "TK" || currency === "TAKA") {
-      const rate = rateMap.get(getBangladeshDateInputValue(row.spendDate)) || 0;
+      const rate = rateMap.get(getBangladeshDateInputValue(row.spendDate)) || defaultDollarRate;
       return rate > 0 ? amount / rate : 0;
     }
     return 0;

@@ -265,6 +265,11 @@ export async function getOrderStockWarnings(
 export async function deductOrderStock(
   tx: any, orderId: string, source: "CSV_BATCH" | "PUSH_ALL_COURIERS"
 ) {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { pathaoCourierId: true },
+  });
+
   const items = await tx.orderItem.findMany({
     where: { orderId },
     include: {
@@ -272,6 +277,16 @@ export async function deductOrderStock(
       order: { select: { integrationId: true } },
     },
   });
+
+  const merchantIds = order?.pathaoCourierId
+    ? (
+        await tx.merchantCourier.findMany({
+          where: { courierId: order.pathaoCourierId },
+          select: { merchantId: true },
+        })
+      ).map((row: any) => row.merchantId)
+    : [];
+
   let deductedUnits = 0;
   const affectedOwners: Array<{
     ownerType: "PRODUCT" | "PRODUCT_PARENT";
@@ -280,8 +295,113 @@ export async function deductOrderStock(
 
   for (const item of items) {
     if (item.stockDeductedAt) continue;
+
     const product = await resolveProduct(tx, item);
     const owners = await resolvePhysicalRequirements(tx, product, item.quantity);
+
+    // New Merchant flow:
+    // OMS stock is already reduced when Admin allocates stock to a Merchant.
+    // Therefore a parcel sent through a courier assigned to that Merchant must
+    // consume MerchantStockAllocation, not Product Master a second time.
+    let merchantId: string | null = null;
+    let merchantAllocationRows: any[] = [];
+
+    if (merchantIds.length && product.inventoryKind !== "BUNDLE") {
+      const candidates = await tx.merchantStockAllocation.findMany({
+        where: {
+          merchantId: { in: merchantIds },
+          productId: product.id,
+          remainingPhysicalUnits: { gt: 0 },
+        },
+        orderBy: [{ allocationDate: "asc" }, { createdAt: "asc" }],
+      });
+
+      const candidateMerchantIds = Array.from(
+        new Set(candidates.map((row: any) => row.merchantId))
+      );
+
+      if (candidateMerchantIds.length === 1) {
+        merchantId = String(candidateMerchantIds[0]);
+        merchantAllocationRows = candidates.filter(
+          (row: any) => row.merchantId === merchantId
+        );
+      }
+    }
+
+    if (merchantId && merchantAllocationRows.length && owners.length === 1) {
+      const requiredUnits = owners[0].requiredUnits;
+      const availableUnits = merchantAllocationRows.reduce(
+        (sum: number, row: any) =>
+          sum + Math.max(0, Number(row.remainingPhysicalUnits || 0)),
+        0
+      );
+
+      if (availableUnits < requiredUnits) {
+        throw new InventoryError(
+          "Merchant allocated stock is insufficient for " +
+            product.sku +
+            ". Required " +
+            requiredUnits +
+            " physical unit(s), available " +
+            availableUnits +
+            ". Allocate more stock to the Merchant before courier submission."
+        );
+      }
+
+      const claimed = await tx.orderItem.updateMany({
+        where: { id: item.id, stockDeductedAt: null },
+        data: {
+          stockDeductedAt: new Date(),
+          stockDeductionSource: "MERCHANT_ALLOCATION",
+          stockOwnerType: null,
+          stockOwnerId: merchantId,
+          stockUnitsPerSale: owners[0].unitsPerSale,
+          stockDeductedUnits: requiredUnits,
+        },
+      });
+      if (claimed.count !== 1) continue;
+
+      let remainingToConsume = requiredUnits;
+
+      for (const allocation of merchantAllocationRows) {
+        if (remainingToConsume <= 0) break;
+        const available = Math.max(
+          0,
+          Number(allocation.remainingPhysicalUnits || 0)
+        );
+        if (!available) continue;
+
+        const consume = Math.min(available, remainingToConsume);
+
+        await tx.merchantStockAllocation.update({
+          where: { id: allocation.id },
+          data: { remainingPhysicalUnits: { decrement: consume } },
+        });
+
+        // Reuse the existing immutable order-item stock snapshot table. For
+        // MERCHANT_ALLOCATION rows ownerId is the MerchantStockAllocation id;
+        // restoreReturnedStock handles these rows separately and never touches
+        // Product Master.
+        await tx.orderItemStockAllocation.create({
+          data: {
+            orderItemId: item.id,
+            ownerType: "PRODUCT",
+            ownerId: allocation.id,
+            ownerSkuSnapshot:
+              product.sku + " · Merchant receipt " + allocation.receiptNo,
+            unitsPerSale: 1,
+            deductedUnits: consume,
+          },
+        });
+
+        remainingToConsume -= consume;
+        deductedUnits += consume;
+      }
+
+      continue;
+    }
+
+    // Normal OMS-owned stock path.
     const claimed = await tx.orderItem.updateMany({
       where: { id: item.id, stockDeductedAt: null },
       data: {
@@ -294,6 +414,7 @@ export async function deductOrderStock(
       },
     });
     if (claimed.count !== 1) continue;
+
     for (const row of owners) {
       await tx.orderItemStockAllocation.create({
         data: {
@@ -305,6 +426,7 @@ export async function deductOrderStock(
           deductedUnits: row.requiredUnits,
         },
       });
+
       if (row.ownerType === "PRODUCT_PARENT") {
         await tx.productParent.update({
           where: { id: row.ownerId },
@@ -316,6 +438,7 @@ export async function deductOrderStock(
           data: { quantity: { decrement: row.requiredUnits } },
         });
       }
+
       deductedUnits += row.requiredUnits;
       affectedOwners.push({
         ownerType: row.ownerType,
@@ -349,6 +472,100 @@ export async function restoreReturnedStock(
   const product = await resolveProduct(tx, item);
   const qty = positiveInt(returnedOrderQty, 0);
   if (!qty) throw new InventoryError("Returned quantity must be positive.");
+
+  if (
+    item.stockDeductionSource === "MERCHANT_ALLOCATION" &&
+    item.stockOwnerId &&
+    item.stockAllocations.length
+  ) {
+    let restoredUnits = 0;
+    const breakdown: Array<{
+      ownerSku: string;
+      ownerType: string;
+      quantity: number;
+      before: number;
+      after: number;
+    }> = [];
+
+    let requestedUnits = qty * positiveInt(item.stockUnitsPerSale, 1);
+
+    for (const allocation of item.stockAllocations) {
+      if (requestedUnits <= 0) break;
+
+      const remainingOriginal =
+        Number(allocation.deductedUnits || 0) -
+        Number(allocation.restoredUnits || 0);
+      const units = Math.min(requestedUnits, Math.max(0, remainingOriginal));
+      if (!units) continue;
+
+      const claim = await tx.orderItemStockAllocation.updateMany({
+        where: {
+          id: allocation.id,
+          restoredUnits: { lte: allocation.deductedUnits - units },
+        },
+        data: { restoredUnits: { increment: units } },
+      });
+      if (claim.count !== 1) {
+        throw new InventoryError(
+          "Merchant stock for this return has already been restored."
+        );
+      }
+
+      const merchantAllocation = await tx.merchantStockAllocation.findUnique({
+        where: { id: allocation.ownerId },
+        select: {
+          id: true,
+          receiptNo: true,
+          merchantId: true,
+          remainingPhysicalUnits: true,
+        },
+      });
+
+      if (
+        !merchantAllocation ||
+        merchantAllocation.merchantId !== item.stockOwnerId
+      ) {
+        throw new InventoryError(
+          "Original Merchant allocation record is missing."
+        );
+      }
+
+      const before = Number(merchantAllocation.remainingPhysicalUnits || 0);
+      const updated = await tx.merchantStockAllocation.update({
+        where: { id: merchantAllocation.id },
+        data: { remainingPhysicalUnits: { increment: units } },
+        select: { remainingPhysicalUnits: true },
+      });
+      const after = Number(updated.remainingPhysicalUnits || 0);
+
+      restoredUnits += units;
+      requestedUnits -= units;
+      breakdown.push({
+        ownerSku: merchantAllocation.receiptNo,
+        ownerType: "MERCHANT_ALLOCATION",
+        quantity: units,
+        before,
+        after,
+      });
+    }
+
+    if (requestedUnits > 0) {
+      throw new InventoryError(
+        "Return exceeds the Merchant stock originally deducted for this order."
+      );
+    }
+
+    return {
+      productId: product.id,
+      ownerType: "MERCHANT_ALLOCATION",
+      restoredUnits,
+      stockBefore: breakdown.length === 1 ? breakdown[0].before : 0,
+      stockAfter: breakdown.length === 1 ? breakdown[0].after : 0,
+      stockBreakdown: breakdown,
+      usedLegacyFallback: false,
+    };
+  }
+
   if (item.stockAllocations.length) {
     let restoredUnits = 0;
     const breakdown: Array<{

@@ -1,0 +1,2 @@
+ALTER TABLE `ShopSetting`
+ADD COLUMN `defaultDollarRate` DECIMAL(10,2) NOT NULL DEFAULT 127.50;

@@ -49,6 +49,12 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
   const report = await calculateMerchantProfitLoss(merchant.id, from, to);
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
+  const courierIds = merchant.couriers.map((row) => row.courierId);
+  const merchantAllocationProducts = await prisma.merchantStockAllocation.findMany({
+    where: { merchantId: merchant.id },
+    select: { productId: true },
+  });
+  const allocatedProductIds = Array.from(new Set(merchantAllocationProducts.map((row) => row.productId)));
 
   const [stockAllocations, recharges, spends, rates, confirmedOrders, allocationHistory] =
     await Promise.all([
@@ -87,13 +93,12 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
       prisma.order.count({
         where: {
           readyToShipAt: { gte: start, lte: end },
-          items: {
-            some: {
-              product: {
-                parent: { merchantId: merchant.id },
-              },
-            },
-          },
+          ...(courierIds.length
+            ? { pathaoCourierId: { in: courierIds } }
+            : { pathaoCourierId: "__NO_MERCHANT_COURIER__" }),
+          ...(allocatedProductIds.length
+            ? { items: { some: { productId: { in: allocatedProductIds } } } }
+            : { id: "__NO_ALLOCATED_PRODUCT__" }),
         },
       }),
       prisma.merchantStockAllocation.findMany({
@@ -247,7 +252,7 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
         />
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <Mini
           label="Product COGS"
           value={formatTaka(report.productCogs)}
@@ -257,7 +262,8 @@ export default async function MerchantDashboardPage({ searchParams }: Props) {
           value={formatTaka(report.deliveryCost)}
         />
         <Mini label="Pathao Return Cost" value={formatTaka(report.returnCost)} />
-        <Mini label="Meta Ads" value={formatTaka(report.metaAds)} />
+        <Mini label="Meta Ads (BDT)" value={formatTaka(report.metaAds)} />
+        <Mini label="Ads Spend (USD)" value={formatUsd(report.metaAdsUsd)} />
         <Mini
           label="Operating Cost"
           value={formatTaka(report.operatingCost)}

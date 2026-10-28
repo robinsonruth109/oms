@@ -266,20 +266,78 @@ export default async function MerchantProfitLossPage({ searchParams }: Props) {
       </div>
 
       <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="border-b px-5 py-4">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div className="border-b px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-slate-950">Parent Code Performance</h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs leading-5 text-slate-500">
                 Only products allocated to {merchant.name}, on Pathao couriers assigned to this Merchant.
               </p>
             </div>
-            <p className="text-xs font-semibold text-slate-500">
+            <span className="inline-flex w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
               {report.parentRows.length} parent code(s)
-            </p>
+            </span>
           </div>
         </div>
-        <div className="max-h-[620px] overflow-auto">
+
+        <div className="space-y-3 p-3 md:hidden">
+          {report.parentRows.map((row) => {
+            const deliveryPct = row.totalInvoices > 0
+              ? (row.deliveredInvoices / row.totalInvoices) * 100
+              : 0;
+            return (
+              <article key={row.parentId} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b bg-slate-50/80 p-4">
+                  <p className="break-words text-sm font-extrabold leading-5 text-slate-950">
+                    {row.sku}
+                  </p>
+                  <p className="mt-1 break-words text-xs leading-4 text-slate-500">
+                    {row.name}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 p-3">
+                  <MobileStat label="Qty" value={row.qty.toLocaleString("en-BD")} />
+                  <MobileStat label="Invoices" value={row.totalInvoices.toLocaleString("en-BD")} />
+                  <MobileStat label="Delivered" value={row.deliveredInvoices.toLocaleString("en-BD")} tone="green" />
+                  <MobileStat label="Returned" value={row.returnedInvoices.toLocaleString("en-BD")} tone="red" />
+                  <MobileStat label="Pending" value={row.pendingInvoices.toLocaleString("en-BD")} tone="amber" />
+                  <MobileStat label="Delivery %" value={deliveryPct.toFixed(2) + "%"} tone="green" />
+                </div>
+
+                <details className="group border-t">
+                  <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700">
+                    <span>Financial details</span>
+                    <span className="text-xs text-slate-400 group-open:hidden">View</span>
+                    <span className="hidden text-xs text-slate-400 group-open:inline">Hide</span>
+                  </summary>
+                  <div className="grid grid-cols-2 gap-2 border-t bg-slate-50/60 p-3">
+                    <MobileStat label="Sales" value={formatTaka(row.merchandiseSales)} />
+                    <MobileStat label="COGS" value={"- " + formatTaka(row.cogs)} tone="red" />
+                    <MobileStat label="Courier" value={"- " + formatTaka(row.courierCost)} tone="red" />
+                    <MobileStat label="Ads" value={"- " + formatTaka(row.adsCost)} tone="violet" />
+                    <div className="col-span-2 rounded-xl border bg-white p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Final Profit / Loss
+                      </p>
+                      <p className={"mt-1 text-xl font-extrabold " + (row.profit >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                        {row.profit >= 0 ? "+ " : "- "}{formatTaka(Math.abs(row.profit))}
+                      </p>
+                    </div>
+                  </div>
+                </details>
+              </article>
+            );
+          })}
+
+          {!report.parentRows.length ? (
+            <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">
+              No Merchant parent-code activity found for the selected period.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="hidden max-h-[620px] overflow-auto md:block">
           <table className="min-w-[1320px] w-full text-sm">
             <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
@@ -393,6 +451,39 @@ function SmallStat({ label, value }: { label: string; value: number }) {
       </p>
       <p className="mt-1 text-xl font-bold text-slate-950">
         {value.toLocaleString("en-BD")}
+      </p>
+    </div>
+  );
+}
+
+
+function MobileStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "green" | "red" | "amber" | "violet";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "text-emerald-700"
+      : tone === "red"
+        ? "text-rose-700"
+        : tone === "amber"
+          ? "text-amber-700"
+          : tone === "violet"
+            ? "text-violet-700"
+            : "text-slate-950";
+
+  return (
+    <div className="min-w-0 rounded-xl border bg-slate-50 p-3">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className={"mt-1 break-words text-base font-extrabold " + toneClass}>
+        {value}
       </p>
     </div>
   );

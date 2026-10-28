@@ -28,17 +28,22 @@ export default async function MerchantOrdersPage({ searchParams }: Props) {
 
   const start = bangladeshDateStartUtc(from);
   const end = bangladeshDateEndUtc(to);
+  const courierIds = merchant.couriers.map((row) => row.courierId);
+  const allocations = await prisma.merchantStockAllocation.findMany({
+    where: { merchantId: merchant.id },
+    select: { productId: true },
+  });
+  const productIds = Array.from(new Set(allocations.map((row) => row.productId)));
 
   const orders = await prisma.order.findMany({
     where: {
       readyToShipAt: { gte: start, lte: end },
-      items: {
-        some: {
-          product: {
-            parent: { merchantId: merchant.id },
-          },
-        },
-      },
+      ...(courierIds.length
+        ? { pathaoCourierId: { in: courierIds } }
+        : { pathaoCourierId: "__NO_MERCHANT_COURIER__" }),
+      ...(productIds.length
+        ? { items: { some: { productId: { in: productIds } } } }
+        : { id: "__NO_ALLOCATED_PRODUCT__" }),
     },
     orderBy: { calledAt: "desc" },
     take: 500,
@@ -56,9 +61,7 @@ export default async function MerchantOrdersPage({ searchParams }: Props) {
       source: { select: { name: true } },
       items: {
         where: {
-          product: {
-            parent: { merchantId: merchant.id },
-          },
+          productId: { in: productIds },
         },
         select: {
           productSku: true,
@@ -103,8 +106,8 @@ export default async function MerchantOrdersPage({ searchParams }: Props) {
               Merchant Orders
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Confirmed calling-agent orders containing {merchant.name} products.
-              Only your line items are shown.
+              Orders are scoped to Pathao courier(s) assigned to {merchant.name} and
+              products allocated from OMS. Only this Merchant's allocated product lines are shown.
             </p>
           </div>
           <form className="flex flex-wrap items-end gap-2">

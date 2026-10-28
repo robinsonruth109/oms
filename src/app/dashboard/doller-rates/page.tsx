@@ -32,7 +32,8 @@ export default async function DollarRatesPage({ searchParams }: PageProps) {
   const from = (params.from || today).trim();
   const to = (params.to || today).trim();
 
-  const rates = await prisma.dailyDollarRate.findMany({
+  const [rates, shopSetting] = await Promise.all([
+    prisma.dailyDollarRate.findMany({
     where: {
       rateDate: {
         gte: startOfDay(from),
@@ -42,7 +43,14 @@ export default async function DollarRatesPage({ searchParams }: PageProps) {
     orderBy: {
       rateDate: "desc",
     },
-  });
+  }),
+    prisma.shopSetting.findUnique({
+      where: { id: "default" },
+      select: { defaultDollarRate: true },
+    }),
+  ]);
+
+  const defaultDollarRate = Number(shopSetting?.defaultDollarRate || 127.5);
 
   const grouped = new Map<
     string,
@@ -106,6 +114,7 @@ export default async function DollarRatesPage({ searchParams }: PageProps) {
         from={from}
         to={to}
         groupedRates={Array.from(grouped.values())}
+        defaultDollarRate={defaultDollarRate}
       />
     </div>
   );

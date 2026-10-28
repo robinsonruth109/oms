@@ -64,6 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/merchant", label: "Merchant Dashboard", icon: LayoutDashboard, roles: ["MERCHANT"] },
       { href: "/dashboard/merchant/products", label: "Products & Stock", icon: Package, roles: ["MERCHANT"] },
+      { href: "/dashboard/merchant/stock-deduction", label: "Stock Deduction", icon: PackageX, roles: ["MERCHANT"] },
       { href: "/dashboard/merchant/orders", label: "Merchant Orders", icon: ShoppingBag, roles: ["MERCHANT"] },
       { href: "/dashboard/merchant/purchases", label: "Purchase & Received", icon: BriefcaseBusiness, roles: ["MERCHANT"] },
       { href: "/dashboard/merchant/pathao-report", label: "Pathao Delivery Report", icon: Truck, roles: ["MERCHANT"] },
@@ -119,6 +120,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/stock-valuation", label: "Stock Valuation", icon: Boxes, roles: ["ADMIN"] },
       { href: "/dashboard/damage-products", label: "Damage Products", icon: AlertTriangle, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/stock-adjustments", label: "Stock Adjustment", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },
+      { href: "/dashboard/stock-deduction", label: "Stock Deduction", icon: PackageX, roles: ["ADMIN", "MANAGER"] },
       { href: "/dashboard/reel-categories", label: "Reel Categories", icon: PanelsTopLeft, roles: ["ADMIN"] },
       { href: "/dashboard/reel-products", label: "Reel Products", icon: PackageOpen, roles: ["ADMIN"] },
       { href: "/dashboard/products-purchases/local-purchase", label: "Local Product Purchase", icon: PackageCheck, roles: ["ADMIN", "MANAGER"] },

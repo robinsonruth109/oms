@@ -13,7 +13,6 @@ import {
 import {
   calculateSalaryTotals,
   ensureSalaryMonth,
-  findOldestUnpaidSalaryMonth,
   money,
   normalizeSalaryMonth,
 } from "@/lib/finance/salary";
@@ -258,20 +257,11 @@ export async function addSalaryTransactionAction(formData: FormData) {
     effectiveMonth = transactionMonth;
     salaryMonth = await ensureSalaryMonth(userId, effectiveMonth);
   } else if (rawType === "ADVANCE_SALARY") {
-    // Advance salary settles the oldest unpaid salary first. Example:
-    // if September is still unpaid on 13 October, an October advance is posted
-    // against September until September is cleared.
-    const oldestUnpaid = await findOldestUnpaidSalaryMonth(
-      userId,
-      transactionMonth
+    // Advance salary is applied to the exact salary month selected by Admin.
+    effectiveMonth = normalizeSalaryMonth(
+      requiredString(formData.get("advanceMonth"), "Advance salary month")
     );
-    if (!oldestUnpaid) {
-      throw new Error(
-        "There is no unpaid salary balance through " + transactionMonth + "."
-      );
-    }
-    effectiveMonth = oldestUnpaid.month;
-    salaryMonth = oldestUnpaid.salaryMonth;
+    salaryMonth = await ensureSalaryMonth(userId, effectiveMonth);
   } else {
     salaryMonth = await ensureSalaryMonth(userId, effectiveMonth);
   }
@@ -295,10 +285,7 @@ export async function addSalaryTransactionAction(formData: FormData) {
       throw new Error("This salary month is already fully paid.");
     }
     if (amount > totals.salaryBalance + 0.009) {
-      const monthText =
-        rawType === "ADVANCE_SALARY"
-          ? "oldest unpaid month " + effectiveMonth
-          : "salary month " + effectiveMonth;
+      const monthText = "salary month " + effectiveMonth;
       throw new Error(
         "Payment cannot exceed " +
           monthText +

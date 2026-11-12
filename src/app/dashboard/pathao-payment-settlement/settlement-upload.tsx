@@ -40,10 +40,111 @@ export default function SettlementUpload({
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const bulkInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [courierId, setCourierId] = useState("");
   const [result, setResult] = useState<UploadResult | null>(null);
+  const [bulkResults, setBulkResults] = useState<Array<{
+    fileName: string;
+    ok: boolean;
+    result?: UploadResult;
+    error?: string;
+  }>>([]);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState("");
+
+  async function sendFile(file: File): Promise<UploadResult> {
+    const body = new FormData();
+    body.set("file", file);
+    body.set("courierId", courierId);
+
+    const response = await fetch("/api/pathao/settlements/upload", {
+      method: "POST",
+      body,
+    });
+    const raw = await response.text();
+    let data: any = null;
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = null;
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          raw ||
+          `Payment sheet upload failed (HTTP ${response.status}).`
+      );
+    }
+
+    if (!data?.ok) {
+      throw new Error("Payment sheet upload returned an invalid response.");
+    }
+
+    return data as UploadResult;
+  }
+
+  async function uploadBulk(files: File[]) {
+    if (!courierId) {
+      setError("Select the Pathao courier/account for these payment sheets first.");
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+      return;
+    }
+
+    if (!files.length) return;
+
+    if (files.length > 30) {
+      setError("Bulk upload supports a maximum of 30 CSV files at a time.");
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setResult(null);
+    setBulkResults([]);
+    setBulkProgress({ current: 0, total: files.length });
+
+    const results: Array<{
+      fileName: string;
+      ok: boolean;
+      result?: UploadResult;
+      error?: string;
+    }> = [];
+
+    try {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        setBulkProgress({ current: index + 1, total: files.length });
+
+        try {
+          const fileResult = await sendFile(file);
+          results.push({
+            fileName: file.name,
+            ok: true,
+            result: fileResult,
+          });
+        } catch (err) {
+          results.push({
+            fileName: file.name,
+            ok: false,
+            error: err instanceof Error ? err.message : "Payment sheet upload failed.",
+          });
+        }
+
+        setBulkResults([...results]);
+      }
+
+      router.refresh();
+    } finally {
+      setBusy(false);
+      setBulkProgress(null);
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+    }
+  }
 
   async function upload(file: File) {
     if (!courierId) {
@@ -57,37 +158,9 @@ export default function SettlementUpload({
     setResult(null);
 
     try {
-      const body = new FormData();
-      body.set("file", file);
-      body.set("courierId", courierId);
-
-      const response = await fetch("/api/pathao/settlements/upload", {
-        method: "POST",
-        body,
-      });
-      const raw = await response.text();
-      let data: any = null;
-      if (raw) {
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          data = null;
-        }
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            raw ||
-            `Payment sheet upload failed (HTTP ${response.status}).`
-        );
-      }
-
-      if (!data?.ok) {
-        throw new Error("Payment sheet upload returned an invalid response.");
-      }
-
+      const data = await sendFile(file);
       setResult(data);
+      setBulkResults([]);
       router.refresh();
     } catch (err) {
       setError(
@@ -145,7 +218,7 @@ export default function SettlementUpload({
             ].join(" ")}
           >
             <Upload className="h-4 w-4" />
-            {busy ? "Verifying Payment File..." : "Upload & Verify Payment CSV"}
+            {busy && !bulkProgress ? "Verifying Payment File..." : "Upload & Verify Single CSV"}
             <input
               ref={inputRef}
               type="file"
@@ -158,6 +231,35 @@ export default function SettlementUpload({
               }}
             />
           </label>
+
+          <label
+            className={[
+              "inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold",
+              busy
+                ? "border-slate-200 bg-slate-100 text-slate-400"
+                : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+            ].join(" ")}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {bulkProgress
+              ? `Processing ${bulkProgress.current}/${bulkProgress.total} CSV files...`
+              : "Bulk Upload CSVs (up to 30)"}
+            <input
+              ref={bulkInputRef}
+              type="file"
+              multiple
+              accept=".csv,.txt,text/csv"
+              className="hidden"
+              disabled={busy}
+              onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                if (files.length) void uploadBulk(files);
+              }}
+            />
+          </label>
+          <p className="text-xs leading-5 text-slate-500">
+            Bulk mode uses the same selected Pathao account and verifies each file separately. Files are processed safely one by one.
+          </p>
         </div>
       </div>
 
@@ -173,6 +275,104 @@ export default function SettlementUpload({
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      ) : null}
+
+      {bulkResults.length ? (
+        <div className="mt-4 space-y-3">
+          {(() => {
+            const successful = bulkResults.filter((item) => item.ok && item.result);
+            const failed = bulkResults.filter((item) => !item.ok);
+            const totals = successful.reduce(
+              (sum, item) => {
+                const current = item.result!;
+                sum.rows += current.rowCount;
+                sum.matched += current.matchedCount;
+                sum.unmatched += current.unmatchedCount;
+                sum.errors += current.apiErrorCount;
+                sum.collected += current.totals.collectedAmount;
+                sum.delivery += current.totals.deliveryFee;
+                sum.cod += current.totals.codFee;
+                sum.totalFee += current.totals.totalFee;
+                return sum;
+              },
+              { rows: 0, matched: 0, unmatched: 0, errors: 0, collected: 0, delivery: 0, cod: 0, totalFee: 0 }
+            );
+
+            return (
+              <>
+                <div className={[
+                  "flex items-start gap-2 rounded-2xl border p-4 text-sm font-semibold",
+                  failed.length
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800",
+                ].join(" ")}>
+                  {failed.length ? (
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+                  )}
+                  <span>
+                    Bulk upload processed {bulkResults.length} file(s): {successful.length} successful, {failed.length} failed.
+                    {successful.length ? ` ${totals.matched} OMS order(s) marked PAYMENT DONE.` : ""}
+                  </span>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <Stat label="Files Successful" value={String(successful.length)} />
+                  <Stat label="Files Failed" value={String(failed.length)} />
+                  <Stat label="CSV Rows" value={String(totals.rows)} />
+                  <Stat label="Payment Done" value={String(totals.matched)} />
+                  <Stat label="Unmatched" value={String(totals.unmatched)} />
+                  <Stat label="Resolve Errors" value={String(totals.errors)} />
+                  <Stat label="Collected Amount" value={"Tk " + money(totals.collected)} />
+                  <Stat label="Delivery Fee" value={"Tk " + money(totals.delivery)} />
+                  <Stat label="COD Fee" value={"Tk " + money(totals.cod)} />
+                  <Stat label="Total Fee" value={"Tk " + money(totals.totalFee)} />
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border">
+                  <div className="max-h-80 overflow-auto">
+                    <table className="min-w-[760px] w-full text-sm">
+                      <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3">File</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3 text-right">Rows</th>
+                          <th className="px-4 py-3 text-right">Payment Done</th>
+                          <th className="px-4 py-3 text-right">Unmatched</th>
+                          <th className="px-4 py-3">Message</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y bg-white">
+                        {bulkResults.map((item, index) => (
+                          <tr key={item.fileName + "-" + index}>
+                            <td className="px-4 py-3 font-medium">{item.fileName}</td>
+                            <td className="px-4 py-3">
+                              <span className={[
+                                "rounded-full px-2 py-1 text-xs font-semibold",
+                                item.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700",
+                              ].join(" ")}>
+                                {item.ok ? "Verified" : "Failed"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">{item.result?.rowCount ?? "-"}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-emerald-700">{item.result?.matchedCount ?? "-"}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-rose-700">{item.result?.unmatchedCount ?? "-"}</td>
+                            <td className="max-w-md px-4 py-3 text-xs text-slate-600">
+                              {item.ok
+                                ? `Verified through ${item.result?.courier.name || "selected Pathao account"}.`
+                                : item.error || "Upload failed."}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </div>
       ) : null}
 

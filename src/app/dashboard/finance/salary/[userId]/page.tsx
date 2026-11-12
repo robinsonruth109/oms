@@ -13,6 +13,7 @@ import {
 } from "@/lib/finance/salary";
 import { addSalaryTransactionAction, deleteSalaryTransactionAction } from "../../actions";
 import ConfirmSubmitButton from "../../confirm-submit-button";
+import PayAgentForm from "./pay-agent-form";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -97,16 +98,8 @@ export default async function SalaryDetailsPage({ params, searchParams }: PagePr
           </div>
 
           <div className="rounded-3xl border bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2"><Banknote className="h-5 w-5" /><div><h2 className="font-bold">Pay Agent</h2><p className="text-sm text-slate-500">Advance goes to the oldest unpaid salary month first. Salary payments automatically create a Cash Khoroch entry in Daily Costing.</p></div></div>
-            <form action={addSalaryTransactionAction} className="grid gap-3 sm:grid-cols-2">
-              <input type="hidden" name="userId" value={userId} /><input type="hidden" name="month" value={month} />
-              <label><span className="mb-1 block text-sm font-medium">Payment Type</span><select name="type" className="min-h-11 w-full rounded-xl border px-3 text-sm"><option value="ADVANCE_SALARY">Advance Salary</option><option value="PARTIAL_SALARY">Partial Salary</option><option value="LIABILITY_PAYMENT">Pay Liability</option></select></label>
-              <label><span className="mb-1 block text-sm font-medium">Amount</span><input name="amount" type="number" min="0.01" step="0.01" required className="min-h-11 w-full rounded-xl border px-3 text-sm" /></label>
-              <label><span className="mb-1 block text-sm font-medium">Date</span><input name="transactionDate" type="date" defaultValue={today} required className="min-h-11 w-full rounded-xl border px-3 text-sm" /></label>
-              <label><span className="mb-1 block text-sm font-medium">Note</span><input name="note" className="min-h-11 w-full rounded-xl border px-3 text-sm" placeholder="Optional note" /></label>
-              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800 sm:col-span-2">Payment source: <strong>Cash</strong>. Advance Salary is automatically applied to the oldest unpaid month before the current month.</div>
-              <button className="min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white sm:col-span-2">Record Payment</button>
-            </form>
+            <div className="mb-4 flex items-center gap-2"><Banknote className="h-5 w-5" /><div><h2 className="font-bold">Pay Agent</h2><p className="text-sm text-slate-500">For Advance Salary, select the exact salary month that should be reduced. Salary payments automatically create a Cash Khoroch entry in Daily Costing.</p></div></div>
+            <PayAgentForm userId={userId} selectedMonth={month} today={today} />
             <form action={addSalaryTransactionAction} className="mt-3">
               <input type="hidden" name="userId" value={userId} /><input type="hidden" name="month" value={month} /><input type="hidden" name="type" value="FULL_SALARY" /><input type="hidden" name="amount" value="0" /><input type="hidden" name="transactionDate" value={today} /><input type="hidden" name="note" value="Full remaining monthly salary paid" />
               <button disabled={totals.salaryBalance <= 0} className="min-h-11 w-full rounded-xl border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Pay Full Remaining Salary ({taka(totals.salaryBalance)})</button>

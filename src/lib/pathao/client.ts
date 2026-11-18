@@ -41,13 +41,26 @@ async function parseResponse(response: Response) {
   }
 
   if (!response.ok) {
-    const message =
-      typeof body === "object" && body && "message" in body
-        ? String((body as { message?: unknown }).message || "")
-        : text;
+    const record =
+      typeof body === "object" && body ? (body as Record<string, unknown>) : null;
+    const message = record?.message ? String(record.message) : text;
+    const detailsSource =
+      record?.errors ?? record?.error ?? record?.data ?? record?.details ?? null;
+    let details = "";
+
+    if (detailsSource) {
+      try {
+        details =
+          typeof detailsSource === "string"
+            ? detailsSource
+            : JSON.stringify(detailsSource);
+      } catch {
+        details = String(detailsSource);
+      }
+    }
 
     throw new Error(
-      `Pathao API failed (${response.status})${message ? `: ${message}` : ""}`
+      `Pathao API failed (${response.status})${message ? `: ${message}` : ""}${details ? ` | ${details}` : ""}`
     );
   }
 
@@ -254,6 +267,22 @@ export async function testPathaoConnection(courierId: string) {
   const stores = await getPathaoStores(courierId);
 
   return stores;
+}
+
+export async function createPathaoOrder(
+  courierId: string,
+  order: PathaoOrderPayload
+) {
+  const courier = await getPathaoCourier(courierId);
+
+  return authorizedRequest<Record<string, unknown>>(
+    courier,
+    "/aladdin/api/v1/orders",
+    {
+      method: "POST",
+      body: JSON.stringify(order),
+    }
+  );
 }
 
 export async function createPathaoBulkOrders(

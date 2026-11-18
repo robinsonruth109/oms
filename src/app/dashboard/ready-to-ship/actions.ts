@@ -3,7 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
-import { createPathaoBulkOrders } from "@/lib/pathao/client";
+import { createPathaoBulkOrders, createPathaoOrder } from "@/lib/pathao/client";
 import {
   preparePathaoOrder,
   validatePathaoOrder,
@@ -829,50 +829,52 @@ export async function pushAllToAssignedCouriers(
 
         if (!claimedPrepared.length) continue;
 
-        const preparedIds = claimedPrepared.map((row) => row.orderId);
+        const acceptedPrepared: Array<{
+          prepared: PreparedPathaoOrder;
+          response: Record<string, unknown>;
+        }> = [];
 
-        let pathaoResponse;
-        try {
-          pathaoResponse = await createPathaoBulkOrders(
-            courier.id,
-            claimedPrepared.map((row) => row.payload)
-          );
+        // Pathao currently documents API order creation through POST /orders.
+        // Submit parcels individually so one invalid recipient/address does not
+        // reject an entire courier batch with a generic HTTP 422 response.
+        for (const preparedOrder of claimedPrepared) {
+          try {
+            const response = await createPathaoOrder(
+              courier.id,
+              preparedOrder.payload
+            );
 
-          if (
-            Number(pathaoResponse.code || 202) !== 202 ||
-            pathaoResponse.data !== true
-          ) {
-            throw new Error(
-              pathaoResponse.message ||
-                "Pathao did not accept the bulk order request."
+            acceptedPrepared.push({
+              prepared: preparedOrder,
+              response,
+            });
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error
+                ? error.message
+                : "Pathao order submission failed.";
+
+            await prisma.order.update({
+              where: { id: preparedOrder.orderId },
+              data: {
+                pathaoSubmissionStatus: "FAILED",
+                pathaoLastError: errorMessage,
+                pathaoRawResponse: errorMessage,
+              },
+            });
+
+            failedCount += 1;
+            detailMessages.push(
+              `${preparedOrder.invoiceId}: ${errorMessage}`
             );
           }
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : "Pathao bulk submission failed.";
-
-          await prisma.order.updateMany({
-            where: {
-              id: { in: preparedIds },
-              pathaoSubmissionStatus: "SUBMITTING",
-              pathaoCourierId: courier.id,
-            },
-            data: {
-              pathaoSubmissionStatus: "FAILED",
-              pathaoLastError: errorMessage,
-              pathaoRawResponse: errorMessage,
-            },
-          });
-
-          failedCount += preparedIds.length;
-          detailMessages.push(
-            `${courier.name}: ${preparedIds.length} order(s) failed — ${errorMessage}`
-          );
-          continue;
         }
 
+        if (!acceptedPrepared.length) continue;
+
+        const acceptedIds = acceptedPrepared.map(
+          (row) => row.prepared.orderId
+        );
         const submittedAt = new Date();
         const batchNo = makePushAllBatchNo();
 
@@ -881,19 +883,20 @@ export async function pushAllToAssignedCouriers(
             data: {
               batchNo,
               courier: courierSlug,
-              totalOrders: preparedIds.length,
+              totalOrders: acceptedIds.length,
               createdByUserId: session.user.id,
             },
           });
 
           await tx.csvBatchItem.createMany({
-            data: preparedIds.map((orderId) => ({
+            data: acceptedIds.map((orderId) => ({
               batchId: batch.id,
               orderId,
             })),
           });
 
-          for (const preparedOrder of claimedPrepared) {
+          for (const accepted of acceptedPrepared) {
+            const preparedOrder = accepted.prepared;
             await deductOrderStock(tx, preparedOrder.orderId, "PUSH_ALL_COURIERS");
 
             await tx.order.update({
@@ -907,7 +910,7 @@ export async function pushAllToAssignedCouriers(
                 pathaoAmountToCollect: preparedOrder.payload.amount_to_collect,
                 pathaoLastSyncedAt: submittedAt,
                 pathaoLastError: null,
-                pathaoRawResponse: JSON.stringify(pathaoResponse),
+                pathaoRawResponse: JSON.stringify(accepted.response),
               },
             });
 
@@ -922,6 +925,7 @@ export async function pushAllToAssignedCouriers(
                   courierSlug,
                   batchNo,
                   merchantOrderId: preparedOrder.invoiceId,
+                  submissionMode: "SINGLE_ORDER_API",
                 },
                 performedByUserId: session.user.id,
                 actorLabel: session.user.name || session.user.username || "OMS user",
@@ -930,7 +934,7 @@ export async function pushAllToAssignedCouriers(
           }
         }, { timeout: 30_000 });
 
-        submittedCount += preparedIds.length;
+        submittedCount += acceptedIds.length;
         batchCount += 1;
       }
     }

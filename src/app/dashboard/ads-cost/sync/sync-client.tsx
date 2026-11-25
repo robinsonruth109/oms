@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Search } from "lucide-react";
 
 import {
@@ -69,6 +69,10 @@ type Campaign = {
     linkedCampaigns: { id: string; campaignName: string }[];
   } | null;
 };
+
+type ConnectionFilter = "ALL" | "CONNECTED" | "NOT_CONNECTED";
+
+const connectionFilterStorageKey = "oms:ads-cost:connection-filter";
 
 type Draft = {
   productParentId: string;
@@ -446,6 +450,29 @@ export default function AdsCostSyncClient({
   const [syncAccountId, setSyncAccountId] = useState(selectedAccountId);
   const [filter, setFilter] = useState<"ALL" | "MAPPED" | "UNMAPPED">("ALL");
   const [search, setSearch] = useState("");
+  const [connectionFilter, setConnectionFilter] = useState<ConnectionFilter>("ALL");
+
+  // Keep this independent filter selected after the existing connect/disconnect reload.
+  useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem(connectionFilterStorageKey);
+      if (saved === "CONNECTED" || saved === "NOT_CONNECTED" || saved === "ALL") {
+        setConnectionFilter(saved);
+      }
+    } catch {
+      // Filtering still works when browser storage is unavailable.
+    }
+  }, []);
+
+  function changeConnectionFilter(value: ConnectionFilter) {
+    setConnectionFilter(value);
+    try {
+      window.sessionStorage.setItem(connectionFilterStorageKey, value);
+    } catch {
+      // Browser storage is optional.
+    }
+  }
+
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() =>
     Object.fromEntries(
       campaigns.map((campaign) => [
@@ -473,6 +500,9 @@ export default function AdsCostSyncClient({
     return campaigns.filter((campaign) => {
       if (filter === "MAPPED" && !campaign.mapping) return false;
       if (filter === "UNMAPPED" && campaign.mapping) return false;
+      const connected = Boolean(campaign.mapping?.reportGroupId);
+      if (connectionFilter === "CONNECTED" && !connected) return false;
+      if (connectionFilter === "NOT_CONNECTED" && connected) return false;
       if (
         q &&
         !(
@@ -486,7 +516,7 @@ export default function AdsCostSyncClient({
       }
       return true;
     });
-  }, [campaigns, filter, search]);
+  }, [campaigns, filter, connectionFilter, search]);
 
   function patchDraft(campaignId: string, patch: Partial<Draft>) {
     setDrafts((current) => ({
@@ -884,12 +914,43 @@ export default function AdsCostSyncClient({
               ))}
             </div>
           </div>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search campaign or ad account..."
-            className="mt-4 w-full max-w-xl rounded-xl border px-3 py-2.5 text-sm"
-          />
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search campaign or ad account..."
+              className="w-full max-w-xl rounded-xl border px-3 py-2.5 text-sm"
+            />
+            <div>
+              <p className="mb-1.5 text-xs font-semibold text-slate-500">Connect Existing Ad</p>
+              <div role="group" aria-label="Campaign connection status" className="flex flex-wrap gap-2">
+                {([
+                  ["ALL", "All"],
+                  ["CONNECTED", "Connected Ads"],
+                  ["NOT_CONNECTED", "Not Connected"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={connectionFilter === value}
+                    onClick={() => changeConnectionFilter(value)}
+                    className={
+                      "rounded-lg px-3 py-2 text-xs font-semibold " +
+                      (connectionFilter === value
+                        ? "bg-slate-900 text-white"
+                        : "border bg-white text-slate-700 hover:bg-slate-50")
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Showing {visibleCampaigns.length} of {campaigns.length} campaigns.
+            Select Mapped + Not Connected to find mapped ads that still need connecting.
+          </p>
         </div>
 
         <div className="overflow-x-auto">
@@ -1062,8 +1123,10 @@ export default function AdsCostSyncClient({
 
               {!visibleCampaigns.length ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-sm text-slate-500">
-                    No campaigns found. Connect Meta and run Sync Now first.
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
+                    {campaigns.length
+                      ? "No campaigns match the selected filters. Change the filters or search."
+                      : "No campaigns found. Connect Meta and run Sync Now first."}
                   </td>
                 </tr>
               ) : null}
